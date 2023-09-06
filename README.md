@@ -1,3 +1,3 @@
-# Global Alpine Treeline Ecotones
+# Alpine Treeline Elevational Transects
 ## Project Information
-This project is about monitoring the dynamics of global alpine treeline ecotones based on the LANDSAT archive from 1985 to 2020.
+This project is about constructing and visualizing global alpine treeline elevational transects (v1.0).
