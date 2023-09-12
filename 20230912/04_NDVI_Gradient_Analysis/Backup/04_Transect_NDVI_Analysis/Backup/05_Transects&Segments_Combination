@@ -1,0 +1,100 @@
+/**
+ * Introduction:
+ * 1) Combine the elevational-NDVI-gradient trend of each transect
+ *  with the temporal NDVI variables of the corresponding
+ *  lower and upper segments.
+ * 
+ * Update: 12/9/2021.
+ * 
+ * Total update number: 1.
+ * 
+ * Runtime: 6h.
+ */
+
+
+/* Load module(s). */
+
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var TNA = require("users/ChenyangWei/Public:Modules/Transect_NDVI_Analysis");
+var FC_AP = require("users/ChenyangWei/Public:Modules/FeatureCollection_Analysis&Processing");
+
+
+/* Data and function preparation. */
+
+// Set the major working directory.
+var wd_Main = GATE.wd_Europe; /**** 1) Need to update. ****/
+
+// Load the transects with the elevational-NDVI-gradient trends.
+var transects = ee.FeatureCollection(wd_Main
+  + "Transect_NDVI_Analysis/"
+  + TNA.elvNDVIgradientTrends_fileName);
+
+// Load the lower and upper segments with the temporal NDVI variables.
+var lowerSegments = ee.FeatureCollection(wd_Main
+  + "Transect_NDVI_Analysis/"
+  + TNA.lowerSegments_NDVItVars_fileName);
+
+var upperSegments = ee.FeatureCollection(wd_Main
+  + "Transect_NDVI_Analysis/"
+  + TNA.upperSegments_NDVItVars_fileName);
+
+
+/* Combine the elevational-NDVI-gradient trend of each transect
+  with the temporal NDVI variables of the corresponding
+  lower and upper segments. */
+
+// Remove the unnecessary properties from each type of segments.
+var unnecessaryPrpts = ["Hybas_ID", "SegmentID"];
+
+var lowerSegments_PrptsRemoved = FC_AP.FtrCol_PropertyRemoval(lowerSegments, unnecessaryPrpts);
+
+var upperSegments_PrptsRemoved = FC_AP.FtrCol_PropertyRemoval(upperSegments, unnecessaryPrpts);
+
+// Rename the property of the observation numbers for the transects.
+var transects_PrptRenamed = FC_AP.FtrCol_PropertyRename(transects, 
+  ["yearCount"], ["gradYears"]);
+
+// Rename the property of the observation numbers for each type of segments.
+var prptToRename_Segments = ["count_Year"];
+
+var lowerSegments_PrptRenamed = FC_AP.FtrCol_PropertyRename(lowerSegments_PrptsRemoved, 
+  prptToRename_Segments, ["lower_Years"]);
+
+var upperSegments_PrptRenamed = FC_AP.FtrCol_PropertyRename(upperSegments_PrptsRemoved, 
+  prptToRename_Segments, ["upper_Years"]);
+
+// Combine each transect with the corresponding lower and upper segments.
+var transects_LowerSegments = FC_AP.combine_twoFtrCols_byCommonProperty(
+  transects_PrptRenamed, lowerSegments_PrptRenamed, "CL_ID"
+);
+
+var transects_LowerUpperSegments = FC_AP.combine_twoFtrCols_byCommonProperty(
+  transects_LowerSegments, upperSegments_PrptRenamed, "CL_ID"
+);
+
+
+if (false) { //// true OR false.
+
+  print("transects_PrptRenamed:",
+    transects_PrptRenamed.first(),
+    transects_PrptRenamed.size());
+
+  print("lowerSegments_PrptRenamed:",
+    lowerSegments_PrptRenamed.size());
+
+  print("upperSegments_PrptRenamed:",
+    upperSegments_PrptRenamed.size());
+
+} else { //// Export the result(s).
+  
+  var fileName = TNA.transects_LowerUpperSegments_fileName;
+  
+  Export.table.toAsset({
+    collection: transects_LowerUpperSegments, 
+    description: fileName, 
+    assetId: wd_Main
+      + "Transect_NDVI_Analysis/"
+      + fileName
+  });
+}
+

@@ -1,0 +1,113 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var nonHighLat = /* color: #ffff00 */ee.Geometry.Polygon(
+        [[[49.63993133808363, 70.31278951391505],
+          [35.284469740641, 72.41693355431919],
+          [8.917282240641002, 73.65581898709743],
+          [-20.67256866191637, 73.65581898709743],
+          [-37.225295884359, 68.93626014920697],
+          [-42.530728782435844, 34.8254642089731],
+          [-29.49361985447068, 30.952106492813783],
+          [-14.405730123540351, 31.51573902171303],
+          [-0.19674396040100905, 31.51573902171303],
+          [40.818877463320305, 32.01390668197959],
+          [66.38041520593505, 44.91263608226079],
+          [65.00404431776757, 69.67133698497268],
+          [53.98108794646019, 70.03709420990717]]]);
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+/**
+ * Introduction: 
+ * 1) Identify the non-high-latitude area in Europe.
+ * 2) Generate and buffer the bounding box of the identified area.
+ * 
+ * Update: 4/26/2021.
+ * 
+ * Runtime: 3m.
+*/
+
+
+if (true) {
+  /* Identify the study domain in Europe. */
+  
+  // Import country features.
+  var worldCol = ee.FeatureCollection('USDOS/LSIB_SIMPLE/2017');
+  
+  // print("worldCol:", worldCol.aggregate_array("wld_rgn").distinct())
+  
+  // Select countries in Europe.
+  var Europe_raw = worldCol.filterMetadata('wld_rgn', 'equals', 'Europe');
+  
+  // Merge all geometries in the collection into one.
+  var Europe_unioned = ee.Feature(Europe_raw.union().first());
+  
+  // Remove the high latitude area.
+  var Europe_nonHighLat = Europe_unioned.intersection(nonHighLat); 
+  
+  // Convert the result to a FeatureCollection.
+  var Europe_FC = ee.FeatureCollection(Europe_nonHighLat);
+  
+  // print("Europe_FC:", Europe_FC)
+
+  if (true) {
+    // Visualization.
+    Map.setOptions("hybrid");
+    
+    Map.centerObject(Europe_raw, 2);
+    
+    Map.addLayer(Europe_raw, 
+      {color: "ff0000", opacity: 1}, "Europe_raw", true);
+
+  } else if (true) {
+    // Export the result.
+    var fileName = "Europe_nonHighLat_LSIB_SIMPLE";
+    
+    Export.table.toAsset({
+      collection: Europe_FC, 
+      description: fileName, 
+      assetId: "users/ChenyangWei/Europe_ATE/Climate-Based_ATE/" +
+        fileName
+    });
+  }
+  
+} else if (true) {
+  
+  /* Generate and buffer the bounding box of the identified area. */
+  
+  // Load the identified study domain.
+  var studyDomain = ee.FeatureCollection("users/ChenyangWei/Europe_ATE/Climate-Based_ATE/" +
+    "Europe_nonHighLat_LSIB_SIMPLE");
+  
+  // print("studyDomain:", studyDomain)
+
+  // Generate the bounding box of the study domain.
+  var BBox = ee.Feature(studyDomain.first()).bounds();
+  
+  // print("BBox:", BBox)
+  
+  // Buffer the bounding box and then generate the buffer's bounding box.
+  var buffered_BBox = BBox.buffer(1e4).bounds();
+  
+  print("buffered_BBox:", buffered_BBox)
+  
+  // Create a rectanglar AOI based on the buffered bounding box.
+  var AOI = ee.Geometry.Rectangle({
+    coords: [[-31.546113802033677, 34.71204055896572],
+      [61.96974908940637, 71.27408645016632]],
+    geodesic: false
+  });
+  
+  if (true) {
+    // Vissualization.
+    Map.setOptions("hybrid");
+    
+    Map.centerObject(studyDomain, 2);
+    
+    Map.addLayer(buffered_BBox, {color: "FF0000"}, "buffered_BBox");
+    
+    Map.addLayer(BBox, {color: "0000FF"}, "BBox");
+    
+    Map.addLayer(studyDomain, {color: "FFFF00"}, "studyDomain", true);
+    
+    Map.addLayer(AOI, {color: "00FF00"}, "AOI");
+  }
+}
+

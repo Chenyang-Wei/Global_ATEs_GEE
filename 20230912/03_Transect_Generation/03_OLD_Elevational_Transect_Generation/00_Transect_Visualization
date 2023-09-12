@@ -1,0 +1,165 @@
+/**
+ * Introduction:
+ * 1) Visualize elevational transects and relevant datasets.
+ * 
+ * Update: 8/3/2021.
+*/
+
+// Load the module for visualization.
+var VIS = require("users/ChenyangWei/Public:Modules/Visualization");
+
+
+/* Data preparation. */
+
+function buffering(CL) {
+  return CL.buffer(45);
+}
+
+// Set the working directory.
+var wdEuro = "users/ChenyangWei/Europe_ATE/";
+
+// Load the raw CATE.
+var rawCATE = ee.Image(wdEuro + "Climate-Based_ATE/" 
+  + "30mRawCATE_500mToAvgTLH_3kmBuf_Europe_nonHighLat");
+
+// Load the new CATE.
+var newCATE = ee.Image(wdEuro + "Climate-Based_ATE/" 
+  + "30mNewCATE_gteSmd10kmCForestElv_3kmCForestBuffer_AOI");
+
+// Load the buffered new CATE.
+var bufCATE = ee.Image(wdEuro + "Climate-Based_ATE/" 
+  + "300mBuffered_30mNewCATE_AOI");
+
+// Load the segmented new CATE.
+var segCATE = ee.Image(wdEuro + "Transect_Generation/"
+  + "30mSegmentedNewCATE_distToRidgesNoCliff_NAstripesRemoved_ridgesRemoved");
+
+var NewSegCATE = ee.Image(wdEuro + "Elevational_Transects/"
+  + "30mSegmentedNewCATE_distToAllRidgesNoCliff_invalidLandformsRemoved_ridgesRemoved");
+
+
+// Load the previously selected HydroSHEDS basins ("hybas_12") 
+//  with both closed forests on the lower slope or in the valley
+//  and non-forested areas on the upper slope or the cliff
+//  within the segmented new CATE.
+var basins = ee.FeatureCollection(wdEuro + "Transect_Generation/"
+  + "Hybas12Basins_LowerClosedForests_UpperNonForested_30mSegmentedNewCATE");
+
+// Transects.
+var Transects = ee.FeatureCollection(wdEuro + "Transect_Generation/"
+  + "TransectCenterLines_LowerClosedForests_UpperNonForested_30mSegmentedNewCATE")
+  .map(buffering);
+
+
+/* Load, process, and visualize the smoothed annual max. NDVI. */
+
+// Determine the list of periods from 1984 to 2020:
+//  the first period is five years,
+//  each period after that is four years.
+var periodList = [[1984, 1988], // Five years.
+  [1989, 1992], // Four years hereafter.
+  [1993, 1996],
+  [1997, 2000],
+  [2001, 2004],
+  [2005, 2008],
+  [2009, 2012],
+  [2013, 2016],
+  [2017, 2020]];
+
+// Function to read the annual NDVIs in each period.
+var NDVIpath = wdEuro
+  + "ATEI_Estimation/"
+  + "medianSmdAnnualMaxNDVI_cloudShadowMasked_300mBufNewCATE_AOI/";
+
+function readNDVIs(period) {
+  var firstYear = period[0];
+  var lastYear = period[1];
+  
+  var fileName = "smdNDVI_" + firstYear + "to" + lastYear;
+  
+  return ee.Image(NDVIpath + fileName);
+}
+
+var NDVI_list = ee.List(periodList.map(readNDVIs));
+
+// Calculate the temporal avg. NDVI of each period.
+function calAvgNDVI(periodNDVIs) {
+  var NDVI_img = ee.Image(periodNDVIs);
+  var avg = NDVI_img.reduce(ee.Reducer.mean());
+  var firstYearName = NDVI_img.bandNames().get(0);
+  var lastYearName = NDVI_img.bandNames().get(-1);
+  
+  return avg.set({
+    firstYear: firstYearName,
+    lastYear: lastYearName
+  });
+}
+
+var avgNDVI_list = NDVI_list.map(calAvgNDVI);
+print("avgNDVI_list:", avgNDVI_list);
+
+for (var i = 0; i < periodList.length; i ++) {
+  var layer = ui.Map.Layer({
+    eeObject: ee.Image(avgNDVI_list.get(i)), 
+    visParams: VIS.NDVI_vis, 
+    name: "NDVI (" + periodList[i][0] + "~" + periodList[i][1] + ")", 
+    shown: false
+  });
+  
+  // Map.layers().set(0, layer);
+  Map.add(layer);
+}
+
+// Difference between the first and last periods.
+var period_84to88 = ee.Image(avgNDVI_list.get(0));
+var period_89to92 = ee.Image(avgNDVI_list.get(1));
+var period_09to12 = ee.Image(avgNDVI_list.get(6));
+var period_13to16 = ee.Image(avgNDVI_list.get(7));
+var period_17to20 = ee.Image(avgNDVI_list.get(8));
+
+var difference_1 = period_09to12.subtract(period_84to88).divide(6 - 0);
+var difference_2 = period_17to20.subtract(period_09to12).divide(8 - 6);
+var difference_3 = period_17to20.subtract(period_84to88).divide(8 - 0);
+var difference_4 = period_17to20.subtract(period_89to92).divide(8 - 1);
+var difference_5 = period_17to20.subtract(period_13to16).divide(8 - 7);
+
+var diff_vis = {min: -0.05, max: 0.05, palette: "0000FF, FFFFFF, FF0000"};
+
+Map.addLayer(difference_1, 
+  diff_vis, 
+  "NDVI difference_84to12", true);
+
+Map.addLayer(difference_2, 
+  diff_vis, 
+  "NDVI difference_09to20", true);
+
+Map.addLayer(difference_3, 
+  diff_vis, 
+  "NDVI difference_84to20", true);
+
+Map.addLayer(difference_4, 
+  diff_vis, 
+  "NDVI difference_89to20", true);
+
+Map.addLayer(difference_5, 
+  diff_vis, 
+  "NDVI difference_13to20", true);
+
+// Visualization.
+Map.setOptions("hybrid");
+Map.setCenter(10.4016, 46.5456, 12); 
+
+Map.addLayer(basins, {color: "FFFFFF"}, "HydroSHEDS basins", false);
+
+Map.addLayer(rawCATE, {palette: "00FFFF"}, "Raw Cl-ATE", false);
+
+Map.addLayer(bufCATE, {palette: "00FF00"}, "Buffered Cl-ATE", false);
+
+Map.addLayer(newCATE, {palette: "00FFFF"}, "Cl-ATE", false);
+
+Map.addLayer(segCATE, {palette: "0000FF"}, "Segmented Cl-ATE", true);
+
+Map.addLayer(NewSegCATE, {palette: "FFFF00"}, "New Segmented Cl-ATE", true);
+
+Map.addLayer(Transects, {color: "FF0000"}, "Transects", false);
+

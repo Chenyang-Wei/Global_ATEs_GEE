@@ -1,0 +1,90 @@
+/**
+ * Introduction:
+ * 1) Create a transect in each buffer of the grouped medial axis centroid.
+ * 
+ * Update: 9/3/2021.
+ * 
+ * Runtime: m.
+ */
+
+
+/* Load module(s). */
+var IMG = require("users/ChenyangWei/Public:Modules/Image_Analysis&Processing");
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var VIS = require("users/ChenyangWei/Public:Modules/Visualization");
+
+
+/* Data preparation. */
+
+// Extract the most detailed (level 12) HydroSHEDS basin.
+var POI = ee.Geometry.Point([10.35857, 46.51679]);
+var basin = ee.Feature(ee.FeatureCollection("WWF/HydroSHEDS/v1/Basins/hybas_12")
+  .filterBounds(POI).first());
+
+// Working directory.
+var wd_Temp = "users/ChenyangWei/Temp/";
+
+var wd_Main = GATE.wd_Europe;
+
+// Target projection.
+var targetPrj = IMG.WGS84_30m;
+
+// Load the new CATE.
+var newCATEname = GATE.newCATE_fileName;
+
+var newCATE = ee.Image(wd_Main + "Climate-Based_ATE/" 
+  + newCATEname);
+
+// Buffer of the grouped medial axis centroid.
+var bufDist = 30;
+
+var medialBuffer = ee.FeatureCollection(wd_Temp 
+  + "buffered_groupedMedialCentroids_"
+  + bufDist + "m");
+
+// Transect centerlines.
+var centerLines = ee.FeatureCollection(wd_Temp 
+  + "TransectCLs_" + bufDist + "mBuffer");
+
+// // Buffer of the medial axis centroid.
+// var medialBuffer = ee.FeatureCollection(wd_Temp 
+//   + "buffered_medialAxis_ctds");
+
+// // Transect centerlines.
+// var centerLines = ee.FeatureCollection(wd_Temp 
+//   + "TransectCLs_medialAxis_centroidBuffer");
+
+print("medialBuffer", 
+  medialBuffer.first(),
+  medialBuffer.size())
+
+print("centerLines", 
+  centerLines.first(),
+  centerLines.size())
+
+
+/* Group the centerlines. */
+
+var groupDist = 15;
+
+var buffered_CLs = centerLines.map(function(CL) {
+  return CL.buffer(groupDist);
+}).union();
+
+
+if (true) { // true OR false.
+
+  // Visualization.
+  Map.setOptions("satellite");
+  
+  Map.centerObject(POI, 14); 
+  
+  Map.addLayer(basin, {color: "FFFFFF"}, "basin", false);
+  
+  Map.addLayer(medialBuffer, {color: "0000FF"}, "medialBuffer", true, 0.5);
+  
+  Map.addLayer(buffered_CLs, {color: "FFFF00"}, "buffered_CLs", true);
+  
+  Map.addLayer(centerLines, {color: "FF0000"}, "centerLines", true);
+  
+} 

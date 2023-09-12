@@ -1,0 +1,75 @@
+/**
+ * Introduction:
+ * 
+ *  1) Divide each transect centerline into two equal segments.
+ * 
+ *  2) Buffer each centerline segment by 45 m.
+ * 
+ * 
+ * Need to check: 3.
+ * 
+ * Update: 7/28/2022.
+ * 
+ * Runtime: 55m.
+ */
+
+
+/* Load module(s). */
+
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var TNA = require("users/ChenyangWei/Public:Modules/Transect_NDVI_Analysis");
+
+
+/* Data and function preparation. */
+
+// Set the major working directory.
+var wd_Main = GATE.wd_Europe   /**** 1) Need to change. ****/
+  + "Elevational_Transect_Generation/";
+
+// Load the selected transect centerlines.
+var selectedCLs = ee.FeatureCollection(wd_Main
+  + TNA.selectedCLs_fileName);   /**** 2) Need to check. ****/
+
+// Name the centerline ID.
+var CLid = "CL_ID";   /**** 3) Need to check. ****/
+
+// Whether output the result(s).
+var output = true; // true OR false.
+
+
+/* 1) Divide each transect centerline into two equal segments. */
+
+var CLsegments = TNA.divide_Centerlines_byBasin(selectedCLs, CLid);
+
+
+/* 2) Buffer each centerline segment by 45 m. */
+
+var transectSegments = TNA.buffer_Centerlines_by45m(CLsegments);
+
+
+if (!output) { //// Check the result(s).
+
+  print("selectedCLs:", 
+    selectedCLs.first(),
+    selectedCLs.size());
+
+  print("transectSegments:", 
+    transectSegments.first());
+
+  Map.setOptions("satellite");
+  Map.centerObject(selectedCLs.first(), 10);
+  
+  Map.addLayer(selectedCLs, {color: "FF0000"}, "selectedCLs");
+  
+} else { //// Export the result(s).
+  
+  var fileName = TNA.transectSegments_FullName;
+  
+  Export.table.toAsset({
+    collection: transectSegments, 
+    description: fileName, 
+    assetId: wd_Main
+      + fileName
+  });
+}
+

@@ -1,0 +1,59 @@
+/**
+ * Introduction:
+ * 1) Vectorize pixels along the medial axis between ridges and valleys in the new CATE
+ *  to their centroids by basin.
+ * 
+ * Update: 9/10/2021.
+ * 
+ * Runtime: 3m.
+ */
+
+
+/* Load module(s). */
+
+var IMG = require("users/ChenyangWei/Public:Modules/Image_Analysis&Processing");
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+
+
+/**** The following section needs to be updated. ****/
+
+// Set the working directory.
+var wd_Main = GATE.wd_Europe;
+
+/**** The section above needs to be updated. ****/
+
+
+/* Data and function preparation. */
+
+// Load the medial axis between ridges and valleys.
+var medialAxis = ee.Image(wd_Main + "Temp_2/" // Testing.
+  + GATE.medialAxis_fileName);
+
+// Load the selected basins.
+var selectedBasins = ee.FeatureCollection(wd_Main + "Temp_2/" // Testing.
+  + GATE.selectedBasins_fileName);
+
+// Target projection.
+var targetPrj = IMG.WGS84_30m;
+
+// Function to vectorize pixels along the medial axis to their centroids by basin.
+var vectorization = GATE.vectorizeMedialAxis_byBasin;
+
+
+/* Vectorize pixels along the medial axis between ridges and valleys to their centroids. */
+
+var medialAxis_PxCtds = vectorization(medialAxis, selectedBasins, targetPrj);
+
+
+if (true) {
+  //// Export the result.
+  var fileName = GATE.medialAxisPxCtds_fileName;
+  
+  Export.table.toAsset({
+    collection: medialAxis_PxCtds, 
+    description: fileName, 
+    assetId: wd_Main + "Temp_2/" // Testing.
+      + fileName
+  });
+}
+

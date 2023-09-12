@@ -1,0 +1,60 @@
+/**
+ * Introduction:
+ * 1) Divide each transect centerline into two equal segments.
+ * 2) Buffer each centerline segment by 45 m.
+ * 
+ * Update: 1/5/2022.
+ * 
+ * Runtime: 58m.
+ */
+
+
+/* Load module(s). */
+
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var TNA = require("users/ChenyangWei/Public:Modules/Transect_NDVI_Analysis");
+
+
+/* Data and function preparation. */
+
+// Set the major working directory.
+var wd_Main = GATE.wd_Europe; /**** 1) Need to update. ****/
+
+// Load the selected transect centerlines.
+var selectedCLs = ee.FeatureCollection(wd_Main
+  + "Elevational_Transect_Generation/"
+  + TNA.selectedCLs_fileName);
+
+
+/* Divide each transect centerline into two equal segments. */
+
+var CLsegments = TNA.divide_Centerlines_byBasin(selectedCLs, "CL_ID");
+
+
+/* Buffer each centerline segment by 45 m. */
+
+var transectSegments = TNA.buffer_Centerlines_by45m(CLsegments);
+
+
+if (false) { //// true OR false.
+
+  print("selectedCLs:", 
+    selectedCLs.first(),
+    selectedCLs.size());
+
+  print("transectSegments:", 
+    transectSegments.first());
+
+} else { //// Export the result.
+  
+  var fileName = TNA.transectSegments_fileName;
+  
+  Export.table.toAsset({
+    collection: transectSegments, 
+    description: fileName, 
+    assetId: wd_Main
+      + "Transect_NDVI_Analysis/"
+      + fileName
+  });
+}
+
