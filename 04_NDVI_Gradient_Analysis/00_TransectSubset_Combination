@@ -1,0 +1,69 @@
+/**
+ * Introduction:
+ * 
+ * 1) Combine the transect-subset results of the corresponding continent
+ *  into a single FeatureCollection.
+ * 
+ * 
+ * Need to update: 2.
+ * 
+ * Update: 4/20/2022.
+ * 
+ * Runtime: 11m (shared).
+ */
+
+
+/* Load module(s). */
+
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var NGA = require("users/ChenyangWei/Public:Modules/NDVI_Gradient_Analysis.js");
+var FC_AP = require("users/ChenyangWei/Public:Modules/FeatureCollection_Analysis&Processing");
+
+
+/* Data loading. */
+
+// Set the major working directory.
+var wd_Main = GATE.wd_Europe; /* 1) Need to update. */
+
+// Determine the number of transect subsets.
+var subsetNum = 30; /* 2) Need to update. */
+
+// Whether to output the result(s).
+var output = true; // true OR false.
+
+
+/* Combine the transect-subset results into a single FeatureCollection. */
+
+// Name the transect-subset results.
+var full_Name = NGA.transects_withObsYearVars_FullName;
+
+var short_Name = NGA.transects_withObsYearVars_ShortName;
+
+// Read and combine the FeatureCollections.
+var combined_TransectSubsets = NGA.Combine_TransectSubsets_OtherContinents(
+  wd_Main, subsetNum, full_Name, short_Name
+);
+
+
+if (!output) {
+  // Data examination.
+  
+  FC_AP.Print_FtrColInfo("combined_TransectSubsets:", 
+    combined_TransectSubsets); // 172,332.
+  
+} else {
+  // Export the final result.
+  
+  var wd_Output = wd_Main
+    + "NDVI_Gradient_Analysis/";
+  
+  var fileName = NGA.continentalTransects_FileName;
+  
+  Export.table.toAsset({
+    collection: combined_TransectSubsets,
+    description: fileName, 
+    assetId: wd_Output
+      + fileName
+  });
+}
+

@@ -1,0 +1,277 @@
+/**
+ * Introduction:
+ * 1) Group the transect endpoints.
+ * 
+ * Update: 9/3/2021.
+ * 
+ * Runtime: m.
+ */
+
+
+/* Load module(s). */
+var IMG = require("users/ChenyangWei/Public:Modules/Image_Analysis&Processing");
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var VIS = require("users/ChenyangWei/Public:Modules/Visualization");
+
+
+/* Data preparation. */
+
+// Extract the most detailed (level 12) HydroSHEDS basin.
+var POI = ee.Geometry.Point([10.35857, 46.51679]);
+var basin = ee.Feature(ee.FeatureCollection("WWF/HydroSHEDS/v1/Basins/hybas_12")
+  .filterBounds(POI).first());
+
+// Working directory.
+var wd_Temp = "users/ChenyangWei/Temp/";
+
+var wd_Main = GATE.wd_Europe;
+
+// Target projection.
+var targetPrj = IMG.WGS84_30m;
+
+// Load the new CATE.
+var newCATEname = GATE.newCATE_fileName;
+
+var newCATE = ee.Image(wd_Main + "Climate-Based_ATE/" 
+  + newCATEname);
+
+// Buffer of the grouped medial axis centroid.
+var bufDist = 30;
+
+var medialBuffer = ee.FeatureCollection(wd_Temp 
+  + "buffered_groupedMedialCentroids_"
+  + bufDist + "m");
+
+// Transect endpoints.
+var NonFpts = ee.FeatureCollection(wd_Temp 
+  + "NonFpts");
+
+var CFpts = ee.FeatureCollection(wd_Temp 
+  + "CFpts");
+
+print("NonFpts", NonFpts.first(), NonFpts.size())
+print("CFpts", CFpts.first(), CFpts.size())
+
+
+/* Group the transect endpoints. */
+
+var groupDist = 90;
+
+var buffered_NonFpts = NonFpts.map(function(pt) {
+  return pt.buffer(groupDist);
+}).union();
+
+var buffered_CFpts = CFpts.map(function(pt) {
+  return pt.buffer(groupDist);
+}).union();
+
+// print("buffered_NonFpts", buffered_NonFpts)
+
+// Convert each multiPolygon to a set of polygons.
+var buffered_NonFpts_Plgs = ee.FeatureCollection(buffered_NonFpts.first().geometry().coordinates().map(function(coords) {
+  var plg = ee.Geometry.Polygon(coords);
+  
+  return ee.Feature(plg);
+}));
+
+// print("buffered_NonFpts_Plgs:", buffered_NonFpts_Plgs.first(),
+//   buffered_NonFpts_Plgs.size())
+
+var buffered_CFpts_Plgs = ee.FeatureCollection(buffered_CFpts.first().geometry().coordinates().map(function(coords) {
+  var plg = ee.Geometry.Polygon(coords);
+  
+  return ee.Feature(plg);
+}));
+
+// print("buffered_CFpts_Plgs:", buffered_CFpts_Plgs.first(),
+//   buffered_CFpts_Plgs.size())
+
+// // Convert each multiPolygon to centroids.
+// var buffered_NonFpts_Ctds = ee.FeatureCollection(buffered_NonFpts.first().geometry().coordinates().map(function(coords) {
+//   var plg = ee.Geometry.Polygon(coords);
+//   var ctd = plg.centroid();
+  
+//   return ee.Feature(ctd);
+// }));
+
+// print("buffered_NonFpts_Ctds:", buffered_NonFpts_Ctds.first(),
+//   buffered_NonFpts_Ctds.size())
+
+// var buffered_CFpts_Ctds = ee.FeatureCollection(buffered_CFpts.first().geometry().coordinates().map(function(coords) {
+//   var plg = ee.Geometry.Polygon(coords);
+//   var ctd = plg.centroid();
+  
+//   return ee.Feature(ctd);
+// }));
+
+// print("buffered_CFpts_Ctds:", buffered_CFpts_Ctds.first(),
+//   buffered_CFpts_Ctds.size())
+
+
+// Define a spatial filter as geometries that intersect.
+var spatialFilter = ee.Filter.intersects({
+  leftField: ".geo",
+  rightField: ".geo"
+});
+
+// Define a save all join.
+var saveAllJoin = ee.Join.saveAll({
+  matchesKey: "grouped_Pts",
+});
+
+// Apply the join.
+var NonFpts_grouped = saveAllJoin.apply(buffered_NonFpts_Plgs, NonFpts, spatialFilter);
+
+var CFpts_grouped = saveAllJoin.apply(buffered_CFpts_Plgs, CFpts, spatialFilter);
+
+// print("NonFpts_grouped", NonFpts_grouped.size())
+
+// print("CFpts_grouped", CFpts_grouped.first())
+
+// Get the centroid of polygon and the list of point IDs.
+var NonFpts_grouped_Ctds = NonFpts_grouped.map(function(group) {
+  var ctd = group.geometry().centroid();
+  
+  var grouped_Pts = ee.FeatureCollection(ee.List(group.get("grouped_Pts")));
+  
+  var ptID_list = grouped_Pts.aggregate_array("random");
+  
+  return ee.Feature(ctd).set("ptID_list", ptID_list);
+}).randomColumn("NonF_groupID");
+
+var CFpts_grouped_Ctds = CFpts_grouped.map(function(group) {
+  var ctd = group.geometry().centroid();
+  
+  var grouped_Pts = ee.FeatureCollection(ee.List(group.get("grouped_Pts")));
+  
+  var ptID_list = grouped_Pts.aggregate_array("random");
+  
+  return ee.Feature(ctd).set("ptID_list", ptID_list);
+}).randomColumn("CF_groupID");
+
+
+print("NonFpts_grouped_Ctds", 
+  NonFpts_grouped_Ctds.first(), 
+  NonFpts_grouped_Ctds.size())
+
+print("CFpts_grouped_Ctds", 
+  CFpts_grouped_Ctds.first(),
+  CFpts_grouped_Ctds.size())
+
+// Connect the two types of points with the same ID.
+var lineString = ee.FeatureCollection(CFpts_grouped_Ctds.map(function(CF_ptGroup) {
+  var ptID_list = CF_ptGroup.get("ptID_list");
+  
+  var CF_groupID = CF_ptGroup.get("CF_groupID");
+  
+  var CFpt_Geom = CF_ptGroup.geometry();
+  
+  // Maybe replace the map() with a join()?
+  var lineString_List = ee.List(ptID_list).map(function(ptID) {
+    var NonF_pt = NonFpts_grouped_Ctds.filter(ee.Filter.listContains({
+      leftField: "ptID_list", 
+      rightValue: ptID
+    })).first();
+    
+    var NonF_groupID = NonF_pt.get("NonF_groupID");
+  
+    var NonFpt_Geom = NonF_pt.geometry();
+    
+    var lsGeom = ee.Geometry.LineString([CFpt_Geom, NonFpt_Geom]);
+    
+    return ee.Feature(lsGeom).set({
+      CF_groupID: CF_groupID,
+      NonF_groupID: NonF_groupID
+    });
+  });
+  // var NonF_pt = ee.FeatureCollection(NonFpts_grouped_Ctds.filter(ee.Filter.listContains({
+  //   leftField: "ptID_list", 
+  //   rightValue: ptID
+  // }))).first();
+  
+  // var CF_pt = ee.FeatureCollection(CFpts_grouped_Ctds.filter(ee.Filter.listContains({
+  //   leftField: "ptID_list", 
+  //   rightValue: ptID
+  // }))).first();
+  
+  // // Get the groupIDs.
+  // var NonF_groupID = NonF_pt.get("NonF_groupID");
+  // var CF_groupID = CF_pt.get("CF_groupID");
+  
+  // // Construct the geometry.
+  // var geom = ee.Geometry.LineString([NonF_pt.geometry(), CF_pt.geometry()])
+  
+  return ee.FeatureCollection(lineString_List);
+}));
+
+lineString = lineString.flatten();
+
+// var ptIDs = CFpts.aggregate_array("random");
+
+// var lineString = ee.FeatureCollection(ptIDs.map(function(ptID) {
+//   // Extract points sharing the same ID.
+//   var NonF_pt = ee.FeatureCollection(NonFpts_grouped_Ctds.filter(ee.Filter.listContains({
+//     leftField: "ptID_list", 
+//     rightValue: ptID
+//   }))).first();
+  
+//   var CF_pt = ee.FeatureCollection(CFpts_grouped_Ctds.filter(ee.Filter.listContains({
+//     leftField: "ptID_list", 
+//     rightValue: ptID
+//   }))).first();
+  
+//   // Get the groupIDs.
+//   var NonF_groupID = NonF_pt.get("NonF_groupID");
+//   var CF_groupID = CF_pt.get("CF_groupID");
+  
+//   // Construct the geometry.
+//   var geom = ee.Geometry.LineString([NonF_pt.geometry(), CF_pt.geometry()])
+  
+//   return ee.Feature(geom);
+// }));
+
+// print("lineString", lineString.first())
+
+var lineString = ee.FeatureCollection(wd_Temp 
+  + "lineString");
+
+if (true) { // true OR false.
+
+  // Visualization.
+  Map.setOptions("satellite");
+  
+  Map.centerObject(POI, 14); 
+  
+  Map.addLayer(basin, {color: "FFFFFF"}, "basin", false);
+  
+  Map.addLayer(medialBuffer, {color: "808080"}, "medialBuffer", true, 0.5);
+  
+  Map.addLayer(CFpts, {color: "00FF00"}, "CFpts", true);
+  
+  // Map.addLayer(buffered_CFpts, {color: "008000"}, "buffered_CFpts", true);
+  
+  // Map.addLayer(buffered_CFpts_Ctds, {color: "FF00FF"}, "buffered_CFpts_Ctds", true);
+  
+  Map.addLayer(buffered_CFpts_Plgs, {color: "FF00FF"}, "buffered_CFpts_Plgs", true);
+  
+  Map.addLayer(NonFpts, {color: "0000FF"}, "NonFpts", true);
+  
+  // Map.addLayer(buffered_NonFpts, {color: "000080"}, "buffered_NonFpts", true);
+  
+  // Map.addLayer(buffered_NonFpts_Ctds, {color: "FFFF00"}, "buffered_NonFpts_Ctds", true);
+  
+  Map.addLayer(buffered_NonFpts_Plgs, {color: "FFFF00"}, "buffered_NonFpts_Plgs", true);
+  
+  Map.addLayer(lineString, {color: "FF0000"}, "lineString", true);
+  
+}  else {
+  // Export the result.
+  var fileName = "lineString";
+  
+  Export.table.toAsset({
+    collection: lineString, 
+    description: fileName, 
+    assetId: wd_Temp
+      + fileName
+  });
+}

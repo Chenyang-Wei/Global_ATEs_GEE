@@ -1,0 +1,62 @@
+/**
+ * Introduction:
+ * 1) Buffer the mid-segments and then union the generated buffers.
+ * 
+ * Update: 10/6/2021.
+ * 
+ * Total update number: 2.
+ * 
+ * Runtime: 6h.
+ */
+
+
+/* Load module(s). */
+
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var VIS = require("users/ChenyangWei/Public:Modules/Visualization");
+
+
+
+/**** 1) Need to update. ****/
+
+// Set the working directory.
+var wd_Main = GATE.wd_Europe;
+
+/********/
+
+
+
+/* Data and function preparation. */
+
+// Load the mid-quarter segments.
+var midQuarters = ee.FeatureCollection(wd_Main + "Elevational_Transect_Generation/"
+  + GATE.midQuarters_fileName);
+
+
+/* Buffer the mid-segments and then union the generated buffers. */
+
+var unionedBuffer = GATE.unionBuffer_MidSegments(midQuarters);
+
+
+if (false) { // true OR false.
+  print("midQuarters:", midQuarters.size());
+  
+  //// Visualization.
+  VIS.centerEurope(13); /**** 2) Need to update. ****/
+  
+  Map.addLayer(midQuarters, 
+    {color: "FFFF00"}, 
+    "midQuarters", true);
+
+} else {
+  //// Export the result(s).
+  var fileName = GATE.unionedBuffer_fileName;
+  
+  Export.table.toAsset({
+    collection: unionedBuffer, 
+    description: fileName, 
+    assetId: wd_Main + "Elevational_Transect_Generation/"
+      + fileName
+  });
+}
+

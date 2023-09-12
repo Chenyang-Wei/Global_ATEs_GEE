@@ -1,0 +1,386 @@
+/**
+ * Introduction:
+ *  1) Compare different endpoint grouping distances.
+ * 
+ * Update: 9/26/2021.
+ */
+
+
+/* Load module(s). */
+
+var IMG = require("users/ChenyangWei/Public:Modules/Image_Analysis&Processing");
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+
+
+/**** The following section needs to be updated. ****/
+
+// Set the area of interest.
+var AOI = GATE.AOI_Alps; // Testing.
+
+// Set the working directory.
+var wd_Main = GATE.wd_Europe;
+
+// Set the cloud asset directory.
+var cloud_Main = GATE.cloud_Europe;
+
+/**** The section above needs to be updated. ****/
+
+
+/* Data and function preparation. */
+
+// Load the new CATE.
+var newCATE = ee.Image(wd_Main + "Climate-Based_ATE/" 
+  + GATE.newCATE_fileName);
+
+// Target projection.
+var targetPrj = IMG.WGS84_30m;
+
+// Load the pixel centroids along the medial axis.
+// var medialAxis_PxCtds = ee.FeatureCollection(wd_Main + "Temp_2/" // Testing.
+//   + GATE.medialAxisPxCtds_fileName);
+
+var distBuffered_PxCtds = ee.FeatureCollection(cloud_Main + "Cloud_Temp/" // Testing.
+  + "distBuffered_PxCtds");
+
+// // Load the lowest lower closed-forest point within each medial axis buffer.
+// var CFpts = ee.FeatureCollection(wd_Main + "Temp_2/" // Testing.
+//   + "Min_LowerCFpt_perMedialAxisBuffer");
+
+// // Load the highest upper non-forested point within each medial axis buffer.
+// var NonFpts = ee.FeatureCollection(wd_Main + "Temp_2/" // Testing.
+//   + "Max_UpperNonFpt_perMedialAxisBuffer");
+
+
+// // Load the lowest lower closed-forest point within each medial axis buffer.
+// var LowestCFpts = ee.FeatureCollection(cloud_Main + "Cloud_Temp/" // Testing.
+//   + "LowestCFpts_rawMedCtds");
+
+// // Load the highest upper non-forested point within each medial axis buffer.
+// var HighestNonFRidgePts = ee.FeatureCollection(cloud_Main + "Cloud_Temp/" // Testing.
+//   + "HighestNonFRidgePts_rawMedCtds");
+
+
+// Load the lowest closed-forest point within each medial axis buffer.
+var CFpts = ee.FeatureCollection(cloud_Main + "Cloud_Temp/" // Testing.
+  + "LowestCFpts_rawMedCtds");
+
+// Load the highest non-forested point in ridges within each medial axis buffer.
+var NonFpts = ee.FeatureCollection(cloud_Main + "Cloud_Temp/" // Testing.
+  + "HighestNonFRidgePts_rawMedCtds");
+
+
+/* Raw endpoints. */
+
+// Load the transect centerlines.
+var transectCLs = ee.FeatureCollection(cloud_Main + "Cloud_Temp/" // Testing.
+  + "TransectCLs_HighestRidgeNonF_LowestCF_medialAxisBuffer");
+
+print("transectCLs", transectCLs.first(), transectCLs.size())
+
+// Centroids.
+var CL_centroids = ee.FeatureCollection(cloud_Main + "Cloud_Temp/" // Testing.
+  + "transectCLs_Centroids_LowestCF_HighestNonFRidge");
+
+// Mid-sections.
+var midHalfCLs = ee.FeatureCollection(cloud_Main + "Cloud_Temp/" // Testing.
+  + "midHalfCLs_LowestCF_HighestNonFRidge");
+
+var midOneThirdCLs = ee.FeatureCollection(cloud_Main + "Cloud_Temp/" // Testing.
+  + "midOneThirdCLs_LowestCF_HighestNonFRidge");
+
+var midQuarterCLs = ee.FeatureCollection(cloud_Main + "Cloud_Temp/" // Testing.
+  + "midQuarterCLs_LowestCF_HighestNonFRidge");
+
+
+// /* 45m grouping distance. */
+
+// // Load the grouped closed-forest points.
+// var grouped_CFpts_45m = ee.FeatureCollection(cloud_Main + "Cloud_Temp/" // Testing.
+//   + GATE.groupedCFpts_fileName
+//   + "_45m");
+
+// // Load the grouped non-forested points.
+// var grouped_NonFpts_45m = ee.FeatureCollection(cloud_Main + "Cloud_Temp/" // Testing.
+//   + GATE.groupedNonFpts_fileName
+//   + "_45m");
+
+// // Load the transect centerlines.
+// var transectCLs_45m = ee.FeatureCollection(cloud_Main + "Cloud_Temp/" // Testing.
+//   + GATE.transectCLs_fileName
+//   + "_45m");
+
+
+/* 90m grouping distance. */
+
+// Load the grouped closed-forest points.
+var grouped_CFpts_90m = ee.FeatureCollection(cloud_Main + "Cloud_Temp/" // Testing.
+  + "groupedLowestCFpts_rawMedCtds_90m");
+
+// Load the grouped non-forested points.
+var grouped_NonFpts_90m = ee.FeatureCollection(cloud_Main + "Cloud_Temp/" // Testing.
+  + "groupedHighestNonFRidgePts_rawMedCtds_90m");
+
+// Load the transect centerlines.
+var transectCLs_90m = ee.FeatureCollection(cloud_Main + "Cloud_Temp/" // Testing.
+  + "transectCLs_LowestCF_HighestNonFRidge_90mGrouped");
+
+
+/* 180m grouping distance. */
+
+// Load the grouped closed-forest points.
+var grouped_CFpts_180m = ee.FeatureCollection(cloud_Main + "Cloud_Temp/" // Testing.
+  + "groupedLowestCFpts_rawMedCtds_180m");
+
+// Load the grouped non-forested points.
+var grouped_NonFpts_180m = ee.FeatureCollection(cloud_Main + "Cloud_Temp/" // Testing.
+  + "groupedHighestNonFRidgePts_rawMedCtds_180m");
+
+// Load the transect centerlines.
+var transectCLs_180m = ee.FeatureCollection(cloud_Main + "Cloud_Temp/" // Testing.
+  + "transectCLs_LowestCF_HighestNonFRidge_180mGrouped");
+
+
+// /* 300m grouping distance. */
+
+// // Load the grouped closed-forest points.
+// var grouped_CFpts_300m = ee.FeatureCollection(cloud_Main + "Cloud_Temp/" // Testing.
+//   + GATE.groupedCFpts_fileName
+//   + "_300m");
+
+// // Load the grouped non-forested points.
+// var grouped_NonFpts_300m = ee.FeatureCollection(cloud_Main + "Cloud_Temp/" // Testing.
+//   + GATE.groupedNonFpts_fileName
+//   + "_300m");
+
+// // Load the transect centerlines.
+// var transectCLs_300m = ee.FeatureCollection(cloud_Main + "Cloud_Temp/" // Testing.
+//   + GATE.transectCLs_fileName
+//   + "_300m");
+
+
+// Load the old transect centerlines.
+var oldCLs = ee.FeatureCollection(wd_Main + "Transect_Generation/" // Testing.
+  + GATE.Centerlines_fileName)
+  .filterBounds(AOI); // Testing.
+
+
+// print("transectCLs_90m", transectCLs_90m.size())
+// print("transectCLs_180m", transectCLs_180m.size())
+
+print("oldCLs", oldCLs.size())
+
+
+// Grouped transects.
+var groupedCLs_90m_rawMedCtds = ee.FeatureCollection(cloud_Main + "Cloud_Temp/" // Testing.
+  + "groupedCLs_90m_rawMedCtds");
+
+var groupedCLs_180m_rawMedCtds = ee.FeatureCollection(cloud_Main + "Cloud_Temp/" // Testing.
+  + "groupedCLs_180m_rawMedCtds");
+
+var groupedCLs_90m_90mGroupedMedCtds = ee.FeatureCollection(cloud_Main + "Cloud_Temp/" // Testing.
+  + "groupedCLs_90m_90mGroupedMedCtds");
+
+var groupedCLs_180m_90mGroupedMedCtds = ee.FeatureCollection(cloud_Main + "Cloud_Temp/" // Testing.
+  + "groupedCLs_180m_90mGroupedMedCtds");
+
+
+// Locally longest transects.
+var extractedLongestCLs_90m = ee.FeatureCollection(cloud_Main + "Cloud_Temp/" // Testing.
+  + "extractedLongestCLs_LowestCF_HighestNonFRidge");
+
+var extractedLongestCLs_180m = ee.FeatureCollection(cloud_Main + "Cloud_Temp/" // Testing.
+  + "extractedLongestCLs_LowestCF_HighestNonFRidge_180m");
+
+// print("extractedLongestCLs_90m", extractedLongestCLs_90m.size())
+// print("extractedLongestCLs_180m", extractedLongestCLs_180m.size())
+
+
+// Grouped by mid-sections.
+var selected_LongestCLs_midHalf_90m = ee.FeatureCollection(cloud_Main + "Cloud_Temp/" // Testing.
+  + "selected_LongestCLs_midHalf_90m");
+
+var selected_LongestCLs_midOneThird_90m = ee.FeatureCollection(cloud_Main + "Cloud_Temp/" // Testing.
+  + "selected_LongestCLs_midOneThird_90m");
+
+var selected_LongestCLs_midQuarter_90m = ee.FeatureCollection(cloud_Main + "Cloud_Temp/" // Testing.
+  + "selected_LongestCLs_midQuarter_90m");
+
+var buffered_LongestCLs_midQuarter_90m = selected_LongestCLs_midQuarter_90m.map(function(CL) {
+  return CL.buffer(45);
+});
+
+
+// var selected_LongestCLs_midHalf_180m = ee.FeatureCollection(cloud_Main + "Cloud_Temp/" // Testing.
+//   + "selected_LongestCLs_midHalf_180m");
+
+// var selected_LongestCLs_midQuarter_180m = ee.FeatureCollection(cloud_Main + "Cloud_Temp/" // Testing.
+//   + "selected_LongestCLs_midQuarter_180m");
+
+
+// print("selected_LongestCLs_midHalf_90m", selected_LongestCLs_midHalf_90m.size())
+// print("selected_LongestCLs_midOneThird_90m", selected_LongestCLs_midOneThird_90m.size(),
+//   selected_LongestCLs_midOneThird_90m.first())
+// print("selected_LongestCLs_midQuarter_90m", selected_LongestCLs_midQuarter_90m.size())
+
+// print("selected_LongestCLs_midHalf_180m", selected_LongestCLs_midHalf_180m.size())
+// print("selected_LongestCLs_midQuarter_180m", selected_LongestCLs_midQuarter_180m.size())
+
+
+var selectedCLs_largestElvRange_midQuarter_90m = ee.FeatureCollection(cloud_Main + "Cloud_Temp/" // Testing.
+  + GATE.groupedCLs_fileName);
+
+var selectedCLs_largestElvRange_midOneThird_90m = ee.FeatureCollection(cloud_Main + "Cloud_Temp/" // Testing.
+  + "groupedTransectCLs_90mBuffered_midOneThirds");
+
+print("selectedCLs_largestElvRange_midQuarter_90m", selectedCLs_largestElvRange_midQuarter_90m.size())
+
+print("selectedCLs_largestElvRange_midOneThird_90m", selectedCLs_largestElvRange_midOneThird_90m.size())
+
+
+if (true) { // true OR false.
+  //// Visualization.
+  Map.setOptions("satellite");
+  
+  Map.centerObject(AOI, 13); 
+  
+  Map.addLayer(newCATE, {palette: "FFA500"}, "New CATE", false, 0.5);
+  
+  Map.addLayer(distBuffered_PxCtds, {color: "00FFFF"}, "Medial Axis Buffer", false, 0.5);
+  
+  // Map.addLayer(medialAxis_PxCtds, {color: "FF0000"}, "Medial Axis Points", false);
+  
+  // Map.addLayer(CFpts, {color: "00FF00"}, "CFpts", false);
+  
+  // Map.addLayer(NonFpts, {color: "0000FF"}, "NonFpts", false);
+  
+  
+  // Map.addLayer(LowestCFpts, {color: "00FF00"}, 
+  //   "LowestCFpts", true);
+  
+  // Map.addLayer(HighestNonFRidgePts, {color: "0000FF"}, 
+  //   "HighestNonFRidgePts", true);
+  
+  
+  var color;
+  
+  
+  // Raw endpoints.
+  var vis = false;
+  
+  Map.addLayer(transectCLs, {color: "FFA500"}, "Raw centerlines", vis);
+  
+  
+  var vis = false;
+  
+  Map.addLayer(midHalfCLs, {color: "FF0000"}, "Mid-segments (1/2)", vis);
+  
+  Map.addLayer(midOneThirdCLs, {color: "0000FF"}, "Mid-segments (1/3)", vis);
+  
+  Map.addLayer(midQuarterCLs, {color: "00FF00"}, "Mid-segments (1/4)", vis);
+  
+  
+  // // 45 m.
+  // var color = "FF00FF";
+  
+  // Map.addLayer(grouped_CFpts_45m, {color: color}, "grouped_CFpts_45m", false);
+  
+  // Map.addLayer(grouped_NonFpts_45m, {color: color}, "grouped_NonFpts_45m", false);
+  
+  // Map.addLayer(transectCLs_45m, {color: color}, "transectCLs_45m", true);
+  
+  
+  // // 90 m.
+  // color = "00FF00";
+  
+  // Map.addLayer(grouped_CFpts_90m, {color: color}, "grouped_CFpts_90m", false);
+  
+  // Map.addLayer(grouped_NonFpts_90m, {color: color}, "grouped_NonFpts_90m", false);
+  
+  // Map.addLayer(transectCLs_90m, {color: color}, "transectCLs_90m", false);
+  
+  
+  // // 180 m.
+  // color = "FFFF00";
+  
+  // Map.addLayer(grouped_CFpts_180m, {color: color}, "grouped_CFpts_180m", false);
+  
+  // Map.addLayer(grouped_NonFpts_180m, {color: color}, "grouped_NonFpts_180m", false);
+  
+  // Map.addLayer(transectCLs_180m, {color: color}, "transectCLs_180m", false);
+  
+  
+  // // 300 m.
+  // color = "FFA500";
+  
+  // Map.addLayer(grouped_CFpts_300m, {color: color}, "grouped_CFpts_300m", false);
+  
+  // Map.addLayer(grouped_NonFpts_300m, {color: color}, "grouped_NonFpts_300m", false);
+  
+  // Map.addLayer(transectCLs_300m, {color: color}, "transectCLs_300m", true);
+  
+  
+  // // Grouped transects.
+  // var vis = false;
+  
+  // Map.addLayer(groupedCLs_90m_rawMedCtds, {color: "FFFF00"}, 
+  //   "groupedCLs_90m_rawMedCtds", vis);
+  
+  // Map.addLayer(groupedCLs_180m_rawMedCtds, {color: "00FFFF"}, 
+  //   "groupedCLs_180m_rawMedCtds", vis);
+  
+  // Map.addLayer(groupedCLs_90m_90mGroupedMedCtds, {color: "FF00FF"}, 
+  //   "groupedCLs_90m_90mGroupedMedCtds", vis);
+  
+  // Map.addLayer(groupedCLs_180m_90mGroupedMedCtds, {color: "0000FF"}, 
+  //   "groupedCLs_180m_90mGroupedMedCtds", vis);
+  
+  
+  var vis = false;
+  
+  Map.addLayer(extractedLongestCLs_90m, {color: "FF0000"}, 
+    "Centerline centroids grouped (90m)", vis);
+  
+  Map.addLayer(extractedLongestCLs_180m, {color: "00FF00"}, 
+    "Centerline centroids grouped (180m)", vis);
+  
+  
+  Map.addLayer(buffered_LongestCLs_midQuarter_90m, {color: "00FFFF"}, 
+    "Buffered longest centerlines (1/4 mid-segments grouped)", false);
+  
+  
+  var vis = false;
+  
+  Map.addLayer(selected_LongestCLs_midQuarter_90m, {color: "FF0000"}, 
+    "Longest centerlines (1/4 mid-segments grouped)", vis);
+  
+  Map.addLayer(selected_LongestCLs_midOneThird_90m, {color: "00FF00"}, 
+    "Longest centerlines (1/3 mid-segments grouped)", false);
+  
+  
+  var vis = false;
+  
+  Map.addLayer(selected_LongestCLs_midHalf_90m, {color: "0000FF"}, 
+    "Longest centerlines (1/2 mid-segments grouped)", vis);
+  
+  
+  // Map.addLayer(selected_LongestCLs_midQuarter_180m, {color: "00FF00"}, 
+  //   "selected_LongestCLs_midQuarter_180m", vis);
+  
+  // Map.addLayer(selected_LongestCLs_midHalf_180m, {color: "FFFF00"}, 
+  //   "selected_LongestCLs_midHalf_180m", vis);
+  
+  
+  var vis = false;
+  
+  Map.addLayer(selectedCLs_largestElvRange_midQuarter_90m, {color: "FFFF00"}, 
+    "Steepest centerlines (1/4 mid-segments grouped)", true, 1);
+
+  Map.addLayer(selectedCLs_largestElvRange_midOneThird_90m, {color: "0000FF"}, 
+    "Steepest centerlines (1/3 mid-segments grouped)", true, 1);
+
+  
+  Map.addLayer(oldCLs, {color: "FFFFFF"}, "Old centerlines", false);
+  
+  
+  Map.addLayer(CL_centroids, {color: "FFFF00"}, "Centerline centroids", false);
+}

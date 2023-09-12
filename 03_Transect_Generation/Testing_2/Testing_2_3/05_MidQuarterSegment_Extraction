@@ -1,0 +1,56 @@
+/**
+ * Introduction:
+ * 1) Extract the mid-quarter segment around the centroid 
+ *  of each transect centerline. 
+ * 
+ * Update: 9/23/2021.
+ * 
+ * Runtime: 3m.
+ */
+
+
+/* Load module(s). */
+
+var IMG = require("users/ChenyangWei/Public:Modules/Image_Analysis&Processing");
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+
+
+/**** The following section needs to be updated. ****/
+
+// Set the area of interest.
+var AOI = GATE.AOI_Alps; // Testing.
+
+// Set the working directory.
+var wd_Main = GATE.wd_Europe;
+
+// Set the cloud asset directory.
+var cloud_Main = GATE.cloud_Europe;
+
+/**** The section above needs to be updated. ****/
+
+
+/* Data and function preparation. */
+
+// Load the transect centerlines.
+var TransectCLs = ee.FeatureCollection(cloud_Main + "Cloud_Temp/" // Testing.
+  + GATE.TransectCLs_fileName);
+
+
+/* Extract the mid-quarter segment of each transect centerline. */
+
+var midQuarterSegments = GATE.extractMidQuarterSegments(TransectCLs);
+
+
+if (true) { // true OR false.
+  
+  var fileName = GATE.midQuarters_fileName;
+  
+  //// Export the result(s).
+  Export.table.toAsset({
+    collection: midQuarterSegments, 
+    description: fileName, 
+    assetId: cloud_Main + "Cloud_Temp/" // Testing.
+      + fileName
+  });
+}
+

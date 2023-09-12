@@ -1,0 +1,97 @@
+/**
+ * Introduction: 
+ * 1) Create a 10-pixel (10 * 30-m) buffer zone around the new CATE 
+ *  because the focal kernel is a 10-pixel circle
+ *  in the following NDVI-smoothing operation.
+ * 
+ * Update: 7/26/2021.
+ * 
+ * Runtime: 35m.
+ */
+
+
+/* Load the required dataset(s). */
+
+// Set the 10-km buffered bounding box of the study domain.
+var euroAOI = ee.Geometry.Rectangle({
+  coords: [[-31.546113802033677, 34.71204055896572],
+    [61.96974908940637, 71.27408645016632]],
+  geodesic: false
+});
+//// Need to update.
+
+
+// Target projection.
+var targetPrj = {
+  crs: "EPSG:4326",
+  scale: 30
+};
+
+// Set the working directory.
+var wdEuro = "users/ChenyangWei/Europe_ATE/";
+//// Need to update.
+
+
+// Function to print the image information.
+function printImgInfo(name, image) {
+  print(name,
+    image.bandTypes(),
+    image.projection().crs(),
+    image.projection().nominalScale());
+}
+
+// Load the new CATE.
+var newCATE = ee.Image(wdEuro + "Climate-Based_ATE/" 
+  + "30mNewCATE_gteSmd10kmCForestElv_3kmCForestBuffer_AOI");
+//// Need to update.
+
+
+/* Create a 10-px (300-m) buffer zone around the new CATE. */
+
+// Determine the size of neighborhood.
+var neighborhood = 20; 
+
+// Calculate the distance to the new CATE at each pixel in the neighborhood.
+var CATEdist = newCATE.fastDistanceTransform({
+  neighborhood: neighborhood,
+  units: "pixels",
+  metric: "squared_euclidean"
+}).sqrt() // Get the distance in the number of 30-m pixels.
+  .reproject(targetPrj);
+
+// Generate a 10-px (300-m) buffer of the new CATE.
+var distThres = 10; 
+
+var bufferedCATE = CATEdist.lte(distThres)
+  .selfMask()
+  .rename("NewCATE_300mBuffered"); 
+
+
+if (false) {
+  // true OR false.
+  printImgInfo("bufferedCATE:", bufferedCATE);
+  
+} else {
+  /* Export the result. */
+  
+  var fileName = "300mBuffered_30mNewCATE_AOI"; 
+
+  Export.image.toAsset({
+    image: bufferedCATE,
+    description: fileName, 
+    
+    assetId: wdEuro 
+      + "Climate-Based_ATE/"
+      + fileName, 
+    //// Need to update.
+    
+    crs: "EPSG:4326",
+    scale: 30,
+    
+    region: euroAOI,
+    //// Need to update.
+    
+    maxPixels: 1e13
+  }); 
+}
+

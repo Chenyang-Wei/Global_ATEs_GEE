@@ -1,0 +1,217 @@
+/**
+ * Introduction:
+ * 1) Generate a line string from each lowest lower closed forest pixel 
+ *  to its nearest highest upper non-forested pixel 
+ *  within each study area segment based on the distance to ridge and valley.
+ * 
+ * Update: 8/13/2021.
+ * 
+ * Runtime: 1m.
+*/
+
+
+/* Load module(s). */
+var IMG = require("users/ChenyangWei/Public:Modules/Image_Analysis&Processing");
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var VIS = require("users/ChenyangWei/Public:Modules/Visualization");
+
+
+/* Data preparation. */
+
+// Extract the most detailed (level 12) HydroSHEDS basin.
+var POI = ee.Geometry.Point([10.35857, 46.51679]);
+var basin = ee.Feature(ee.FeatureCollection("WWF/HydroSHEDS/v1/Basins/hybas_12")
+  .filterBounds(POI).first());
+
+// Working directory.
+var wd_Temp = "users/ChenyangWei/Temp/";
+
+// Target projection.
+var targetPrj = IMG.WGS84_30m;
+
+// Segmentation results.
+var CL_filled = ee.Image(wd_Temp + "CL_filled");
+var CL_notFilled = ee.Image(wd_Temp + "CL_notFilled");
+
+// Land cover datasets.
+var CF_lower = ee.Image(wd_Temp + "CF_lower");
+var nonF_upper = ee.Image(wd_Temp + "nonF_upper");
+
+// Transect centerlines (CL-filled).
+var Old_CL = ee.FeatureCollection(wd_Temp + "TransectCenterLines_CLfilled");
+
+// Pixels of interest.
+// var PxsOI = ee.Image(wd_Temp + "lowCFpixel_highNonFpixel_2");
+var PxsOI = ee.Image(wd_Temp + "lowCFpixel_highNonFpixel");
+
+var CLfilled_PxsOI_ElvCoords = CL_filled
+  .addBands(PxsOI)
+  .reproject(targetPrj);
+
+// IMG.printImageInformation("CLfilled_PxsOI_ElvCoords:", CLfilled_PxsOI_ElvCoords);
+
+// Extract the geometry of each basin.
+var basinGeom = basin.geometry();
+
+var segmentPxsOI = CLfilled_PxsOI_ElvCoords.reduceToVectors({
+  reducer: ee.Reducer.toList(), 
+  geometry: basinGeom,
+  maxPixels: 1e13,
+  crs: "EPSG:4326",
+  scale: 30,
+  geometryType: "polygon",
+  eightConnected: false // Only pixels that share an edge are considered adjacent.
+});
+
+var selectedSegments = segmentPxsOI.filter(ee.Filter.and(
+  ee.Filter.neq("nonF_Elv", []),
+  ee.Filter.neq("CF_Elv", [])));
+
+
+function generateCFpts(Coords_Elv) {
+  var Coords = ee.List(Coords_Elv).get(0);
+  var CF_Elv = ee.List(Coords_Elv).get(1);
+  
+  var pt = ee.Geometry.Point(Coords);
+  
+  var CF_Long = ee.List(Coords).get(0);
+  var CF_Lat = ee.List(Coords).get(1);
+  
+  var ftr = ee.Feature(pt).set({
+    CF_Long: CF_Long,
+    CF_Lat: CF_Lat,
+    CF_Elv: CF_Elv
+  });
+  
+  return ftr;
+}
+
+function generateNonFpts(Coords_Elv) {
+  var Coords = ee.List(Coords_Elv).get(0);
+  var nonF_Elv = ee.List(Coords_Elv).get(1);
+  
+  var pt = ee.Geometry.Point(Coords);
+  
+  var nonF_Long = ee.List(Coords).get(0);
+  var nonF_Lat = ee.List(Coords).get(1);
+  
+  var ftr = ee.Feature(pt).set({
+    nonF_Long: nonF_Long,
+    nonF_Lat: nonF_Lat,
+    nonF_Elv: nonF_Elv
+  });
+  
+  return ftr;
+}
+
+
+// Define a spatial filter, with distance 10 km.
+var distFilter = ee.Filter.withinDistance({
+  distance: 1e4,
+  leftField: ".geo",
+  rightField: ".geo"
+});
+
+
+// Define the join.
+var saveBestJoin = ee.Join.saveBest({
+  matchKey: "Nearest_Pt",
+  measureKey: "CL_length" // Distance.
+});
+
+
+function generateTransectCLs(pts_Pair) {
+  // Extract the two points of interest.
+  var nearestPt = ee.Feature(pts_Pair.get("Nearest_Pt"));
+  
+  var primaryPt_Geom = pts_Pair.geometry();
+  var nearestPt_Geom = nearestPt.geometry();
+  
+  // Generate the centerline.
+  var centerLine = ee.Feature(ee.Geometry.LineString([primaryPt_Geom, nearestPt_Geom]))
+    .copyProperties({
+      source: pts_Pair, 
+      exclude: ["Nearest_Pt"]
+    }).copyProperties({
+      source: nearestPt
+    });
+  
+  return centerLine;
+}
+
+function generateCLbySegment(segment) {
+  // Convert the pixels of interest to point features.
+  var CF_Long = segment.get("CF_Long");
+  var CF_Lat = segment.get("CF_Lat");
+  var CF_Elv = segment.get("CF_Elv");
+  
+  var CF_coords_Elv = ee.List(CF_Long).zip(CF_Lat)
+    .zip(CF_Elv);
+  
+  
+  var nonF_Long = segment.get("nonF_Long");
+  var nonF_Lat = segment.get("nonF_Lat");
+  var nonF_Elv = segment.get("nonF_Elv");
+  
+  var nonF_coords_Elv = ee.List(nonF_Long).zip(nonF_Lat)
+    .zip(nonF_Elv);
+
+  
+  var CF_pts = CF_coords_Elv.map(generateCFpts);
+  var nonF_pts = nonF_coords_Elv.map(generateNonFpts);
+  
+  
+  // Apply the join.
+  var CF_NonF_ptsPair = saveBestJoin.apply(CF_pts, nonF_pts, distFilter);
+  
+  // var CF_NonF_ptsPair = saveBestJoin.apply(nonF_pts, CF_pts, distFilter);
+
+  // Transect centerline.
+  var transectCLs = CF_NonF_ptsPair.map(generateTransectCLs);
+  
+  return transectCLs
+}
+
+var CLs = selectedSegments.map(generateCLbySegment).flatten();
+
+// print(CLs.size())
+
+
+
+if (true) { // true OR false.
+
+  // Visualization.
+  Map.setOptions("satellite");
+  
+  Map.centerObject(POI, 14); 
+  
+  Map.addLayer(basin, {color: "FFFFFF"}, "basin", false);
+  
+  Map.addLayer(nonF_upper.selfMask(), {palette: "0000FF"}, "nonF_upper", true);
+  
+  Map.addLayer(CF_lower.selfMask(), {palette: "00FF00"}, "CF_lower", true);
+  
+  Map.addLayer(CL_filled.selfMask(), {palette: "00FFFF"}, "CL_filled", true, 0.5);
+  
+  Map.addLayer(CL_notFilled.selfMask(), {palette: "FFFF00"}, "CL_notFilled", false, 0.5);
+  
+  Map.addLayer(Old_CL, {color: "FFFF00"}, "Old_CL", true);
+  
+  Map.addLayer(PxsOI.select("CF_Elv"), {palette: "FF0000"}, "lowCFpixel", true);
+  
+  Map.addLayer(PxsOI.select("nonF_Elv"), {palette: "00FFFF"}, "highNonFpixel", true);
+  
+  Map.addLayer(CLs, {color: "0000FF"}, "CLs", true);
+  
+  
+} else {
+  // Export the result.
+  var fileName = "TransectCenterLines_fromCFtoNonF";
+  
+  Export.table.toAsset({
+    collection: CLs, 
+    description: fileName, 
+    assetId: wd_Temp
+      + fileName
+  });
+}

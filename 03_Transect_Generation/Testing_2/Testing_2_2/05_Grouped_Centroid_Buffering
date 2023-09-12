@@ -1,0 +1,55 @@
+/**
+ * Introduction:
+ * 1) Buffer the grouped pixel centroids along the medial axis
+ *  by the averagey absolute distance to the nearest ridges/valleys.
+ * 
+ * Update: 9/17/2021.
+ * 
+ * Runtime: 2m.
+ */
+
+
+/* Load module(s). */
+
+var IMG = require("users/ChenyangWei/Public:Modules/Image_Analysis&Processing");
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+
+
+/**** The following section needs to be updated. ****/
+
+// Set the area of interest.
+var AOI = GATE.AOI_Alps; // Testing.
+
+// Set the working directory.
+var wd_Main = GATE.wd_Europe;
+
+// Set the cloud asset directory.
+var cloud_Main = GATE.cloud_Europe;
+
+/**** The section above needs to be updated. ****/
+
+
+/* Data and function preparation. */
+
+// Load the grouped pixel centroids along the medial axis.
+var grouped_PxCtds = ee.FeatureCollection(cloud_Main + "Cloud_Temp/" // Testing.
+  + GATE.groupedPxCtds_fileName + "_90m");
+
+
+/* Buffer the grouped pixel centroids along the medial axis
+  by the averagey absolute distance to the nearest ridges/valleys. */
+
+var buffered_GroupedPxCtds = GATE.meanAbsDist_BufferGroupedMedPts(grouped_PxCtds);
+
+
+if (true) { // true OR false.
+
+  //// Export the result(s).
+  Export.table.toAsset({
+    collection: buffered_GroupedPxCtds, 
+    description: GATE.buffered_GroupedPxCtds_fileName + "_90m", 
+    assetId: cloud_Main + "Cloud_Temp/" // Testing.
+      + GATE.buffered_GroupedPxCtds_fileName + "_90m"
+  });
+}
+

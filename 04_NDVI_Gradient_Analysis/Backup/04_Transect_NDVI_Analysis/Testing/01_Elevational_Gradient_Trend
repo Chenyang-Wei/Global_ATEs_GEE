@@ -1,0 +1,240 @@
+/**
+ * Introduction:
+ * 1) Estimate the temporal trend of the elevational gradient of NDVIs in each transect.
+ * 
+ * Update: 9/24/2021.
+ * 
+ * Runtime: 13m.
+ */
+
+
+/* Load module(s). */
+
+var IMG = require("users/ChenyangWei/Public:Modules/Image_Analysis&Processing");
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var VIS = require("users/ChenyangWei/Public:Modules/Visualization");
+
+
+
+/**** The following section needs to be updated. ****/
+
+// Set the area of interest.
+var AOI = GATE.AOI_Alps;
+
+// Set the working directory.
+var wd_Main = GATE.wd_Europe;
+
+// Set the cloud asset directory.
+var cloud_Main = GATE.cloud_Europe;
+
+/**** The section above needs to be updated. ****/
+
+
+
+/* Data and function preparation. */
+
+// Load the new CATE.
+var newCATE = ee.Image(wd_Main + "Climate-Based_ATE/" 
+  + GATE.newCATE_fileName);
+
+// Target projection.
+var targetPrj = IMG.WGS84_30m;
+
+// Load the selected basins.
+var selectedBasins = ee.FeatureCollection(wd_Main + "Temp_2/" // Testing.
+  + GATE.selectedBasins_fileName);
+
+// Load the transect centerlines.
+var centerLines = ee.FeatureCollection(cloud_Main + "Cloud_Temp/" // Testing.
+  + GATE.groupedCLs_fileName);
+
+// ALOS elevation (Version 3.2, released in January 2021) in the AOI.
+var ALOSelv = GATE.load_ALOSelevation(AOI, targetPrj);
+
+// Extract elevation within the buffered new CATE.
+var newCATEelv = ALOSelv.updateMask(newCATE);
+
+
+/* Load the NDVI images. */
+
+// Function to read the NDVI images of continents except North America.
+var NDVIfolder = GATE.annualNDVI_folderName;
+
+var periods = GATE.periodList;
+
+var readNDVIimages_NonNorthAmerica = function(wd) {
+  // Determine the path of NDVI images.
+  var NDVIpath = wd
+    + "ATEI_Estimation/"
+    + NDVIfolder;
+  
+  // Load the NDVI image of the first period.
+  var firstIndex = 0;
+  
+  var firstYear = periods[firstIndex][0];
+  var lastYear = periods[firstIndex][1];
+  
+  var fileName = "smdNDVI_" + firstYear + "to" + lastYear;
+  
+  var firstPeriod_NDVIimg = ee.Image(NDVIpath + fileName);
+    
+  var all_NDVIimages = firstPeriod_NDVIimg;
+  
+  // Load the NDVI image of each remaining period.
+  for (var i = firstIndex + 1; i < periods.length; i++) {
+    firstYear = periods[i][0];
+    lastYear = periods[i][1];
+    
+    fileName = "smdNDVI_" + firstYear + "to" + lastYear;
+    
+    var period_NDVIimg = ee.Image(NDVIpath + fileName);
+    
+    all_NDVIimages = all_NDVIimages.addBands(period_NDVIimg);
+  }
+  
+  // Identify the NDVI within the new CATE.
+  return all_NDVIimages.updateMask(newCATE);
+};
+
+var NDVIimages = readNDVIimages_NonNorthAmerica(wd_Main);
+
+// IMG.printImgInfo("NDVIimages:", NDVIimages);
+
+
+/* Buffer the transect centerlines. */
+
+function buffering(CL) {
+  return CL.buffer(45);
+}
+
+var transects = centerLines.map(buffering);
+
+
+/* Determine the trend of the elevational gradient of NDVI in each transect. */
+
+var transects_withID = transects.select(["CL_ID"]); // .limit(10);
+
+print("transects_withID:", transects_withID.first(),
+  transects_withID.size());
+
+// Construct an imageCollection for regression.
+var elvNDVI_imgCol = ee.ImageCollection.fromImages(NDVIimages.bandNames().map(function(bandName) {
+  var annualNDVI = NDVIimages.select([bandName]);
+  
+  var elvNDVI = newCATEelv.addBands(annualNDVI);
+  
+  return elvNDVI;
+}));
+
+// print("elvNDVI_imgCol:", elvNDVI_imgCol);
+
+
+// Elevational gradient of the NDVI in each transect.
+var NDVI_elvGradient = elvNDVI_imgCol.map(function(annual_ElvNDVI) {
+  var annualNDVI_bandName = annual_ElvNDVI.bandNames().get(1);
+  
+  var year = ee.String(annualNDVI_bandName).slice(8, 12);
+  
+  // var offsetName = ee.String("offs_").cat(year);
+  // var slopeName = ee.String("slope_").cat(year);
+  
+  var annual_SensSlope = annual_ElvNDVI.reduceRegions({
+    collection: transects_withID, 
+    reducer: ee.Reducer.sensSlope(), // .setOutputs([slopeName, offsetName]), 
+    // The inputs are expected to be x data followed by y data.
+    // It returns two double values; the estimated slope and the offset.
+    scale: targetPrj.scale, 
+    crs: targetPrj.crs
+  });
+  
+  // return annual_SensSlope;
+  
+  // Convert the "year" string to a number.
+  var yearNum = ee.Number.parse(year);
+  
+  var annual_SensSlope_withYear = annual_SensSlope.map(function(feature) {
+    return feature.set("Year", yearNum);
+  });
+  
+  return annual_SensSlope_withYear;
+});
+
+NDVI_elvGradient = NDVI_elvGradient.flatten();
+
+
+// Trend of the elevational gradient in each transect.
+var elvGradientTrend = NDVI_elvGradient.reduceColumns({
+  selectors: ["Year", "slope", "CL_ID"],
+  reducer: ee.Reducer.sensSlope().group({
+    groupField: 2,
+    groupName: "CL_ID",
+  })
+});
+
+// print("elvGradientTrend:", elvGradientTrend);
+
+elvGradientTrend = ee.List(elvGradientTrend.get("groups")).map(function(CL) {
+  var CL_dictionary = ee.Dictionary(CL);
+  
+  return ee.Feature(null).set({
+    CL_ID: CL_dictionary.get("CL_ID"),
+    ElvGradTnd: CL_dictionary.get("slope")
+  });
+});
+
+elvGradientTrend = ee.FeatureCollection(elvGradientTrend);
+
+// print("elvGradientTrend:", elvGradientTrend);
+
+
+// Combine the result with the original transects.
+var filter = ee.Filter.equals({
+  leftField: "CL_ID",
+  rightField: "CL_ID"
+});
+
+// Define the join.
+var keyName = "elvGradientTrend";
+
+var saveFirstJoin = ee.Join.saveFirst({
+  matchKey: keyName
+});
+
+// Apply the join.
+var transects_withElvGradTnd = saveFirstJoin.apply(transects, elvGradientTrend, filter);
+
+transects_withElvGradTnd = transects_withElvGradTnd.map(function(joined) {
+  var ElvGradTnd = ee.Feature(joined.get(keyName))
+    .get("ElvGradTnd");
+  
+  var properties = joined.propertyNames().remove(keyName);
+  
+  return joined.select(properties).set("ElvGradTnd", ElvGradTnd);
+});
+
+// print("transects_withElvGradTnd:", transects_withElvGradTnd);
+
+
+if (false) { // true OR false.
+  //// Visualization.
+  
+  VIS.centerEurope(13);
+  
+  var vis = true;
+  
+  Map.addLayer(NDVIimages.select("smdNDVI_1984"), VIS.NDVI_vis, "smdNDVI_1984", vis);
+  Map.addLayer(NDVIimages.select("smdNDVI_2000"), VIS.NDVI_vis, "smdNDVI_2000", vis);
+  Map.addLayer(NDVIimages.select("smdNDVI_2020"), VIS.NDVI_vis, "smdNDVI_2020", vis);
+
+} else {
+  var fileName = GATE.groupedCLs_fileName + "__withElvGradTnd";
+  
+  //// Export the result(s).
+  Export.table.toAsset({
+    collection: transects_withElvGradTnd, 
+    description: fileName, 
+    assetId: cloud_Main + "Cloud_Temp/" // Testing.
+      + fileName
+  });
+}
+

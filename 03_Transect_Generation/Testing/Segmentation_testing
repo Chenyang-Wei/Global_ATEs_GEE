@@ -1,0 +1,375 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var basins = ee.FeatureCollection("WWF/HydroSHEDS/v1/Basins/hybas_12");
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+/**
+ * Introduction:
+ * 1) Create a transect in each buffer of the grouped medial axis centroid.
+ * 
+ * Update: 9/3/2021.
+ * 
+ * Runtime: m.
+ */
+
+
+/* Load module(s). */
+var IMG = require("users/ChenyangWei/Public:Modules/Image_Analysis&Processing");
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+
+
+/* Data preparation. */
+
+
+/****** The following section needs to be updated. ******/
+
+// Area of interest.
+var AOI = GATE.AOI_Europe;
+
+// Working directory.
+var wd_Main = GATE.wd_Europe;
+
+/****** The section above needs to be updated. ******/
+
+
+// Target projection.
+var targetPrj = IMG.WGS84_30m;
+
+// Function to print the image information.
+var printImgInfo = IMG.printImageInformation;
+
+// Function to extract mountain ridge landforms.
+var extractRidges = function(landforms) {
+  var valleys = landforms.lte(14);
+  // var valleys = landforms.lte(24);
+  
+  return valleys;
+};
+
+// Load the new CATE.
+var newCATEname = GATE.newCATE_fileName;
+
+var newCATE = ee.Image(wd_Main + "Climate-Based_ATE/" 
+  + newCATEname);
+
+
+// ALOS elevation (Version 3.2, released in January 2021) in the AOI.
+var ALOSelv = ee.ImageCollection('JAXA/ALOS/AW3D30/V3_2').select('DSM')
+  .mosaic()
+  .reproject(targetPrj);
+
+// Get the aspect (in degrees).
+var aspect = ee.Terrain.aspect(ALOSelv);
+
+
+// Define a circular kernel of 10 pixels.
+var Kn = ee.Kernel.circle({
+  radius: 5,
+  units: "pixels"
+}); 
+
+// Smooth the annual NDVI.
+var smd_aspect = aspect.reduceNeighborhood({
+  // The median reducer is less smooth than the mean reducer, 
+  //  but the former one makes the spatial variation of NDVI more abrupt (i.e., less gradual),
+  //  which then provides a sharper gradient (i.e., with a greater magnitude).
+  reducer: ee.Reducer.mean(),
+  kernel: Kn,
+  skipMasked: false // Fill in the masked water body with the smoothed NDVI.
+}).reproject(targetPrj); // Reproject to the target projection.
+
+var aspectRange = 45;
+var halfRange = aspectRange / 2;
+print(halfRange)
+
+aspect = smd_aspect
+
+function classifyAspect_nonNorth(classNo) {
+  // classNo: 1 ~ 7.
+  // Reference: https://gisgeography.com/aspect-map/.
+  var classNum = ee.Number(classNo);
+  
+  // var classImg = ee.Image.constant(classNum);
+  
+  var lowerLimit = classNum.subtract(1).multiply(aspectRange).add(halfRange);
+  var upperLimit = classNum.multiply(aspectRange).add(halfRange);
+  
+  // var lowerLimit = (classNo - 1) * 45 + 22.5;
+  // var upperLimit = classNo * 45 + 22.5;
+  
+  // var lowerLimit_Img = ee.Image.constant(lowerLimit);
+  // var upperLimit_Img = ee.Image.constant(upperLimit);
+  
+  var qualified = aspect.gte(lowerLimit)
+    .and(aspect.lt(upperLimit));
+  
+  // var classified = classImg.updateMask(qualified);
+  var classified = qualified.multiply(classNum);
+  
+  return classified.float();
+  // return [lowerLimit, upperLimit];
+}
+// aspect = ee.ImageCollection.fromImages([
+//   ])
+
+var northClass = 8;
+
+var north_qualified_1 = aspect.gte(0)
+    .and(aspect.lt(halfRange));
+
+var north_qualified_2 = aspect.gte(360 - halfRange)
+    .and(aspect.lte(360));
+
+// var northAspect_1 = northClass.updateMask(north_qualified_1);
+
+// var northAspect_2 = northClass.updateMask(north_qualified_2);
+
+var northAspect_1 = north_qualified_1.multiply(northClass);
+
+var northAspect_2 = north_qualified_2.multiply(northClass);
+
+
+var aspectImg = ee.ImageCollection.fromImages(
+  ee.List.sequence(1, 7).map(classifyAspect_nonNorth)
+    .add(northAspect_1).add(northAspect_2)
+).sum();
+
+// var aspectImg = classifyAspect_nonNorth(1);
+// print(aspectImg)
+// var aspectImg = classifyAspect_nonNorth(2);
+
+print(aspectImg)
+
+/* Pre-process the ALOS landform dataset. */
+
+// The landform dataset is based on the 30m "AVE" band of JAXA's ALOS DEM 
+//  (available in EE as JAXA/ALOS/AW3D30_V1_1).
+//  There are stripes of invalid data in areas over 60 degrees in latitude.
+var rawLF = ee.Image('CSP/ERGo/1_0/Global/ALOS_landforms').select('constant')
+  .reproject(targetPrj);
+
+// Remove the high-latitude stripes of invalid landforms  
+//  in the landform dataset (based on the ALOS DEM V1.1).
+var ALOSv11 = ee.Image("JAXA/ALOS/AW3D30_V1_1").select("AVE")
+  .reproject(targetPrj);
+
+var LF_noInvaid = rawLF.updateMask(ALOSv11.mask());
+
+
+/* Extract the landforms of mountain ridges both inside and outside the new CATE.
+  Including: peak/ridge (warm/normal/cool) and mountain/divide. */
+
+// Extract the mountain ridge pixels.
+var ridge = extractRidges(LF_noInvaid);
+
+// Non-ridge pixels.
+var nonRidge = ridge.not();
+
+// Valley
+var extractValleyLandforms = function(landforms) {
+  var valleys = landforms.gte(41);
+  
+  return valleys;
+};
+
+var valley = extractValleyLandforms(LF_noInvaid);
+
+var RV = ridge.add(valley); 
+
+/* Caculate the distance to the extracted ridge pixels 
+  at each pixel in the new CATE. */
+
+// The reasons for choosing the ridge pixels rather than the valley ones:
+//  1) The ridge pixels are mostly located at the center of local study area and 
+//    are surrounded by the valley pixels. 
+//  2) The distribution pattern of the ridge pixels is more regular than 
+//    that of the valley ones.
+//  3) Most valley pixels are not contained in the new CATE due to its generation metric.
+var ridgeDist = ridge.fastDistanceTransform({
+  neighborhood: 1e3,
+  units: "pixels",
+  metric: "squared_euclidean" // Get the distance in the squared number of 30-m pixels.
+}).reproject(targetPrj);
+
+var valleyDist = valley.fastDistanceTransform({
+  neighborhood: 1e3,
+  units: "pixels",
+  metric: "squared_euclidean" // Get the distance in the squared number of 30-m pixels.
+}).reproject(targetPrj);
+
+var rvDist = RV.fastDistanceTransform({
+  neighborhood: 1e3,
+  units: "pixels",
+  metric: "squared_euclidean" // Get the distance in the squared number of 30-m pixels.
+}).reproject(targetPrj);
+
+
+/* Segment the new CATE based on the distance to the ridge pixels. */
+
+// Define a Laplacian, or isotropic-edge-detection kernel.
+var laplacian = ee.Kernel.laplacian8({ 
+  normalize: false 
+});
+
+// Apply the Laplacian edge-detection kernel to detect the boundary of the ridge distance.
+var edgy_ridge = ridgeDist.convolve(laplacian)
+  .reproject(targetPrj);
+
+// Apply the Laplacian edge-detection kernel to detect the boundary of the ridge distance.
+var edgy_valley = valleyDist.convolve(laplacian)
+  .reproject(targetPrj);
+
+var edgy_RV = rvDist.convolve(laplacian)
+  .reproject(targetPrj);
+
+var aspect_edgy = smd_aspect.convolve(laplacian)
+  .reproject(targetPrj);
+
+// Segment the new CATE based on the distance boundary.
+// var segmented = edgy.gt(0)
+var segmented_ridge = edgy_ridge.gt(0)
+var edge_ridge = segmented_ridge.not()
+
+var segmented_valley = edgy_valley.gt(0)
+var edge_valley = segmented_valley.not()
+
+var segmented_RV = edgy_RV.gt(0)
+var edge_RV = segmented_RV.not()
+
+var aspect_Seg = aspect_edgy.gt(0)
+
+// var combined = edgy.lte(0).add(edgy_valley.lte(0))
+
+// // Remove ridge pixels from the segmentation result,
+// //  and extract areas within the new CATE.
+// var ridgeRemoved_newCATE = segmented.updateMask(nonRidge)
+//   .updateMask(newCATE)
+//   .rename("Segmented_newCATE");
+
+var RV_mask = segmented_ridge.add(segmented_valley);
+  
+// var centerLine = RV_mask.selfMask().updateMask(segmented_RV.not());
+var centerLine = RV_mask.eq(2).and(edge_RV);
+// var centerLine = RV_mask.eq(0).or(edge_RV);
+
+
+var CL_dist = centerLine.fastDistanceTransform({
+  neighborhood: 1e3,
+  units: "pixels",
+  metric: "squared_euclidean" // Get the distance in the squared number of 30-m pixels.
+}).reproject(targetPrj);
+
+var edgy_CL = CL_dist.convolve(laplacian)
+  .reproject(targetPrj);
+
+var segmented_CL = edgy_CL.gt(0)
+
+if (true) { // true OR false.
+  // Image information.
+  // printImgInfo("ridgeRemoved_newCATE:", ridgeRemoved_newCATE);
+
+  // Visualization.
+  Map.setOptions("satellite");
+  
+  Map.addLayer(basins, {color: "FFFFFF"}, "basins", false)
+  
+  Map.setCenter(10.35857, 46.51679, 14); 
+  // Map.setCenter(10.46459, 46.52645, 14); 
+  // Map.setCenter(7.3388, 46.013, 13); 
+  
+  Map.addLayer(newCATE, {palette: "00FFFF"}, "newCATE", false);
+  
+  // Map.addLayer(nonRidge.selfMask(), {palette: "00FF00"}, "nonRidge", false);
+  
+  // Map.addLayer(ridgeRemoved_newCATE, {palette: "FFFF00"}, "ridgeRemoved_newCATE", true);
+  
+  Map.addLayer(segmented_valley.selfMask(), {palette: "00FFFF"}, "segmented_valley", false)
+  Map.addLayer(edge_valley.selfMask(), {palette: "FF00FF"}, "edge_valley", false)
+  
+  Map.addLayer(segmented_ridge.selfMask(), {palette: "FF00FF"}, "segmented_ridge", false)
+  Map.addLayer(edge_ridge.selfMask(), {palette: "00FFFF"}, "edge_ridge", false)
+  
+  Map.addLayer(segmented_RV.or(centerLine)
+    .selfMask(), {palette: "FFFF00"}, "segmented_RV", true)
+  Map.addLayer(edge_RV.selfMask(), {palette: "FFFF00"}, "edge_RV", false)
+  
+  Map.addLayer(segmented_CL.selfMask(), {palette: "00FFFF"}, "segmented_CL", false)
+  
+  
+  // Map.addLayer(combined.updateMask(segmented_valley.not()).selfMask(), {palette: "FFFF00"}, "segmented_valley", false)
+  // Map.addLayer(segmented.add(combined).eq(0).selfMask(), {palette: "00FFFF"}, "segmented", false)
+  
+  // Map.addLayer(segmented_valley.add(combined).eq(0).selfMask(), {palette: "FFFF00"}, "segmented_valley", false)
+  // Map.addLayer(segmented.add(combined).eq(0).selfMask(), {palette: "00FFFF"}, "segmented", false)
+  
+  // Map.addLayer(combined.add(segmented).add(segmented_valley), 
+  //   {min: 0, max: 3, palette: "FFFFFF, 0000FF, FFFF00, FF0000"}, "combined_3", false)
+  
+  // Map.addLayer(segmented.add(segmented_valley), 
+  //   {min: 0, max: 2, palette: "0000FF, FFFF00, FF0000"}, "combined_2", true)
+  
+  // Map.addLayer(edgy, {min: -12, max: 12, 
+  //   palette: "0000FF, FFFFFF, FF0000"}, "edgy_ridge", false)
+    
+  // Map.addLayer(combined.add(segmented).add(segmented_valley).gte(2).selfMask(), 
+  //   {palette: "00FFFF"}, "combined", false)
+  
+  // var new_segmented = combined.add(mask).selfMask()
+  //   .updateMask(ridge.not())
+  //   .updateMask(valley.not());
+  
+  // var old_segmented = segmented.selfMask()
+  //   .updateMask(ridge.not());
+  
+  // Map.addLayer(new_segmented, 
+  //   {palette: "00FFFF"}, "new_segmented", false);
+  
+  // Map.addLayer(old_segmented, 
+  //   {palette: "00FF00"}, "old_segmented", false);
+    
+  Map.addLayer(RV_mask.eq(0).selfMask(), 
+    {palette: "FF00FF"}, "RV_mask_0", false)
+
+  Map.addLayer(RV_mask.eq(1).selfMask(), 
+    {palette: "FF0000"}, "RV_mask_1", false)
+
+  Map.addLayer(RV_mask.eq(2).selfMask(), 
+    {palette: "00FFFF"}, "RV_mask_2", false)
+
+  Map.addLayer(RV.selfMask(), {palette: "FF0000"}, "RV", false);
+  
+  Map.addLayer(centerLine.selfMask(), 
+    {palette: "FF0000"}, "center line", true)
+  
+  Map.addLayer(ridge.selfMask(), {palette: "0000FF"}, "ridge", true);
+  
+  Map.addLayer(valley.selfMask(), {palette: "00FF00"}, "valley", true);
+  
+  
+  // Map.addLayer(aspect_edgy.selfMask(), {palette: "FF0000"}, "aspect_edgy", true);
+  // Map.addLayer(aspect_Seg.selfMask(), {palette: "0000FF"}, "aspect_Seg", true);
+  
+  // Map.addLayer(aspect, {min: 0, max: 360, palette: "0000FF, FFFFFF, FF0000"}, "aspect", false);
+  // Map.addLayer(aspectImg, {min: 1, max: 8, palette: "0000FF, FFFFFF, FF0000"}, "aspectImg", true);
+  
+  // Map.addLayer(aspect.eq(-1).selfMask(), {palette: "FF0000"}, "flat", true);
+  
+  // Map.addLayer(smd_aspect, {min: 0, max: 360, palette: "0000FF, FFFFFF, FF0000"}, "smd_aspect", true);
+  
+} else {
+  // Export the result.
+  var exportName = GATE.SegmentedNewCATE_fileName;
+  
+  Export.image.toAsset({
+    image: ridgeRemoved_newCATE,
+    description: exportName, 
+    
+    assetId: wd_Main 
+      + "Elevational_Transects/" //// Need to create.
+      + exportName, 
+    
+    crs: "EPSG:4326",
+    scale: 30,
+    region: AOI,
+    maxPixels: 1e13
+  }); 
+}
+

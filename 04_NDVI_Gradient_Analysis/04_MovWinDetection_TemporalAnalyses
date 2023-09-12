@@ -1,0 +1,113 @@
+/**
+ * Introduction:
+ * 
+ * 1) For each filtered annual Feature, generate a 6-year (or >= 4-year)
+ *  moving window consisting of the annual NDVIs of the current year and 
+ *  the following 5 (or >= 3) years. 
+ * 
+ * 2) Compute the maximum annual-NDVI standard deviation of all the 6-year 
+ *  (or >= 4-year) moving windows for each transect.
+ * 
+ * 3) For each transect, estimate the long-term means, SDs, and trends, and 
+ *  the observation numbers of the elevational NDVI gradients and 
+ *  spatial average NDVIs of the filtered annual Features, respectively.
+ * 
+ * 4) Calculate the ratio between the max. moving-window NDVI SD and 
+ *  the long-term NDVI mean for each transect.
+ * 
+ * 
+ * Update: 4/1/2022.
+ * 
+ * Runtime: around 10m ~ 25m.
+ */
+
+
+/* Load module(s). */
+
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var NGA = require("users/ChenyangWei/Public:Modules/NDVI_Gradient_Analysis.js");
+var FC_AP = require("users/ChenyangWei/Public:Modules/FeatureCollection_Analysis&Processing");
+
+
+/* Data loading. */
+
+// Set the major working directory.
+var wd_Main = GATE.wd_Europe; 
+
+// Determine the common file path of the raw transects.
+var wd_RawTransects = wd_Main
+  + "NDVI_Gradient_Analysis/"
+  + NGA.pixelCountedTransects_FullName
+  + "/"
+  + NGA.pixelCountedTransects_ShortName
+  + "_S";
+
+// Determine the common file path of the annual Features.
+var wd_AnnualFeatures = wd_Main
+  + "NDVI_Gradient_Analysis/"
+  + NGA.filteredAnnualFeatures_FullName
+  + "/"
+  + NGA.filteredAnnualFeatures_ShortName
+  + "_S";
+
+// Determine the number of transect subsets.
+var subsetNum = 30; 
+
+// Whether to output the result(s).
+var output = true; // true OR false.
+
+
+/* Perform the following operations for each subset of the annual Features. */
+
+for (var subsetID = 1; subsetID <= subsetNum; subsetID ++) {
+  
+  // Load each subset of the raw transects.
+  var raw_Transects = ee.FeatureCollection(wd_RawTransects
+    + subsetID);
+  
+  // Load each subset of the annual Features.
+  var filtered_AnnualFeatures = ee.FeatureCollection(wd_AnnualFeatures
+    + subsetID);
+  
+  
+  /* Perform the temporal analyses and the moving-window detection
+    for the selected annual Features of each transect. */
+  
+  var centerlineID = "CL_ID";
+  
+  var transects_MaxMovWinSD_TemporalVars = 
+    NGA.Perform_AnnualFeature_MovWinDetection_TemporalAnalyses(
+      raw_Transects, filtered_AnnualFeatures, centerlineID
+    );
+  
+  
+  if (output) {
+    // Export the final results.
+    
+    var wd_Output = wd_Main
+      + "NDVI_Gradient_Analysis/"
+      + NGA.transects_MovWinTempVars_FullName
+        // "transects_NDVImedianFiltered_withMovWinTemporalVars"
+      + "/";
+    
+    var fileName = NGA.transects_MovWinTempVars_ShortName
+      + "_S" + subsetID;
+    
+    Export.table.toAsset({
+      collection: transects_MaxMovWinSD_TemporalVars, 
+      description: fileName, 
+      assetId: wd_Output
+        + fileName
+    });
+  }
+}
+
+
+if (!output) {
+  // Examine the last subset of data.
+  
+  print("raw_Transects:", raw_Transects.size());
+  
+  FC_AP.Print_FtrColInfo("filtered_AnnualFeatures:", filtered_AnnualFeatures);
+}
+

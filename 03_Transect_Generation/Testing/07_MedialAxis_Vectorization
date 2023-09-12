@@ -1,0 +1,175 @@
+/**
+ * Introduction:
+ * 1) Vectorize the medial axis between ridge and valley.
+ * 
+ * Update: 9/1/2021.
+ * 
+ * Runtime: 54s ~ 2m.
+*/
+
+
+/* Load module(s). */
+var IMG = require("users/ChenyangWei/Public:Modules/Image_Analysis&Processing");
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var VIS = require("users/ChenyangWei/Public:Modules/Visualization");
+
+
+/* Data preparation. */
+
+// Extract the most detailed (level 12) HydroSHEDS basin.
+var POI = ee.Geometry.Point([10.35857, 46.51679]);
+var basin = ee.Feature(ee.FeatureCollection("WWF/HydroSHEDS/v1/Basins/hybas_12")
+  .filterBounds(POI).first());
+
+// Working directory.
+var wd_Temp = "users/ChenyangWei/Temp/";
+
+// Target projection.
+var targetPrj = IMG.WGS84_30m;
+
+
+// Medial axis between ridge and valley.
+var medialAxis = ee.Image(wd_Temp + "medialAxis_centerLine_sqDist");
+
+// Uniquely label the Medial axis image objects.
+// Note that the maximum patch size is set to 128 pixels; 
+//  objects composed of more pixels are masked. 
+// The connectivity is specified by an ee.Kernel.plus(1) kernel, 
+//  which defines four-neighbor connectivity, 
+//  use ee.Kernel.square(1) for eight-neighbor.
+var ID = medialAxis.connectedComponents({
+  connectedness: ee.Kernel.plus(1),
+  maxSize: 128
+});
+
+var medialAxis_ID = medialAxis.addBands(ID.select("labels").rename("ID"));
+print(medialAxis_ID);
+
+var ID_8conn = medialAxis.connectedComponents({
+  connectedness: ee.Kernel.square(1),
+  maxSize: 128
+});
+
+print(ID_8conn);
+
+// Buffer the medial axis based on the distance to ridge/valley.
+var medial_buffer = medialAxis.multiply(30 * 30).reduceToVectors({
+  geometry: basin.geometry(), 
+  scale: targetPrj.scale, 
+  geometryType: "centroid", 
+  eightConnected: false, 
+  labelProperty: "medialDist", 
+  crs: targetPrj.crs, 
+  maxPixels: 1e13
+}).map(function(pt){
+  return pt.buffer(ee.Number(pt.get("medialDist")).sqrt());
+})//.union();
+
+var medial_ctd = medialAxis_ID.reduceToVectors({
+  reducer: ee.Reducer.mean().setOutputs(["ID"]),
+  geometry: basin.geometry(), 
+  scale: targetPrj.scale, 
+  geometryType: "centroid", 
+  eightConnected: false, 
+  labelProperty: "medialAxis_SqDist_Px", 
+  crs: targetPrj.crs, 
+  maxPixels: IMG.maximumPixelNumber
+});
+
+var medial_ctd_8conn = ID_8conn.reduceToVectors({
+  reducer: ee.Reducer.mean().setOutputs(["medialAxis_SqDist_Px"]),
+  geometry: basin.geometry(), 
+  scale: targetPrj.scale, 
+  geometryType: "centroid", 
+  eightConnected: true, 
+  labelProperty: "ID_8conn", 
+  crs: targetPrj.crs, 
+  maxPixels: IMG.maximumPixelNumber
+});
+
+
+// Function to extract mountain ridge and valley landforms.
+var extractRidges = function(landforms) {
+  var ridges = landforms.lte(14);
+  
+  return ridges;
+};
+
+var extractValleys = function(landforms) {
+  var valleys = landforms.gte(41);
+  
+  return valleys;
+};
+
+
+/* Pre-process the ALOS landform dataset. */
+
+// The landform dataset is based on the 30m "AVE" band of JAXA's ALOS DEM 
+//  (available in EE as JAXA/ALOS/AW3D30_V1_1).
+//  There are stripes of invalid data in areas over 60 degrees in latitude.
+var rawLF = ee.Image('CSP/ERGo/1_0/Global/ALOS_landforms').select('constant')
+  .reproject(targetPrj);
+
+// Remove the high-latitude stripes of invalid landforms  
+//  in the landform dataset (based on the ALOS DEM V1.1).
+var ALOSv11 = ee.Image("JAXA/ALOS/AW3D30_V1_1").select("AVE")
+  .reproject(targetPrj);
+
+var LF_noInvaid = rawLF.updateMask(ALOSv11.mask());
+
+
+/* Extract the landforms of mountain ridges both inside and outside the new CATE.
+  Including: peak/ridge (warm/normal/cool) and mountain/divide. */
+
+// Extract the mountain ridge pixels.
+var ridge = extractRidges(LF_noInvaid);
+
+// Valley.
+var valley = extractValleys(LF_noInvaid);
+
+
+if (false) { // true OR false.
+  // Visualization.
+  Map.setOptions("satellite");
+    
+  Map.centerObject(POI, 14); 
+  
+  Map.addLayer(medial_buffer, {color: "slategray"}, 'medial_buffer');
+  
+  Map.addLayer(medialAxis.sqrt(), 
+    {min: 0, max: 900, palette: "0000FF, FFFFFF, FFA500"}, 
+    "medialAxis", true);
+  
+  Map.addLayer(ridge.selfMask(), {palette: "0000FF"}, "ridge", false);
+  
+  Map.addLayer(valley.selfMask(), {palette: "00FF00"}, "valley", false);
+  
+} else {
+  // Export the result.
+  var fileName = "medialAxis_distBuffered";
+  
+  Export.table.toAsset({
+    collection: medial_buffer, 
+    description: fileName, 
+    assetId: wd_Temp
+      + fileName
+  });
+  
+  var fileName2 = "medialAxis_centroids_withID";
+  
+  Export.table.toAsset({
+    collection: medial_ctd, 
+    description: fileName2, 
+    assetId: wd_Temp
+      + fileName2
+  });
+  
+  var fileName3 = "medial_ctd_8conn";
+  
+  Export.table.toAsset({
+    collection: medial_ctd_8conn, 
+    description: fileName3, 
+    assetId: wd_Temp
+      + fileName3
+  });
+}

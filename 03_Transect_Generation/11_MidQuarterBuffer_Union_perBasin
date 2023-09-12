@@ -1,0 +1,50 @@
+/**
+ * Introduction:
+ * 1) Union the mid-segment buffers of each basin into one MultiPolygon.
+ * 
+ * Update: 10/15/2021.
+ * 
+ * Total update number: 1.
+ * 
+ * Runtime: 38m.
+ */
+
+
+/* Load module(s). */
+
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+
+
+/* Data and function preparation. */
+
+// Set the major working directory.
+var wd_Main = GATE.wd_Europe
+  + "Elevational_Transect_Generation/"; /**** 1) Need to update. ****/
+
+// Load the mid-segment buffers with Hybas IDs.
+var midQuarterBuffers_withIDs = ee.FeatureCollection(wd_Main
+  + GATE.midQuarterBuffers_withHybasIDs_fileName);
+
+
+/* Union the mid-segment buffers of each basin into one MultiPolygon. */
+
+var unioned_MidQuarterBuffers = GATE.unionMidSegmentBuffers_perBasin(midQuarterBuffers_withIDs);
+
+
+if (false) { // true OR false.
+  
+  print("midQuarterBuffers_withIDs:", 
+    midQuarterBuffers_withIDs.first(),
+    midQuarterBuffers_withIDs.size());
+
+} else {
+  //// Export the result.
+  var fileName = GATE.unionedMultiPolygons_perBasin_fileName;
+  
+  Export.table.toAsset({
+    collection: unioned_MidQuarterBuffers, 
+    description: fileName, 
+    assetId: wd_Main + fileName
+  });
+}
+
