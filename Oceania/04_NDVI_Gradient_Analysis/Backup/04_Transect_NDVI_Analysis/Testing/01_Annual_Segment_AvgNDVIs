@@ -1,0 +1,106 @@
+/**
+ * Introduction:
+ * 1) Calculate the annual spatial average NDVIs of each transect segment.
+ * 
+ * Update: 12/19/2021.
+ * 
+ * Runtime: 2h.
+ */
+
+
+/* Load module(s). */
+
+var IMG = require("users/ChenyangWei/Public:Modules/Image_Analysis&Processing");
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var TNA = require("users/ChenyangWei/Public:Modules/Transect_NDVI_Analysis");
+
+
+/* Data and function preparation. */
+
+// Target projection.
+var targetPrj = IMG.WGS84_30m;
+
+// Load the testing lower and upper segments.
+var wd_Oc = GATE.wd_Oceania;
+
+var lowerSegs = ee.FeatureCollection(wd_Oc
+  + "Transect_NDVI_Analysis/Testing/"
+  + "Testing_lowerSeg_NAm");
+
+var upperSegs = ee.FeatureCollection(wd_Oc
+  + "Transect_NDVI_Analysis/Testing/"
+  + "Testing_upperSeg_NAm");
+
+// Set the major working directory.
+var wd_Main = GATE.wd_NorthAmerica;
+
+// Load the new CATE.
+var newCATE = ee.Image(wd_Main
+  + "Climate-Based_ATE/" 
+  + GATE.newCATE_fileName);
+
+// Load the annual NDVIs in the new CATE as an Image.
+var annualNDVIs_newCATE = ee.Image(wd_Main
+  + "ATEI_Estimation/"
+  + TNA.annualMaxNDVI_300mBufNewCATE_NorthAmerica_fileName)
+  .updateMask(newCATE);
+
+
+/* Compute the annual spatial average NDVIs of each transect segment. */
+
+var lowerSegs_withAnnualAvgNDVIs = TNA.calculate_SegmentAnnualAvgNDVIs_byBasin(
+  lowerSegs, annualNDVIs_newCATE, targetPrj
+);
+
+var upperSegs_withAnnualAvgNDVIs = TNA.calculate_SegmentAnnualAvgNDVIs_byBasin(
+  upperSegs, annualNDVIs_newCATE, targetPrj
+);
+
+
+if (true) { //// true OR false.
+
+  print("lowerSegs:",
+    lowerSegs.first(),
+    lowerSegs.size()); // 28413.
+  
+  print("upperSegs:",
+    upperSegs.first(),
+    upperSegs.size()); // 28390.
+  
+  // print("lowerSegs_withAnnualAvgNDVIs:",
+  //   lowerSegs_withAnnualAvgNDVIs.first());
+  
+  var VIS = require("users/ChenyangWei/Public:Modules/Visualization");
+
+  Map.centerObject(lowerSegs.first(), 10);
+  Map.setOptions("satellite");
+  
+  Map.addLayer(annualNDVIs_newCATE.select("smdNDVI_2020"), 
+    VIS.NDVI_vis, "smdNDVI_2020");
+  
+  Map.addLayer(lowerSegs, {color: "FF0000"}, "lowerSegs");
+  Map.addLayer(upperSegs, {color: "0000FF"}, "upperSegs");
+
+} else { //// Export the result(s).
+  
+  var fileName_Lower = "Testing_LowerSegs_withAnnualAvgNDVIs";
+  
+  Export.table.toAsset({
+    collection: lowerSegs_withAnnualAvgNDVIs, 
+    description: fileName_Lower, 
+    assetId: wd_Oc
+      + "Transect_NDVI_Analysis/Testing/"
+      + fileName_Lower
+  });
+  
+  var fileName_Upper = "Testing_UpperSegs_withAnnualAvgNDVIs";
+  
+  Export.table.toAsset({
+    collection: upperSegs_withAnnualAvgNDVIs, 
+    description: fileName_Upper, 
+    assetId: wd_Oc
+      + "Transect_NDVI_Analysis/Testing/"
+      + fileName_Upper
+  });
+}
+

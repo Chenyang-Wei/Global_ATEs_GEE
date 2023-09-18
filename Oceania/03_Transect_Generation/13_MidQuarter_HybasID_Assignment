@@ -1,0 +1,65 @@
+/**
+ * Introduction:
+ * 1) Assign the Hybas ID of each centerline centroid
+ *  to the mid-segment that shares the same "CL_ID."
+ * 
+ * Update: 10/19/2021.
+ * 
+ * Total update number: 1.
+ * 
+ * Runtime: 7m.
+ */
+
+
+/* Load module(s). */
+
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+
+
+/* Data and function preparation. */
+
+// Set the major working directory.
+var wd_Main = GATE.wd_Oceania
+  + "Elevational_Transect_Generation/"; /**** 1) Need to update. ****/
+
+// Load the mid-quarter segments.
+var midQuarters = ee.FeatureCollection(wd_Main
+  + GATE.midQuarters_fileName);
+
+// Load the centerline centroids with Hybas IDs.
+var CLcentroids_withHybasIDs = ee.FeatureCollection(wd_Main
+  + GATE.CLcentroids_withHybasIDs_fileName);
+
+
+/* Assign the Hybas ID of each centerline centroid
+  to the mid-segment that shares the same "CL_ID." */
+
+var midQuarters_withHybasIDs = GATE.assignHybasIDs_toMidSegments_byCLid(
+  midQuarters, 
+  CLcentroids_withHybasIDs);
+
+
+if (false) { // true OR false.
+  
+  print("midQuarters:", 
+    midQuarters.first(),
+    midQuarters.size());
+
+  print("CLcentroids_withHybasIDs:",
+    CLcentroids_withHybasIDs.first(),
+    CLcentroids_withHybasIDs.size());
+  
+  print("midQuarters_withHybasIDs:", 
+    midQuarters_withHybasIDs.first());
+
+} else {
+  //// Export the result.
+  var fileName = GATE.midQuarters_withHybasIDs_fileName;
+  
+  Export.table.toAsset({
+    collection: midQuarters_withHybasIDs, 
+    description: fileName, 
+    assetId: wd_Main + fileName
+  });
+}
+

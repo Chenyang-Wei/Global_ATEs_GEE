@@ -1,0 +1,86 @@
+/**
+ * Introduction:
+ * 1) Remove the extracted HydroSHEDS basins ("hybas_12") of Oceania
+ *  that are overlapped with the basins of Asia.
+ * 
+ * Update: 6/29/2021.
+ * 
+ * Runtime: 2m.
+ */
+
+
+/* Load the required dataset(s). */
+
+// Set the working directories.
+var wdOcean = "users/YushanFu/Oceania_ATE/";
+var wdAsia = "users/RealEarth/Asia_ATE/";
+
+// Load the extracted basins ("hybas_12") of Oceania.
+var basins_Ocean = ee.FeatureCollection(wdOcean + "Transect_Generation/"
+  + "Hybas12Basins_LowerClosedForests_UpperNonForested_30mSegmentedNewCATE");
+
+// print("basins_Ocean:", 
+//   basins_Ocean.first(),
+//   basins_Ocean.size())
+
+// Load the extracted basins ("hybas_12") of Asia.
+var basins_Asia = ee.FeatureCollection(wdAsia + "Transect_Generation/"
+  + "Hybas12Basins_LowerClosedForests_UpperNonForested_30mSegmentedNewCATE");
+
+// print("basins_Asia:", 
+//   basins_Asia.size())
+
+
+/* Remove the basins of Europe that are overlapped with the basins of Asia. */
+
+// Create an equals filter based on the "HYBAS_ID" property.
+var HYBAS_ID_filter = ee.Filter.equals({
+  leftField: "HYBAS_ID",
+  rightField: "HYBAS_ID"
+});
+
+// Create an equals filter based on the "PFAF_ID" property.
+var PFAF_ID_filter = ee.Filter.equals({
+  leftField: "PFAF_ID",
+  rightField: "PFAF_ID"
+});
+
+// Combine the two filters.
+var combinedFilter = ee.Filter.and(HYBAS_ID_filter, PFAF_ID_filter);
+
+// Identify all basins of Oceania that are not in the collection of Asian basins.
+var invertedJoin = ee.Join.inverted();
+
+var Non_Overlapped = invertedJoin.apply({
+  primary: basins_Ocean, 
+  secondary: basins_Asia, 
+  condition: combinedFilter
+});
+
+// print("Non_Overlapped:", 
+//   Non_Overlapped.size())
+
+
+if (false) {
+  // Visualization.
+  Map.setCenter(140.9906, -4.8822, 8); 
+  Map.setOptions("hybrid");
+  
+  Map.addLayer(basins_Ocean, {color: "0000FF"}, "basins_Ocean", true, 1);
+  
+  Map.addLayer(basins_Asia, {color: "FF0000"}, "basins_Asia", true, 1);
+  
+  Map.addLayer(Non_Overlapped, {color: "FFFF00"}, "Non_Overlapped", true, 1);
+
+} else if (true) {
+  // Export the result.
+  var fileName = "NonOverlapped_Hybas12Basins_LowerClosedForests_UpperNonForested_30mSegmentedNewCATE";
+  
+  Export.table.toAsset({
+    collection: Non_Overlapped, 
+    description: fileName, 
+    assetId: wdOcean + "Transect_Generation/"
+      + fileName
+  });
+}
+

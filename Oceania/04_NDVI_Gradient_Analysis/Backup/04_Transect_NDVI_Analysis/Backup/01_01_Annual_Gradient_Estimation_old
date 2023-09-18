@@ -1,0 +1,107 @@
+/**
+ * Introduction:
+ * 1) Estimate the annual elevational NDVI gradients 
+ *  of each transect.
+ * 
+ * Update: 11/1/2021.
+ * 
+ * Total update number: 3.
+ * 
+ * Runtime:
+ */
+
+
+/* Load module(s). */
+
+var IMG = require("users/ChenyangWei/Public:Modules/Image_Analysis&Processing");
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var VIS = require("users/ChenyangWei/Public:Modules/Visualization");
+
+
+/* Data and function preparation. */
+
+// Target projection.
+var targetPrj = IMG.WGS84_30m;
+
+// Set the area of interest.
+var AOI = GATE.AOI_Oceania; /**** 1) Need to update. ****/
+
+// Set the major working directory.
+var wd_Main = GATE.wd_Oceania; /**** 2) Need to update. ****/
+
+// Load the locally steepest transect centerlines.
+var steepestCLs = ee.FeatureCollection(wd_Main
+  + "Elevational_Transect_Generation/"
+  + GATE.allSteepestCLs_fileName);
+
+// Load the new CATE.
+var newCATE = ee.Image(wd_Main
+  + "Climate-Based_ATE/" 
+  + GATE.newCATE_fileName);
+
+// Load the ALOS elevation (Version 3.2, released in January 2021)
+//  in the new CATE.
+var ALOSelv_newCATE = GATE.load_ALOSelevation(AOI, targetPrj)
+  .updateMask(newCATE);
+
+
+/* Determine the annual elevational gradient of the NDVI
+  of each transect by basin. */
+
+// Buffer the transect centerlines by 45 m.
+var transects = GATE.bufferCLs_by45m(steepestCLs);
+
+// Read the annual NDVIs in the new CATE.
+var annualNDVIs_newCATE = VIS.readAnnualNDVIs_nonNorthAmerica(wd_Main)
+  .updateMask(newCATE);
+
+// Combine the elevation and each annual NDVI
+//  into an element of an ImageCollection.
+var Elv_AnnualNDVIs = GATE.combine_Elevation_AnnualNDVIs(ALOSelv_newCATE, annualNDVIs_newCATE);
+
+// Estimate the annual elevational NDVI gradients
+//  of each transect by basin.
+var annualElvNDVIgradients = GATE.estimate_AnnualElvNDVIgradients_byBasin(
+  transects, Elv_AnnualNDVIs, targetPrj
+);
+
+
+if (false) { // true OR false.
+
+  print("transects:", 
+    transects.first(),
+    transects.size());
+
+  print("annualElvNDVIgradients:", 
+    annualElvNDVIgradients.first());
+
+  VIS.centerOceania(13); /**** 3) Need to update. ****/
+  
+  var NDVIname = "smdNDVI_2003";
+  // Note: the NDVI images of New Zealand start from 2003.
+  
+  Map.addLayer(annualNDVIs_newCATE.select(NDVIname), 
+    VIS.NDVI_vis, NDVIname);
+  
+  Map.addLayer(newCATE, {palette: "FFFFFF"},
+    "newCATE", false, 0.5);
+  
+  Map.addLayer(transects, {color: "0000FF"},
+    "transects", true);
+  
+  Map.addLayer(steepestCLs, {color: "FF0000"},
+    "steepestCLs", false);
+
+} else {
+  //// Export the result.
+  var fileName = GATE.annualElvNDVIgradients_fileName;
+  
+  Export.table.toAsset({
+    collection: annualElvNDVIgradients, 
+    description: fileName, 
+    assetId: wd_Main
+      + "Transect_NDVI_Analysis"  /**** Need to create. ****/
+      + fileName
+  });
+}
+

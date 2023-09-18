@@ -1,0 +1,106 @@
+/**
+ * Introduction: 
+ * 1) Identify the area of Oceania.
+ * 2) Generate and buffer the bounding box of the identified area.
+ * 
+ * Update: 6/10/2021.
+ * 
+ * Runtime: 2m.
+*/
+
+
+if (false) {
+  /* Identify the area of Africa. */
+  
+  // Import country features.
+  var worldCol = ee.FeatureCollection('USDOS/LSIB_SIMPLE/2017');
+  
+  // print("worldCol:", worldCol.aggregate_array("wld_rgn").distinct())
+  
+  // Extract and merge the regions of Oceania and Australia.
+  var Oceania = worldCol.filterMetadata('wld_rgn', 'equals', 'Oceania');
+  var Australia = worldCol.filterMetadata('wld_rgn', 'equals', 'Australia');
+  
+  var Oceania_merged = Oceania.merge(Australia);
+  
+  // Merge all geometries in the feature collection into one.
+  var Oceania_unioned = Oceania_merged.union();
+  
+  // print("Oceania_unioned:", Oceania_unioned)
+
+  if (false) {
+    // Visualization.
+    Map.setOptions("hybrid");
+    
+    Map.centerObject(Oceania_merged, 2);
+    
+    Map.addLayer(Oceania_merged, 
+      {color: "ff0000", opacity: 1}, "Oceania_merged", true);
+
+  } else if (true) {
+    // Export the result.
+    var fileName = "Oceania_LSIB_SIMPLE";
+    
+    Export.table.toAsset({
+      collection: Oceania_unioned, 
+      description: fileName, 
+      assetId: "users/YushanFu/Oceania_ATE/Climate-Based_ATE/" +
+        fileName
+    });
+  }
+  
+} else if (true) {
+  
+  /* Generate and buffer the bounding box of the identified area. */
+  
+  // Load the identified study domain.
+  var studyDomain = ee.FeatureCollection("users/YushanFu/Oceania_ATE/Climate-Based_ATE/" +
+    "Oceania_LSIB_SIMPLE");
+  
+  // print("studyDomain:", studyDomain)
+
+  // Generate the bounding box of the study domain.
+  var BBox = ee.Feature(studyDomain.first()).bounds();
+  
+  // print("BBox:", BBox)
+  
+  // Buffer the bounding box and then generate the buffer's bounding box.
+  var buffered_BBox = BBox.buffer(1e4).bounds();
+  
+  print("buffered_BBox:", buffered_BBox)
+  
+  // Create a rectanglar AOI based on the buffered bounding box.
+  //  On the west side of 180 degrees.
+  var oceanAOI = ee.Geometry.Rectangle({
+    coords: [[112.75775254694261,-54.85230853959079],
+      [180,28.305403384827716]],
+    geodesic: false
+  });
+  
+  //  On the east side of 180 degrees (East Pacific Ocean).
+  var EPacAOI = ee.Geometry.Rectangle({
+    coords: [[-180,-54.85230853959079],
+      [235.3788517762089-360,28.305403384827716]],
+    geodesic: false
+  });
+  
+  print(EPacAOI)
+  
+  if (true) {
+    // Vissualization.
+    Map.setOptions("hybrid");
+    
+    Map.centerObject(studyDomain, 2);
+    
+    Map.addLayer(buffered_BBox, {color: "FF0000"}, "buffered_BBox");
+    
+    Map.addLayer(BBox, {color: "0000FF"}, "BBox");
+    
+    Map.addLayer(studyDomain, {color: "FFFF00"}, "studyDomain", true);
+    
+    Map.addLayer(oceanAOI, {color: "00FF00"}, "oceanAOI");
+    
+    Map.addLayer(EPacAOI, {color: "00FF00"}, "EPacAOI");
+  }
+}
+

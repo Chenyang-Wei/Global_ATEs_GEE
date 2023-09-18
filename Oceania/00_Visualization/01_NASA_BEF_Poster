@@ -1,0 +1,193 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var AOI = 
+    /* color: #d63000 */
+    /* shown: false */
+    ee.Geometry.Point([169.20323518782547, -44.15516931967937]),
+    basins = ee.FeatureCollection("WWF/HydroSHEDS/v1/Basins/hybas_12");
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+var Rect_250m = ee.FeatureCollection(
+        [ee.Feature(
+            ee.Geometry.Polygon(
+                [[[169.2111726902528, -44.147702995525286],
+                  [169.2111726902528, -44.149950897308365],
+                  [169.21340428815319, -44.149950897308365],
+                  [169.21340428815319, -44.147702995525286]]], null, false)),
+        ee.Feature(
+            ee.Geometry.Polygon(
+                [[[169.2021819256349, -44.154415653791496],
+                  [169.2021819256349, -44.156663299915216],
+                  [169.2044135235353, -44.156663299915216],
+                  [169.2044135235353, -44.154415653791496]]], null, false))
+        ]);
+
+var Rect_1km = ee.FeatureCollection(
+        [ee.Feature(
+            ee.Geometry.Polygon(
+                [[[169.2011756703972, -44.16231809656658],
+                  [169.2011756703972, -44.17133774477373],
+                  [169.21018789268723, -44.17133774477373],
+                  [169.21018789268723, -44.16231809656658]]], null, false)),
+        ee.Feature(
+            ee.Geometry.Polygon(
+                [[[169.16516969658127, -44.17130696333695],
+                  [169.16516969658127, -44.18032523705495],
+                  [169.1741819188713, -44.18032523705495],
+                  [169.1741819188713, -44.17130696333695]]], null, false))
+        ]);
+
+
+/* Load module(s). */
+
+var IMG = require("users/ChenyangWei/Public:Modules/Image_Analysis&Processing");
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var VIS = require("users/ChenyangWei/Public:Modules/Visualization");
+
+// Set the working directory.
+var wd_Main = GATE.wd_Oceania;
+
+// Centerlines.
+// var CLs = ee.FeatureCollection(wd_Main + "Elevational_Transect_Generation/"
+//   + GATE.steepestCLs_fileName);
+
+// Transects.
+// var transects = CLs.map(function(CL) {
+//   return CL.buffer(45);
+// });
+
+
+// Load the new CATE.
+var newCATE = ee.Image(wd_Main + "Climate-Based_ATE/" 
+  + GATE.newCATE_fileName);
+
+// Target projection.
+var targetPrj = IMG.WGS84_30m;
+
+
+/* Extract the landforms of ridges and valleys. */
+
+// Load and reproject the ALOS landforms dataset.
+var LF_noInvaid = GATE.loadReproject_ALOSlandforms(targetPrj);
+
+// Extract ridges.
+var ridges = GATE.extractRidgeLandforms(LF_noInvaid);
+
+// Extract valleys.
+var valleys = GATE.extractValleyLandforms(LF_noInvaid);
+
+// Load the medial axis between ridges and valleys in the new CATE.
+var medialAxis = ee.Image(wd_Main + "Elevational_Transect_Generation/"
+  + GATE.medialAxis_fileName);
+
+// Load the pixel centroids along the medial axis.
+var medialAxis_PxCtds = ee.FeatureCollection(wd_Main + "Elevational_Transect_Generation/"
+  + GATE.medialAxisPxCtds_fileName);
+
+// Load the buffered medial-axis pixel centroids.
+var buffered_MedCtds = ee.FeatureCollection(wd_Main + "Elevational_Transect_Generation/"
+  + GATE.distBufferedPxCtds_fileName);
+
+// Set the major working directory.
+var wd_Main = GATE.wd_Oceania
+  + "Elevational_Transect_Generation/"; /**** 1) Need to update. ****/
+
+// Load the individual Polygons of the unioned mid-segment buffers
+//  of each basin.
+var unionedBuffers_IndivPlgs = ee.FeatureCollection(wd_Main
+  + GATE.unionedIndivPlgs_perBasin_fileName);
+
+// Load the mid-quarter segments with Hybas IDs.
+var midQuarters_withHybasIDs = ee.FeatureCollection(wd_Main
+  + GATE.midQuarters_withHybasIDs_fileName);
+
+// Load the centerlines with Hybas IDs.
+var CLs_withHybasIDs = ee.FeatureCollection(wd_Main
+  + GATE.CLs_withHybasIDs_fileName);
+
+// Load the new steepest centerlines.
+var newCLs = ee.FeatureCollection(wd_Main
+  + GATE.allSteepestCLs_fileName);
+
+// Transects.
+var newTransects = newCLs.map(function(CL) {
+  return CL.buffer(45);
+});
+
+
+// // Set the working directories.
+// var wdGlobal = "users/treeline/Global/";
+// var wdGME = wdGlobal + "Global_Mountain_Explorer/";
+// var wdOcean = "users/YushanFu/Oceania_ATE/";
+
+// // Target projection.
+// var targetPrj = {
+//   crs: "EPSG:4326",
+//   scale: 30
+// };
+
+// // Global Mountain Explorer K3 Binary dataset.  
+// var k3Binary = ee.Image(wdGME +
+//   "k3binary")
+//   .reproject(targetPrj);
+
+// // Load the buffered raw CATE.
+// var bufCATE = ee.Image(wdOcean + "Climate-Based_ATE/" +
+//   "3kmBuffered_30mRawCATE_500mToAvgTLH_Oceania");
+
+
+var empty = ee.Image().int();
+var res_1km = empty.paint(Rect_1km, null, 3);
+var res_250m = empty.paint(Rect_250m, null, 3);
+
+// VIS.centerOceania(12);
+// Map.centerObject(AOI, 13);
+// Map.setOptions("satellite");
+
+// Map.addLayer(k3Binary.selfMask(), {palette: "FF0000"}, "k3Binary", true, 1);
+// Map.addLayer(bufCATE, {palette: "FFFF00"}, "bufCATE");
+
+Map.addLayer(basins, {color: "FFFFFF"}, "basins", false);
+
+Map.addLayer(ridges.selfMask(), {palette: "0000FF"}, 
+  "ridges", true);
+
+Map.addLayer(valleys.selfMask(), {palette: "00FF00"}, 
+  "valleys", true);
+
+Map.addLayer(buffered_MedCtds, 
+  {color: "00FFFF"}, 
+  "buffered_MedCtds", true, 0.5);
+
+Map.addLayer(medialAxis_PxCtds, 
+  {color: "FF0000"}, 
+  "medialAxis_PxCtds", true);
+
+
+// Map.addLayer(medialAxis, 
+//   {min: 0, max: 500, palette: VIS.BWR_palette}, 
+//   "medialAxis", true);
+
+
+Map.addLayer(CLs_withHybasIDs, 
+  {color: "FFFF00"}, 
+  "CLs_withHybasIDs", true, 1);
+
+Map.addLayer(unionedBuffers_IndivPlgs, 
+  {color: "00FF00"}, 
+  "unionedBuffers_IndivPlgs", true);
+
+Map.addLayer(midQuarters_withHybasIDs, 
+  {color: "FF0000"}, 
+  "midQuarters_withHybasIDs", true);
+
+
+// Map.addLayer(transects, {color: "00FF00"}, "Elevational transects", true, 1);
+Map.addLayer(newTransects, {color: "FF0000"}, "Elevational transects", false, 1);
+// print(transects.size())
+// print(newTransects.size())
+
+Map.addLayer(newCLs, 
+  {color: "0000FF"}, 
+  "newCLs", true);
+
+Map.addLayer(res_1km, {palette: "0000FF"}, "res_1km", false);
+Map.addLayer(res_250m, {palette: "FF0000"}, "res_250m", false);

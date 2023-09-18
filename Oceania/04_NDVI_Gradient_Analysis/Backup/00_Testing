@@ -1,0 +1,100 @@
+/**
+ * Update: 2/11/2022.
+ */
+
+
+/* Load module(s). */
+
+var IMG = require("users/ChenyangWei/Public:Modules/Image_Analysis&Processing");
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var TNA = require("users/ChenyangWei/Public:Modules/Transect_NDVI_Analysis");
+var NGA = require("users/ChenyangWei/Public:Modules/NDVI_Gradient_Analysis.js");
+var FC_AP = require("users/ChenyangWei/Public:Modules/FeatureCollection_Analysis&Processing");
+
+var printFC = FC_AP.Print_FtrColInfo;
+var VIS = require("users/ChenyangWei/Public:Modules/Visualization");
+
+
+/* Data loading. */
+
+// Set the major working directory.
+var wd_Main = GATE.wd_Oceania; /**** 2) Need to change. ****/
+
+// Determine the working directory of the NDVI dataset.
+// var wd_NDVI = GATE.wd_Asia_2;
+var wd_NDVI = wd_Main;
+
+// Load the new CATE.
+var newCATE = ee.Image(wd_Main
+  + "Climate-Based_ATE/" 
+  + GATE.newCATE_fileName);
+
+// Read the annual NDVIs in the new CATE as an Image.
+//  (Note: apply for all continents other than North America.)
+var rawAnnualNDVIs_newCATE = TNA.loadAnnualNDVIs_nonNorthAmerica(wd_NDVI)
+  .updateMask(newCATE);
+
+// Remove the annual NDVI of 1984.
+var annualNDVIs_newCATE = IMG.RemoveBands_fromImage(
+  rawAnnualNDVIs_newCATE, 
+  ["smdNDVI_1984"]);
+
+
+
+/* Perform the following operations for each subset of transects. */
+
+var transects_All = ee.List([]);
+
+var annualFeatures_All = ee.List([]);
+
+for (var subsetID = 1; subsetID <= 10; subsetID ++) {
+  
+  var transects = ee.FeatureCollection(wd_Main
+    + "NDVI_Gradient_Analysis/"
+    + NGA.pixelCountedTransects_FullName
+    + "/"
+    + NGA.pixelCountedTransects_ShortName
+    + "_S" + subsetID);
+
+  var annualFeatures = ee.FeatureCollection(wd_Main
+    + "NDVI_Gradient_Analysis/"
+    + NGA.annualFeatures_FullName
+    + "/"
+    + NGA.annualFeatures_ShortName
+    + "_S" + subsetID);
+  
+  transects_All = transects_All.add(transects);
+  
+  annualFeatures_All = annualFeatures_All.add(annualFeatures);
+}
+
+transects_All = ee.FeatureCollection(transects_All).flatten();
+
+annualFeatures_All = ee.FeatureCollection(annualFeatures_All).flatten();
+
+printFC("transects:", transects_All);
+
+printFC("annual features:", annualFeatures_All);
+
+Map.setOptions("satellite");
+Map.setCenter(169.14, -44.1963, 12); // Oceania.
+
+var year = 2020;
+
+var NDVIname = "smdNDVI_" + year;
+
+Map.addLayer(annualNDVIs_newCATE.select(NDVIname), 
+  VIS.NDVI_vis, NDVIname, true);
+
+Map.addLayer(VIS.paintFtrCol_FillANDEdge(
+  annualFeatures_All.filter(ee.Filter.eq("Year", year)), 
+  "annualAvgNDVI", 1), 
+  VIS.NDVI_vis, 
+  "Annual Avg. NDVI in " + year, true);
+
+Map.addLayer(VIS.paintFtrCol_FillANDEdge(
+  annualFeatures_All.filter(ee.Filter.eq("Year", year)), 
+  "pixelNumRatio_NDVIelv", 1), 
+  {min: 0, max: 1, 
+  palette: "FF0000, FFFFFF, 0000FF"}, 
+  "Pixel Number Ratio in " + year, true);

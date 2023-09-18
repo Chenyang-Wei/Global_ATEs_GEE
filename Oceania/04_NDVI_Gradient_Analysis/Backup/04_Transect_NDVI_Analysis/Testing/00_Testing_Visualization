@@ -1,0 +1,266 @@
+/**
+ * Introduction:
+ * 1) Visualize the maximum standard deviation of 
+ *  annual average NDVIs of all 6-year moving windows
+ *  of each transect segment.
+ * 
+ * Update: 1/4/2022.
+ */
+
+
+/* Load module(s). */
+
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var VIS = require("users/ChenyangWei/Public:Modules/Visualization");
+var TNA = require("users/ChenyangWei/Public:Modules/Transect_NDVI_Analysis");
+
+
+/* Data preparation. */
+
+var wd_Oc = GATE.wd_Oceania;
+
+// Load the lower and upper segments with the maximum NDVI SDs.
+var lowerSegs_withMaxMWndviSDs = ee.FeatureCollection(wd_Oc
+  + "Transect_NDVI_Analysis/Testing_no1984/"
+  + "Testing_LowerSegs_withMaxMWndviSDs");
+
+var upperSegs_withMaxMWndviSDs = ee.FeatureCollection(wd_Oc
+  + "Transect_NDVI_Analysis/Testing_no1984/"
+  + "Testing_UpperSegs_withMaxMWndviSDs");
+
+// print("lowerSegs_withMaxMWndviSDs:", 
+//   lowerSegs_withMaxMWndviSDs.size(),
+//   lowerSegs_withMaxMWndviSDs.first());
+
+// print("upperSegs_withMaxMWndviSDs:", 
+//   upperSegs_withMaxMWndviSDs.size(),
+//   upperSegs_withMaxMWndviSDs.first());
+
+// SD filtering.
+var SD_thres = 0.15;
+
+var lowerSegs_AySD = lowerSegs_withMaxMWndviSDs.filter(
+  ee.Filter.lte("lower_SD", SD_thres)
+);
+
+var lowerSegs_MwSD = lowerSegs_withMaxMWndviSDs.filter(
+  ee.Filter.lte("max_MWndviSD", SD_thres)
+);
+
+var upperSegs_AySD = upperSegs_withMaxMWndviSDs.filter(
+  ee.Filter.lte("upper_SD", SD_thres)
+);
+
+var upperSegs_MwSD = upperSegs_withMaxMWndviSDs.filter(
+  ee.Filter.lte("max_MWndviSD", SD_thres)
+);
+
+// // MW-year filtering.
+// var MWyr_Thres = 1984;
+
+// var lowerSegs_MWyr = lowerSegs_withMaxMWndviSDs.filter(
+//   ee.Filter.neq("MW_primaryYear", MWyr_Thres)
+// );
+
+// var upperSegs_MWyr = upperSegs_withMaxMWndviSDs.filter(
+//   ee.Filter.neq("MW_primaryYear", MWyr_Thres)
+// );
+
+
+/* Annual NDVIs. */
+
+// Set the major working directory.
+var wd_Main = GATE.wd_NorthAmerica;
+
+// Load the new CATE.
+var newCATE = ee.Image(wd_Main
+  + "Climate-Based_ATE/" 
+  + GATE.newCATE_fileName);
+
+// Load the annual NDVIs in the new CATE as an Image.
+var annualNDVIs_newCATE = ee.Image(wd_Main
+  + "ATEI_Estimation/"
+  + TNA.annualMaxNDVI_300mBufNewCATE_NorthAmerica_fileName)
+  .updateMask(newCATE);
+
+
+/* Scatterplot visualization. */
+
+if (false) {
+  
+  // Function to generate scatter plots.
+  var generate_ScatterPlots = 
+    function(xAxis, yAxis, mainTitle, hTitle, vTitle) {
+      var scatterPlot = ui.Chart.array.values({
+        array: ee.Array.cat([yAxis, xAxis], 1),
+        axis: 0,
+        xLabels: xAxis})
+        .setChartType("ScatterChart")
+        .setOptions({
+          legend: {position: "none"},
+          title: mainTitle,
+          hAxis: {title: hTitle},
+          vAxis: {title: vTitle},
+          series: {
+            0: {
+              pointSize: 0.2,
+              dataOpacity: 0.2,
+            },
+            1: {
+              pointSize: 0,
+              lineWidth: 2,
+            }
+          }
+        });
+      
+      return scatterPlot;
+    }; 
+  
+  var lower_Scatterplot = generate_ScatterPlots(
+    lowerSegs_withMaxMWndviSDs.aggregate_array("lower_SD"), 
+    lowerSegs_withMaxMWndviSDs.aggregate_array("max_MWndviSD"), 
+    "Lower segments", 
+    "All-year NDVI SD", 
+    "Max. moving-window NDVI SD");
+  
+  var upper_Scatterplot = generate_ScatterPlots(
+    upperSegs_withMaxMWndviSDs.aggregate_array("upper_SD"), 
+    upperSegs_withMaxMWndviSDs.aggregate_array("max_MWndviSD"), 
+    "Upper segments", 
+    "All-year NDVI SD", 
+    "Max. moving-window NDVI SD");
+  
+  print(lower_Scatterplot);
+  print(upper_Scatterplot);
+}
+
+
+/* Histogram visualization. */
+
+if (true) {
+  
+  // Function to generate histograms.
+  var generate_Histograms = 
+    function(FtrCol, mainTitle) {
+      var histogram = ui.Chart.feature.histogram({
+        features: FtrCol, 
+        property: "MW_primaryYear", 
+        maxBuckets: 50
+      }).setOptions({
+          legend: {position: "none"},
+          title: mainTitle,
+          hAxis: {title: "Year with the max. moving-window NDVI SD"},
+          vAxis: {title: "Frequency"},
+          series: {
+            0: {
+              pointSize: 0.2,
+              dataOpacity: 0.2,
+            },
+            1: {
+              pointSize: 0,
+              lineWidth: 2,
+            }
+          }
+        });
+      
+      return histogram;
+    }; 
+  
+  print(generate_Histograms(lowerSegs_withMaxMWndviSDs, "Lower segments"));
+  print(generate_Histograms(upperSegs_withMaxMWndviSDs, "Upper segments"));
+}
+
+
+/* Map visualization. */
+
+if (true) { // true OR false.
+  
+  Map.setOptions("satellite");
+  Map.setCenter(-120.1103, 48.8345, 9);
+  
+  // // Annual NDVI.
+  // var NDVIname = "smdNDVI_1984";
+  
+  // Map.addLayer(annualNDVIs_newCATE.select(NDVIname), 
+  //   VIS.NDVI_vis, NDVIname, false);
+  
+  // NDVI SD.
+  var SD_visParams = {min: 0, max: 0.2, palette: VIS.BWR_palette};
+  
+  var vis_Lower = true;
+  
+  Map.addLayer(VIS.paintFtrCol_FillANDEdge(lowerSegs_withMaxMWndviSDs, "lower_SD", 1), 
+    SD_visParams, 
+    "All-year NDVI SD (lower segments)", vis_Lower);
+  
+  Map.addLayer(VIS.paintFtrCol_FillANDEdge(lowerSegs_withMaxMWndviSDs, "max_MWndviSD", 1), 
+    SD_visParams, 
+    "Max. moving-window NDVI SD (lower segments)", vis_Lower);
+  
+  var vis_Upper = true;
+  
+  Map.addLayer(VIS.paintFtrCol_FillANDEdge(upperSegs_withMaxMWndviSDs, "upper_SD", 1), 
+    SD_visParams, 
+    "All-year NDVI SD (upper segments)", vis_Upper);
+  
+  Map.addLayer(VIS.paintFtrCol_FillANDEdge(upperSegs_withMaxMWndviSDs, "max_MWndviSD", 1), 
+    SD_visParams, 
+    "Max. moving-window NDVI SD (upper segments)", vis_Upper);
+  
+  
+  // // SD filtered.
+  // var SD_lower = false;
+  
+  // Map.addLayer(lowerSegs_AySD, {color: "FF0000"}, 
+  //   "All-year NDVI SD filtered (lower segments)", SD_lower);
+  
+  // Map.addLayer(lowerSegs_MwSD, {color: "00FFFF"}, 
+  //   "Max. moving-window NDVI SD filtered (lower segments)", SD_lower);
+  
+  // var SD_upper = false;
+  
+  // Map.addLayer(upperSegs_AySD, {color: "0000FF"}, 
+  //   "All-year NDVI SD filtered (upper segments)", SD_upper);
+  
+  // Map.addLayer(upperSegs_MwSD, {color: "FFFF00"}, 
+  //   "Max. moving-window NDVI SD filtered (upper segments)", SD_upper);
+  
+  
+  // Moving-window year.
+  var MWyr_visParams = {min: 1985, max: 2015, palette: VIS.BWR_2_palette};
+  // var MWyr_visParams = {min: 1984, max: 2015, 
+  //   palette: ["0000FF", "FFFF00", "FF00FF", "00FF00", "00FFFF", "FF0000"]};
+  
+  var vis_MWyr = false;
+  
+  Map.addLayer(VIS.paintFtrCol_FillANDEdge(lowerSegs_withMaxMWndviSDs, "MW_primaryYear", 1), 
+    MWyr_visParams, 
+    "Year with the max. moving-window NDVI SD (lower segments)", vis_MWyr);
+  
+  Map.addLayer(VIS.paintFtrCol_FillANDEdge(upperSegs_withMaxMWndviSDs, "MW_primaryYear", 1), 
+    MWyr_visParams, 
+    "Year with the max. moving-window NDVI SD (upper segments)", vis_MWyr);
+  
+  // // MW-year filtering.
+  // var vis_MWyr = true;
+  
+  // Map.addLayer(VIS.paintFtrCol_FillANDEdge(lowerSegs_MWyr, "max_MWndviSD", 2), 
+  //   SD_visParams, 
+  //   "Without 1984 - Max. moving-window NDVI SD (lower segments)", vis_MWyr);
+  
+  // Map.addLayer(VIS.paintFtrCol_FillANDEdge(upperSegs_MWyr, "max_MWndviSD", 2), 
+  //   SD_visParams, 
+  //   "Without 1984 - Max. moving-window NDVI SD (upper segments)", vis_MWyr);
+  
+  // var vis_MWyr = false;
+  
+  // Map.addLayer(VIS.paintFtrCol_FillANDEdge(lowerSegs_MWyr, "MW_primaryYear", 2), 
+  //   MWyr_visParams, 
+  //   "Without 1984 - Year with the max. moving-window NDVI SD (lower segments)", vis_MWyr);
+  
+  // Map.addLayer(VIS.paintFtrCol_FillANDEdge(upperSegs_MWyr, "MW_primaryYear", 2), 
+  //   MWyr_visParams, 
+  //   "Without 1984 - Year with the max. moving-window NDVI SD (upper segments)", vis_MWyr);
+  
+}
+

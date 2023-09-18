@@ -1,0 +1,1304 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var Within = /* color: #ff0000 */ee.FeatureCollection(
+        [ee.Feature(
+            ee.Geometry.Point([167.0137443547622, -46.144346429618935]),
+            {
+              "Class": "Within",
+              "Type": 2,
+              "system:index": "0"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([167.02102183996027, -46.13599046284516]),
+            {
+              "Class": "Within",
+              "Type": 2,
+              "system:index": "1"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([167.01428184896102, -46.13733831709252]),
+            {
+              "Class": "Within",
+              "Type": 2,
+              "system:index": "2"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([167.00727452475178, -46.13733783747504]),
+            {
+              "Class": "Within",
+              "Type": 2,
+              "system:index": "3"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([167.00215573756074, -46.12925382034125]),
+            {
+              "Class": "Within",
+              "Type": 2,
+              "system:index": "4"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([167.01158985083484, -46.11631825711875]),
+            {
+              "Class": "Within",
+              "Type": 2,
+              "system:index": "5"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([167.00242471930974, -46.14084151154673]),
+            {
+              "Class": "Within",
+              "Type": 2,
+              "system:index": "6"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([167.00215566322888, -46.11874359435198]),
+            {
+              "Class": "Within",
+              "Type": 2,
+              "system:index": "7"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([167.00646761069828, -46.1149702711953]),
+            {
+              "Class": "Within",
+              "Type": 2,
+              "system:index": "8"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([167.01697907499366, -46.11011924803698]),
+            {
+              "Class": "Within",
+              "Type": 2,
+              "system:index": "9"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([167.01994255563483, -46.1025730181128]),
+            {
+              "Class": "Within",
+              "Type": 2,
+              "system:index": "10"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([167.01724682454244, -46.09960911253976]),
+            {
+              "Class": "Within",
+              "Type": 2,
+              "system:index": "11"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([167.03314760886838, -46.10068624028115]),
+            {
+              "Class": "Within",
+              "Type": 2,
+              "system:index": "12"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([167.04257896553918, -46.09610543950138]),
+            {
+              "Class": "Within",
+              "Type": 2,
+              "system:index": "13"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([167.05174300509722, -46.09960871255229]),
+            {
+              "Class": "Within",
+              "Type": 2,
+              "system:index": "14"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([167.0574032911831, -46.09664394771347]),
+            {
+              "Class": "Within",
+              "Type": 2,
+              "system:index": "15"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([167.06333198914507, -46.09880051742178]),
+            {
+              "Class": "Within",
+              "Type": 2,
+              "system:index": "16"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([167.07222502335168, -46.1025739853182]),
+            {
+              "Class": "Within",
+              "Type": 2,
+              "system:index": "17"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([167.03907685726213, -46.0926023173107]),
+            {
+              "Class": "Within",
+              "Type": 2,
+              "system:index": "18"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([167.0708764977767, -46.09610660209507]),
+            {
+              "Class": "Within",
+              "Type": 2,
+              "system:index": "19"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([167.06467945067774, -46.08802052817873]),
+            {
+              "Class": "Within",
+              "Type": 2,
+              "system:index": "20"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([167.07788415573225, -46.08667257724934]),
+            {
+              "Class": "Within",
+              "Type": 2,
+              "system:index": "21"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([169.39958018119023, -44.061420944836875]),
+            {
+              "Class": "Within",
+              "Type": 2,
+              "system:index": "22"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([169.4049705202871, -44.055223242578]),
+            {
+              "Class": "Within",
+              "Type": 2,
+              "system:index": "23"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([169.41305594105776, -44.054144871275355]),
+            {
+              "Class": "Within",
+              "Type": 2,
+              "system:index": "24"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([169.4281452560724, -44.04632990685112]),
+            {
+              "Class": "Within",
+              "Type": 2,
+              "system:index": "25"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([169.43677000731944, -44.048486286039065]),
+            {
+              "Class": "Within",
+              "Type": 2,
+              "system:index": "26"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([169.44647104460068, -44.04956348053307]),
+            {
+              "Class": "Within",
+              "Type": 2,
+              "system:index": "27"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([169.41251486387546, -44.08459781224345]),
+            {
+              "Class": "Within",
+              "Type": 2,
+              "system:index": "28"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([169.3985018001348, -44.08971855127283]),
+            {
+              "Class": "Within",
+              "Type": 2,
+              "system:index": "29"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([169.49471092041702, -44.08918017774034]),
+            {
+              "Class": "Within",
+              "Type": 2,
+              "system:index": "30"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([169.49605970460374, -44.09969047464881]),
+            {
+              "Class": "Within",
+              "Type": 2,
+              "system:index": "31"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([169.46937949045864, -44.098612408362065]),
+            {
+              "Class": "Within",
+              "Type": 2,
+              "system:index": "32"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([169.4674922989798, -44.11181813822963]),
+            {
+              "Class": "Within",
+              "Type": 2,
+              "system:index": "33"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([169.451861740506, -44.10319352415071]),
+            {
+              "Class": "Within",
+              "Type": 2,
+              "system:index": "34"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([169.44997635469574, -44.10804485553047]),
+            {
+              "Class": "Within",
+              "Type": 2,
+              "system:index": "35"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([169.45940872424785, -44.13202950725681]),
+            {
+              "Class": "Within",
+              "Type": 2,
+              "system:index": "36"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([169.44781914195136, -44.13418564158735]),
+            {
+              "Class": "Within",
+              "Type": 2,
+              "system:index": "37"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([169.42383577053, -44.12448375689438]),
+            {
+              "Class": "Within",
+              "Type": 2,
+              "system:index": "38"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([169.43784905451568, -44.12044179990378]),
+            {
+              "Class": "Within",
+              "Type": 2,
+              "system:index": "39"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([169.4416205219378, -44.13607245417005]),
+            {
+              "Class": "Within",
+              "Type": 2,
+              "system:index": "40"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([169.4373105526873, -44.13822693603274]),
+            {
+              "Class": "Within",
+              "Type": 2,
+              "system:index": "41"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([169.43245916710808, -44.1401141439373]),
+            {
+              "Class": "Within",
+              "Type": 2,
+              "system:index": "42"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([169.41386300270275, -44.14577368275088]),
+            {
+              "Class": "Within",
+              "Type": 2,
+              "system:index": "43"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([169.401466751591, -44.148198531570685]),
+            {
+              "Class": "Within",
+              "Type": 2,
+              "system:index": "44"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([169.3893392229544, -44.1455035858886]),
+            {
+              "Class": "Within",
+              "Type": 2,
+              "system:index": "45"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([169.37909916957227, -44.1500859820843]),
+            {
+              "Class": "Within",
+              "Type": 2,
+              "system:index": "46"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([169.36643239588153, -44.14900680390194]),
+            {
+              "Class": "Within",
+              "Type": 2,
+              "system:index": "47"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([169.3402908185017, -44.153588679142125]),
+            {
+              "Class": "Within",
+              "Type": 2,
+              "system:index": "48"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([169.33544103851617, -44.15574417312099]),
+            {
+              "Class": "Within",
+              "Type": 2,
+              "system:index": "49"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([169.33651806043255, -44.177573947325925]),
+            {
+              "Class": "Within",
+              "Type": 2,
+              "system:index": "50"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([169.34945243941698, -44.18134608647952]),
+            {
+              "Class": "Within",
+              "Type": 2,
+              "system:index": "51"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([169.36373831455154, -44.18619670920315]),
+            {
+              "Class": "Within",
+              "Type": 2,
+              "system:index": "52"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([169.36777936343046, -44.189970572717165]),
+            {
+              "Class": "Within",
+              "Type": 2,
+              "system:index": "53"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([169.35107038556487, -44.19562887839621]),
+            {
+              "Class": "Within",
+              "Type": 2,
+              "system:index": "54"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([169.34298720274015, -44.19347335160907]),
+            {
+              "Class": "Within",
+              "Type": 2,
+              "system:index": "55"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([169.38233229016248, -44.20775647011137]),
+            {
+              "Class": "Within",
+              "Type": 2,
+              "system:index": "56"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([169.3871835392032, -44.22365733001597]),
+            {
+              "Class": "Within",
+              "Type": 2,
+              "system:index": "57"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([169.40470095440776, -44.22446622668759]),
+            {
+              "Class": "Within",
+              "Type": 2,
+              "system:index": "58"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([169.45240136624503, -44.23335894964623]),
+            {
+              "Class": "Within",
+              "Type": 2,
+              "system:index": "59"
+            })]),
+    Above = /* color: #0000ff */ee.FeatureCollection(
+        [ee.Feature(
+            ee.Geometry.Point([167.01077960594878, -46.14084168501503]),
+            {
+              "Class": "Above",
+              "Type": 1,
+              "system:index": "0"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([167.00512086815053, -46.122515593188716]),
+            {
+              "Class": "Above",
+              "Type": 1,
+              "system:index": "1"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([167.00053909258614, -46.137878402577414]),
+            {
+              "Class": "Above",
+              "Type": 1,
+              "system:index": "2"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([167.0026941955391, -46.12494184349757]),
+            {
+              "Class": "Above",
+              "Type": 1,
+              "system:index": "3"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([167.00296418427183, -46.12359354737523]),
+            {
+              "Class": "Above",
+              "Type": 1,
+              "system:index": "4"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([167.0482395848865, -46.093680410905264]),
+            {
+              "Class": "Above",
+              "Type": 1,
+              "system:index": "5"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([167.05255023464915, -46.09233319436528]),
+            {
+              "Class": "Above",
+              "Type": 1,
+              "system:index": "6"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([167.05740210240066, -46.08775077477601]),
+            {
+              "Class": "Above",
+              "Type": 1,
+              "system:index": "7"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([167.0595583202598, -46.08613398108292]),
+            {
+              "Class": "Above",
+              "Type": 1,
+              "system:index": "8"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([167.0579414768054, -46.08586461506429]),
+            {
+              "Class": "Above",
+              "Type": 1,
+              "system:index": "9"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([167.06683455659606, -46.083708081256354]),
+            {
+              "Class": "Above",
+              "Type": 1,
+              "system:index": "10"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([169.4604867777306, -44.057647996774946]),
+            {
+              "Class": "Above",
+              "Type": 1,
+              "system:index": "11"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([169.44485425644766, -44.05710936470721]),
+            {
+              "Class": "Above",
+              "Type": 1,
+              "system:index": "12"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([169.4305723146854, -44.05710962309931]),
+            {
+              "Class": "Above",
+              "Type": 1,
+              "system:index": "13"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([169.41575022083933, -44.06438522803555]),
+            {
+              "Class": "Above",
+              "Type": 1,
+              "system:index": "14"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([169.4823153468316, -44.09133589975449]),
+            {
+              "Class": "Above",
+              "Type": 1,
+              "system:index": "15"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([169.483392809307, -44.10723681030292]),
+            {
+              "Class": "Above",
+              "Type": 1,
+              "system:index": "16"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([169.4432382944932, -44.102385777911884]),
+            {
+              "Class": "Above",
+              "Type": 1,
+              "system:index": "17"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([169.46183227632935, -44.14119252226555]),
+            {
+              "Class": "Above",
+              "Type": 1,
+              "system:index": "18"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([169.42545158970037, -44.116938499586865]),
+            {
+              "Class": "Above",
+              "Type": 1,
+              "system:index": "19"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([169.42491233509293, -44.15224192140278]),
+            {
+              "Class": "Above",
+              "Type": 1,
+              "system:index": "20"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([169.432189195797, -44.15224222025266]),
+            {
+              "Class": "Above",
+              "Type": 1,
+              "system:index": "21"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([169.3971537942231, -44.15682436603708]),
+            {
+              "Class": "Above",
+              "Type": 1,
+              "system:index": "22"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([169.38637598771277, -44.15897840185183]),
+            {
+              "Class": "Above",
+              "Type": 1,
+              "system:index": "23"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([169.3467587291921, -44.16005806667214]),
+            {
+              "Class": "Above",
+              "Type": 1,
+              "system:index": "24"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([169.3693977630917, -44.176226252559864]),
+            {
+              "Class": "Above",
+              "Type": 1,
+              "system:index": "25"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([169.3710130917214, -44.19940264042731]),
+            {
+              "Class": "Above",
+              "Type": 1,
+              "system:index": "26"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([169.34945311920336, -44.20317591081699]),
+            {
+              "Class": "Above",
+              "Type": 1,
+              "system:index": "27"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([169.40011964554444, -44.20048172621578]),
+            {
+              "Class": "Above",
+              "Type": 1,
+              "system:index": "28"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([169.35888631802922, -44.22365668114182]),
+            {
+              "Class": "Above",
+              "Type": 1,
+              "system:index": "29"
+            })]),
+    Below = /* color: #00ff00 */ee.FeatureCollection(
+        [ee.Feature(
+            ee.Geometry.Point([167.00673678904258, -46.15162108425203]),
+            {
+              "Class": "Below",
+              "Type": 3,
+              "system:index": "0"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([167.02398406953597, -46.15296873882685]),
+            {
+              "Class": "Below",
+              "Type": 3,
+              "system:index": "1"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([167.01859403022573, -46.14569412876543]),
+            {
+              "Class": "Below",
+              "Type": 3,
+              "system:index": "2"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([167.01401424947966, -46.13383455180885]),
+            {
+              "Class": "Below",
+              "Type": 3,
+              "system:index": "3"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([167.01832579902856, -46.118743417945495]),
+            {
+              "Class": "Below",
+              "Type": 3,
+              "system:index": "4"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([167.02236863963432, -46.10715550347284]),
+            {
+              "Class": "Below",
+              "Type": 3,
+              "system:index": "5"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([167.01913474146068, -46.09529793725418]),
+            {
+              "Class": "Below",
+              "Type": 3,
+              "system:index": "6"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([167.04096393912334, -46.10338239905699]),
+            {
+              "Class": "Below",
+              "Type": 3,
+              "system:index": "7"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([167.05686321442167, -46.09987845263522]),
+            {
+              "Class": "Below",
+              "Type": 3,
+              "system:index": "8"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([167.0371912333389, -46.087751007877685]),
+            {
+              "Class": "Below",
+              "Type": 3,
+              "system:index": "9"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([167.07222448307152, -46.09206304591047]),
+            {
+              "Class": "Below",
+              "Type": 3,
+              "system:index": "10"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([169.45725130774585, -44.04390444453591]),
+            {
+              "Class": "Below",
+              "Type": 3,
+              "system:index": "11"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([169.44808829938785, -44.04525218922639]),
+            {
+              "Class": "Below",
+              "Type": 3,
+              "system:index": "12"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([169.4092820691297, -44.051719393228446]),
+            {
+              "Class": "Below",
+              "Type": 3,
+              "system:index": "13"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([169.39580716903407, -44.063576876632055]),
+            {
+              "Class": "Below",
+              "Type": 3,
+              "system:index": "14"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([169.50252750335056, -44.09834313264946]),
+            {
+              "Class": "Below",
+              "Type": 3,
+              "system:index": "15"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([169.4612948022123, -44.10831385279474]),
+            {
+              "Class": "Below",
+              "Type": 3,
+              "system:index": "16"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([169.45401776632502, -44.109931814947245]),
+            {
+              "Class": "Below",
+              "Type": 3,
+              "system:index": "17"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([169.45320909438857, -44.12852718125875]),
+            {
+              "Class": "Below",
+              "Type": 3,
+              "system:index": "18"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([169.42059998072702, -44.12798779685729]),
+            {
+              "Class": "Below",
+              "Type": 3,
+              "system:index": "19"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([169.4319194215843, -44.13553308901528]),
+            {
+              "Class": "Below",
+              "Type": 3,
+              "system:index": "20"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([169.41790640514603, -44.14065382571922]),
+            {
+              "Class": "Below",
+              "Type": 3,
+              "system:index": "21"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([169.39553838700664, -44.14065166476153]),
+            {
+              "Class": "Below",
+              "Type": 3,
+              "system:index": "22"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([169.3758641469094, -44.14523534282784]),
+            {
+              "Class": "Below",
+              "Type": 3,
+              "system:index": "23"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([169.3389437882399, -44.150355416245276]),
+            {
+              "Class": "Below",
+              "Type": 3,
+              "system:index": "24"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([169.33975223051462, -44.17865214526662]),
+            {
+              "Class": "Below",
+              "Type": 3,
+              "system:index": "25"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([169.3556516177263, -44.191587682811765]),
+            {
+              "Class": "Below",
+              "Type": 3,
+              "system:index": "26"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([169.34568079171402, -44.19050951299192]),
+            {
+              "Class": "Below",
+              "Type": 3,
+              "system:index": "27"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([169.38933874780176, -44.20937418677838]),
+            {
+              "Class": "Below",
+              "Type": 3,
+              "system:index": "28"
+            }),
+        ee.Feature(
+            ee.Geometry.Point([169.40092813865658, -44.23228123658006]),
+            {
+              "Class": "Below",
+              "Type": 3,
+              "system:index": "29"
+            })]),
+    focus = /* color: #00ffff */ee.Geometry.Point([169.406164642283, -44.1470294656438]);
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+
+/**
+ * Introduction:
+ * 
+ *  1) Mannually collect points of the three classes
+ *    in the climatic ATE (i.e., "new CATE").
+ * 
+ *  2) Extract a 30-m pixel at each sample point.
+ * 
+ *  3) Generate a 300-m buffer at each sample point.
+ * 
+ * Runtime: < 1m (shared).
+ * 
+ * Update: 5/24/2023.
+*/
+
+
+/* Load module(s). */
+
+var IMG = require("users/ChenyangWei/Public:Modules/General/Image_Analysis&Processing.js");
+var ATEI_EA = require("users/ChenyangWei/Public:Modules/Treeline/ATEI_Estimation&Analysis.js");
+var GATE = require("users/ChenyangWei/Public:Modules/Treeline/Global_ATE.js");
+var TNA = require("users/ChenyangWei/Public:Modules/Treeline/Transect_NDVI_Analysis.js");
+var VIS = require("users/ChenyangWei/Public:Modules/General/Visualization.js");
+
+
+/* Object definition. */
+
+// Determine the continent ID (0 ~ 5).
+var contID = 3;
+
+// Determine the target projection.
+var targetPrj = IMG.WGS84_30m;
+
+// Create a list of the working directories.
+var WDs_List = ATEI_EA.WDs_AllContinents_List;
+
+// Define a list of the AOIs.
+var AOIs_List = ATEI_EA.AOIs_AllContinents_List;
+
+// Generate a median reducer.
+var medianReducer = ee.Reducer.median();
+
+// Load the ALOS elevation.
+var rawElv = ee.ImageCollection('JAXA/ALOS/AW3D30/V3_2').select('DSM')
+  .mosaic()
+  .reproject(targetPrj);
+
+// Define a circular kernel of 10 pixels.
+var Kn_10pxCir = ee.Kernel.circle({
+  radius: 10,
+  units: "pixels"
+}); 
+
+
+/* Function definition. */
+
+// Define a function to load and reproject the new CATE 
+//  of each continent.
+var Read_NewCATE = function(wd_Cont) {
+  var newCATE_Cont = ee.Image(wd_Cont
+    + "Climate-Based_ATE/" 
+    + GATE.newCATE_fileName)
+    .reproject(targetPrj);
+  
+  return newCATE_Cont;
+};
+
+// Define a function to calculate the temporal median NDVIs of 
+//  the new CATE in continents other than North America.
+var Calculate_MedianNDVI = function(wd_Cont, newCATE_Cont) {
+  var medianNDVI_Cont = TNA.loadAnnualNDVIs_nonNorthAmerica(wd_Cont)
+    .updateMask(newCATE_Cont)
+    .reduce(medianReducer)
+    .reproject(targetPrj)
+    .rename("medianNDVI");
+  
+  return medianNDVI_Cont;
+};
+
+// Define a function to load the 3-km smoothed
+//  non-forested NDVI of each continent.
+var Read_SmdNonfNDVI_3km = function(wd_Cont) {
+  var smdNonfNDVI_Cont = ee.Image(wd_Cont
+    + "ATEI_Estimation/NonForestedNDVI/" 
+    + "3kmSmoothed_NonForestedNDVI_NewCATE");
+  
+  return smdNonfNDVI_Cont;
+};
+
+// Define a function to load the 3-km smoothed
+//  open-forest NDVI of each continent.
+var Read_SmdOpenfNDVI_3km = function(wd_Cont) {
+  var smdOpenfNDVI_Cont = ee.Image(wd_Cont
+    + "ATEI_Estimation/OpenForestNDVI/" 
+    + "3kmSmoothed_OpenForestNDVI_NewCATE");
+  
+  return smdOpenfNDVI_Cont;
+};
+
+// Define a function to load the 3-km smoothed
+//  closed-forest NDVI of each continent.
+var Read_SmdClsdfNDVI_3km = function(wd_Cont) {
+  var smdClsdfNDVI_Cont = ee.Image(wd_Cont
+    + "ATEI_Estimation/ClosedForestNDVI/" 
+    + "3kmSmoothed_ClosedForestNDVI_NewCATE");
+  
+  return smdClsdfNDVI_Cont;
+};
+
+// Define a Gaussian function.
+var gauss_Fun = function(x_Img, b_Img, c_Img) {
+  
+  var base_Img = x_Img.subtract(b_Img).divide(c_Img);
+  
+  var gauss_Img = base_Img.pow(2).multiply(-1 / 2).exp()
+    // .rename("gauss_NDVI")
+    .reproject(targetPrj);
+  
+  return gauss_Img;
+};
+
+// Define a function to transform the gradient magnitude.
+var k_Value = 13131.49;
+var x_0 = 0.000649;
+
+var mag_Fun = function(mag_Value) {
+  
+  var power = mag_Value.subtract(x_0).multiply(-1 * k_Value);
+  
+  var comp_Mag = ee.Image(1).divide(power.exp().add(1))
+    // .rename("comp_Mag")
+    .reproject(targetPrj);
+  
+  return comp_Mag;
+};
+
+// Define a function to determine the gradient angle.
+var p_Value = 17.89181;
+
+var angle_Fun = function(angle_Value) {
+  
+  var cos_Value = angle_Value.cos();
+  
+  var base = ee.Image(1).subtract(cos_Value).divide(2);
+  
+  var comp_Angle = base.pow(p_Value)
+    // .rename("comp_Angle")
+    .reproject(targetPrj);
+  
+  return comp_Angle;
+};
+
+
+// Define a function to create a 300-m buffer 
+//  around each sample point.
+var Create_SampleBuffer = function(samplePt_Ftr) {
+  var keepProperties = ["Class", "Type"];
+  
+  var sampleBuffer_Ftr = samplePt_Ftr.buffer(300)
+    .copyProperties({
+      source: samplePt_Ftr, 
+      properties: keepProperties
+    });
+  
+  return sampleBuffer_Ftr;
+};
+
+
+/* Acquire the information of the continent. */
+
+// Determine the working directory of the continent.
+var contWD = WDs_List[contID];
+
+// Determine the AOI of the continent.
+var contAOI = AOIs_List[contID];
+
+
+/* Read the new CATE. */
+
+var newCATE = Read_NewCATE(contWD);
+
+
+/* Pre-process the elevation dataset. */
+
+// Calculate the focal "median" within the kernel
+//  (same as the NDVI smoothing metric).
+var medSmd_Elv = rawElv.reduceNeighborhood({
+  reducer: medianReducer,
+  kernel: Kn_10pxCir,
+  skipMasked: true
+  // Mask output pixels if 
+  //  the corresponding input pixels are masked.
+}).reproject(targetPrj);
+
+// Compute the elevation gradient.
+var medElv_Grad = medSmd_Elv.gradient()
+  .reproject(targetPrj);
+
+// Derive the direction of the elevation gradient.
+var medElv_Dir = medElv_Grad.select("y")
+  .atan2(medElv_Grad.select("x"))
+  .reproject(targetPrj)
+  .rename("medElv_Dir");
+
+
+
+/* Read the 3-km smoothed NDVIs worldwide. */
+
+var smdNonfNDVI_3km = Read_SmdNonfNDVI_3km(contWD);
+
+var smdOpenfNDVI_3km = Read_SmdOpenfNDVI_3km(contWD);
+
+var smdClsdfNDVI_3km = Read_SmdClsdfNDVI_3km(contWD);
+
+
+/* Determine the smaller NDVI difference at each pixel. */
+
+var Non_Open_Diff = smdNonfNDVI_3km
+  .subtract(smdOpenfNDVI_3km)
+  .abs();
+
+var Clsd_Open_Diff = smdClsdfNDVI_3km
+  .subtract(smdOpenfNDVI_3km)
+  .abs();
+
+var smaller_NDVIdiff = Clsd_Open_Diff.where(
+  Non_Open_Diff.lt(Clsd_Open_Diff), 
+  Non_Open_Diff);
+
+
+
+/* Calculate the temporal median NDVI of 
+  the closed forests during 2015-2019 . */
+
+if (contID === 0) {
+  // Calculate the temporal median NDVI in North America.
+  var medianNDVI = ee.Image(GATE.wd_NorthAmerica
+    + "ATEI_Estimation/"
+    + TNA.annualMaxNDVI_300mBufNewCATE_NorthAmerica_fileName)
+    .updateMask(newCATE)
+    .reduce(medianReducer)
+    .reproject(targetPrj)
+    .rename("medianNDVI");
+  
+} else if (contID === 5) {
+  // Calculate the temporal median NDVI in Asia 
+  //  (using a different working directory).
+  var medianNDVI = Calculate_MedianNDVI(
+    GATE.wd_Asia_2, newCATE);
+  
+} else {
+  // Calculate the temporal median NDVI in other continents.
+  var medianNDVI = Calculate_MedianNDVI(
+    contWD, newCATE);
+}
+
+// Compute the NDVI gradient.
+var NDVI_grad = medianNDVI.gradient()
+  .reproject(targetPrj);
+
+// Determine the direction of the NDVI gradient.
+var NDVI_dir = NDVI_grad.select("y")
+  .atan2(NDVI_grad.select("x"))
+  .reproject(targetPrj)
+  .rename("NDVI_dir");
+
+// Derive the magnitude of the NDVI gradient.
+var NDVI_mag = NDVI_grad.select("y")
+  .hypot(NDVI_grad.select("x"))
+  .reproject(targetPrj)
+  .rename("NDVI_mag");
+
+// Calculate the absolute angle between the NDVI and elevation gradients.
+var dir_Angle = NDVI_dir.subtract(medElv_Dir).abs();
+
+
+/* Test the "temporary" ATEI. */
+
+// "Gradient Magnitude" component.
+var comp_Mag = mag_Fun(NDVI_mag);
+
+// "Gradient Angle" component.
+var comp_Angle = angle_Fun(dir_Angle);
+
+// "Gaussian" component.
+var gauss_NDVI = gauss_Fun(
+  medianNDVI, 
+  smdOpenfNDVI_3km, 
+  smaller_NDVIdiff.divide(2));
+
+// Combine the components.
+var combined_Components = gauss_NDVI.multiply(comp_Mag)
+  .multiply(comp_Angle)
+  .rename("combined_Components")
+  .reproject(targetPrj);
+
+// Fit a logistic regression.
+var logit_Formula = "-0.34458 + " 
+  + "23.76459 * combined_Components";
+
+var logit = combined_Components.expression({
+  expression: logit_Formula,
+  map: {
+    combined_Components: combined_Components
+      .select("combined_Components")
+  }
+}); 
+
+var exp_Logit = logit.exp();
+
+var ATEI = exp_Logit.divide(exp_Logit.add(1))
+  .rename("ATEI");
+
+
+/* Generate a 300-m buffer at each sample point. */
+
+// Combine all types of sampled points.
+var samplePts = Above.merge(Within).merge(Below);
+
+// Generate a buffer zone around each sample point.
+var sampleBuffers = ee.FeatureCollection(
+  samplePts.map(Create_SampleBuffer));
+
+
+/* Convert sample points to 30-m pixels. */
+
+// Create an image for each type of 
+//  sample points.
+var abovePx = ee.Image(1).byte()
+  .clipToCollection(Above);
+
+var withinPx = ee.Image(2).byte()
+  .clipToCollection(Within);
+
+var belowPx = ee.Image(3).byte()
+  .clipToCollection(Below);
+
+// Combine the three types of sample pixels.
+var samplePixels = ee.ImageCollection.fromImages([
+  abovePx, withinPx, belowPx
+  ]).mosaic()
+  .reproject(targetPrj)
+  .rename("Type");
+
+// Create a background pixel for each sample point.
+var backgroundPixels = ee.Image(0).byte()
+  .clipToCollection(samplePts)
+  .reproject(targetPrj);
+
+// Create a 30-m random image as a reference.
+var randomImg_30m = ee.Image.random({
+  seed: 17, 
+  distribution: "uniform"
+}).updateMask(newCATE)
+  .reproject(targetPrj);
+
+// Create a 15-m random image as a reference.
+var randomImg_15m = ee.Image.random({
+  seed: 17, 
+  distribution: "uniform"
+}).updateMask(newCATE)
+  .reproject({
+  crs: "EPSG:4326",
+  scale: 15
+});
+
+
+if (false) {
+  
+  IMG.printImgInfo("samplePixels", samplePixels);
+  
+  print("samplePts", samplePts.first(), 
+    samplePts.size());
+  
+  print("sampleBuffers", sampleBuffers.first(), 
+    sampleBuffers.size());
+
+  // Visualize the datasets.
+  Map.setOptions("satellite");
+  
+  // Map.centerObject(contAOI, 6);
+  Map.centerObject(focus, 15);
+  
+  Map.addLayer(medianNDVI, VIS.NDVI_vis, 
+    "NDVI", false, 1);
+  
+  Map.addLayer(randomImg_30m.randomVisualizer(), 
+    {}, 
+    "30 m", false, 0.5);
+  
+  Map.addLayer(randomImg_15m.randomVisualizer(), 
+    {}, 
+    "15 m", false, 1);
+  
+  Map.addLayer(newCATE, {palette: "FFFFFF"}, 
+    "CATE", false, 0.5);
+  
+  Map.addLayer(ATEI.updateMask(ATEI.gt(0.5)), 
+    {palette: "FFFFFF"}, 
+    "ATEI > 0.5 (White)", false, 0.5);
+  
+  Map.addLayer(ATEI.updateMask(ATEI.gt(0.5)), 
+    {palette: "0000FF"}, 
+    "ATEI > 0.5 (Blue)", false, 0.5);
+  
+  Map.addLayer(sampleBuffers, {color: "FFFFFF"}, 
+    "Buffer", true, 0.5);
+  
+  // Map.addLayer(backgroundPixels, 
+  //   {palette: "FFFFFF"}, 
+  //   "Grey", false, 0.3);
+  
+  Map.addLayer(samplePixels, 
+    {min: 1, max: 3, palette: "0000FF, FF0000, 00FF00"}, 
+    "Sample", false, 0.3);
+  
+} else {
+  
+  /* Output the sampling result to Asset. */
+  
+  // Define a function to add the region name 
+  //  to each sample point.
+  var regionName = "Oceania";
+  
+  var Add_RegionName = function(samplePt_Ftr) {
+    var samplePt_withRegion_Ftr = samplePt_Ftr
+      .set({
+        Region: regionName
+      });
+    
+    return samplePt_withRegion_Ftr;
+  };
+
+  // Add the region name to each sample point.
+  var samplePts_withRegionName = ee.FeatureCollection(
+    samplePts.map(Add_RegionName));
+
+  if (false) { // true OR false.
+  
+    print(contWD);
+    
+    print("samplePts_withRegionName", 
+      samplePts_withRegionName.first(), 
+      samplePts_withRegionName.size());
+  }
+  
+  var fileName = "manuallySampledPoints";
+  
+  Export.table.toAsset({
+    collection: samplePts_withRegionName, 
+    description: fileName, 
+    assetId: contWD
+      + "ATEI_Estimation/"
+      + fileName
+  });
+}
+

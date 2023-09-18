@@ -1,0 +1,82 @@
+/**
+ * Introduction:
+ * 1) Calculate the average topographic features (including coordinates)
+ *  of each elevational transect.
+ * 
+ * Update: 11/5/2021.
+ * 
+ * Total update number: 3.
+ * 
+ * Runtime: 7m.
+ */
+
+
+/* Load module(s). */
+
+var IMG = require("users/ChenyangWei/Public:Modules/Image_Analysis&Processing");
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var ENV = require("users/ChenyangWei/Public:Modules/Environmental_Factors");
+
+
+/* Data and function preparation. */
+
+// Target projection.
+var targetPrj = IMG.WGS84_30m;
+
+// Set the area of interest.
+var AOI = GATE.AOI_Oceania; /**** 1) Need to update. ****/
+
+// Set the major working directory.
+var wd_Main = GATE.wd_Oceania; /**** 2) Need to update. ****/
+
+// Load the locally steepest transect centerlines.
+var steepestCLs = ee.FeatureCollection(wd_Main
+  + "Elevational_Transect_Generation/"
+  + GATE.allSteepestCLs_fileName);
+
+// Load the new CATE.
+var newCATE = ee.Image(wd_Main
+  + "Climate-Based_ATE/" 
+  + GATE.newCATE_fileName);
+
+// Load the ALOS elevation (Version 3.2, released in January 2021) in the AOI.
+var ALOSelv = GATE.load_ALOSelevation(AOI, targetPrj);
+
+
+/* Calculate the average topographic features of each elevational transect. */
+
+// Generate topographic features (including coordinates) in the new CATE.
+var topoFeatures_newCATE = ENV.generate_TopographicFeatures(ALOSelv, targetPrj)
+  .updateMask(newCATE);
+
+// Buffer the transect centerlines by 45 m.
+var transects = GATE.bufferCLs_by45m(steepestCLs);
+
+// Calculate the average topographic features of each elevational transect
+//  by basin.
+var avgFeaturesPerTransect = ENV.calculate_AvgTopoFeaturesPerTransect_byBasin(
+  transects, topoFeatures_newCATE, targetPrj
+);
+
+
+if (false) { // true OR false.
+
+  IMG.printImgInfo("topoFeatures_newCATE:", topoFeatures_newCATE);
+  
+  print("transects:",
+    transects.first(),
+    transects.size());
+
+} else {
+  //// Export the result.
+  var fileName = ENV.avgTopoFeaturesPerTransect_fileName;
+  
+  Export.table.toAsset({
+    collection: avgFeaturesPerTransect, 
+    description: fileName, 
+    assetId: wd_Main
+      + "Environmental_Factors/" /**** 3) Need to create. ****/
+      + fileName
+  });
+}
+

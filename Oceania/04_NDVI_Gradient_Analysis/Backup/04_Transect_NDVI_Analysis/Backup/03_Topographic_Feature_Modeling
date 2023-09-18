@@ -1,0 +1,195 @@
+/**
+ * Introduction:
+ * 1) Fit a linear model between the average topographic features (including coordinates)
+ *  and NDVI gradient trend of each elevational transect.
+ * 
+ * Update: 11/5/2021.
+ * 
+ * Total update number:
+ * 
+ * Runtime:
+ */
+
+
+/* Load module(s). */
+
+var IMG = require("users/ChenyangWei/Public:Modules/Image_Analysis&Processing");
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var ENV = require("users/ChenyangWei/Public:Modules/Environmental_Factors");
+var FC_AP = require("users/ChenyangWei/Public:Modules/FeatureCollection_Analysis&Processing");
+var VIS = require("users/ChenyangWei/Public:Modules/Visualization");
+
+
+/* Data and function preparation. */
+
+// Set the major working directory.
+var wd_Main = GATE.wd_Oceania; /**** 1) Need to update. ****/
+
+// Load the average topographic features of each transect.
+var avgFeatures = ee.FeatureCollection(wd_Main
+  + "Environmental_Factors/"
+  + ENV.avgTopoFeaturesPerTransect_fileName);
+
+// Load the elevational NDVI gradient trend of each transect.
+var gradientTrends = ee.FeatureCollection(wd_Main
+  + "Transect_NDVI_Analysis/"
+  + GATE.elvNDVIgradientTrends_fileName);
+
+
+/* Fit a linear model between the average topographic features
+  and NDVI gradient trend of each elevational transect. */
+
+// Combine the topographic features and the NDVI gradient trends by centerline ID.
+var avgFeatures_withGradientTrends = FC_AP.combine_twoFtrCols_byCommonProperty(
+  avgFeatures, gradientTrends, "CL_ID"
+);
+
+
+/* Linear regression. */
+
+// Add a constant property to each feature to be used as an independent variable.
+var LRvariables_FtrCol = avgFeatures_withGradientTrends.map(function(feature) {
+  return feature.set("constant", 1);
+});
+
+// Compute linear regression coefficients.
+// Cast the resulting object to an ee.Dictionary for easy access to the properties.
+var indVars = ee.List(["constant", 
+  "longitude", 
+  "latitude", 
+  "elevation", "slope", 
+  "aspect", 
+  "eastWest", "northSouth",
+  "CL_length", "elvRange",
+  // "gradIntcep", 
+  "yearCount"
+]);
+
+// print("indVars:", indVars);
+
+var depVar = "gradTrend";
+
+var regVars = indVars.add(depVar);
+
+var linearRegression = ee.Dictionary(LRvariables_FtrCol.reduceColumns({
+  reducer: ee.Reducer.linearRegression({
+    numX: indVars.size(),
+    numY: 1
+  }),
+  selectors: regVars
+}));
+
+// print("linearRegression:", linearRegression);
+
+// Convert the coefficients array to a list.
+var coefList = ee.Array(linearRegression.get("coefficients"))
+  .toList();
+
+// Name the coefficients.
+var namedCoefList = ee.Dictionary.fromLists({
+  keys: indVars, 
+  values: coefList
+});
+
+print("coefficients:", namedCoefList);
+
+// Fit the linear regression.
+var Y_pred_FtrCol = LRvariables_FtrCol.map(function(feature) {
+  var Y_pred = indVars.map(function(indVarName) {
+    var indVarValue = feature.get(indVarName);
+    
+    var indVarIndex = indVars.indexOf(indVarName);
+    
+    var slopeValue = ee.List(coefList.get(indVarIndex)).get(0);
+    
+    return ee.Number(indVarValue).multiply(slopeValue);
+  }).reduce(ee.Reducer.sum());
+  
+  var Y_obs = feature.get(depVar);
+  
+  var residual = ee.Number(Y_obs).subtract(Y_pred);
+  
+  return feature.set(depVar + "_pred", Y_pred,
+    depVar + "_residual", residual);
+});
+
+print("Y_pred_FtrCol:", Y_pred_FtrCol.first(),
+  Y_pred_FtrCol.size());
+
+
+// // Extract the y-intercept and slopes.
+// var yInt = ee.List(coefList.get(0)).get(0); // y-intercept
+// var slope1 = ee.List(coefList.get(1)).get(0);
+// var slope2 = ee.List(coefList.get(2)).get(0);
+// var slope3 = ee.List(coefList.get(3)).get(0);
+// var slope4 = ee.List(coefList.get(4)).get(0);
+// var slope5 = ee.List(coefList.get(5)).get(0);
+
+// // Gather the variable values from the FeatureCollection into a list of lists.
+// var props = regVars.remove("constant");
+
+
+// var nonConstantVarsList = ee.List(LRvariables_FtrCol.reduceColumns({
+//   reducer: ee.Reducer.toList().repeat(props.size()),
+//   selectors: props
+// }).get("list"));
+
+// // Convert regression x and y variable lists to an array - used later as input
+// // to ui.Chart.array.values for generating a scatter plot.
+// var x1 = ee.Array(ee.List(nonConstantVarsList.get(0)));
+// var x2 = ee.Array(ee.List(nonConstantVarsList.get(1)));
+// var x3 = ee.Array(ee.List(nonConstantVarsList.get(2)));
+// var x4 = ee.Array(ee.List(nonConstantVarsList.get(3)));
+// var x5 = ee.Array(ee.List(nonConstantVarsList.get(4)));
+
+// var y_obs = ee.Array(ee.List(nonConstantVarsList.get(5)));
+
+// // Apply the linear function defined by the slopes and y-intercept of the
+// //  regression to the x variable lists to create an array that will represent
+// //  the regression line in the scatter plot.
+// var y2 = ee.Array(ee.List(regressionVarsList.get(0)).map(function(x) {
+//   var y = ee.Number(x).multiply(slope).add(yInt);
+//   return y;
+// }));
+
+
+if (false) { // true OR false.
+
+  print("avgFeatures:",
+    avgFeatures.first(),
+    avgFeatures.size());
+
+  print("gradientTrends:", 
+    gradientTrends.first(),
+    gradientTrends.size());
+
+  print("avgFeatures_withGradientTrends:", 
+    avgFeatures_withGradientTrends.first(),
+    avgFeatures_withGradientTrends.size());
+
+} else {
+  //// Visualization.
+  var emptyImg = ee.Image().double();
+  
+  var paintFillEdge = function(property) {
+    return emptyImg
+      .paint(Y_pred_FtrCol, property)
+      .paint(Y_pred_FtrCol, property, 3);
+  };
+
+  
+  VIS.centerOceania(10);
+  
+  var vis = true;
+  
+  Map.addLayer(paintFillEdge(depVar), {min: -1e-6, max: 1e-6, palette: VIS.BWR_palette}, 
+    "Gradient trend (observed)", vis);
+  
+  Map.addLayer(paintFillEdge(depVar + "_pred"), {min: -1e-6, max: 1e-6, palette: VIS.BWR_palette}, 
+    "Gradient trend (predicted)", vis);
+  
+  Map.addLayer(paintFillEdge(depVar + "_residual"), {min: -1e-5, max: 1e-5, palette: VIS.BWR_palette}, 
+    "Gradient trend (residual)", vis);
+} 
+
+

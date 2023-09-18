@@ -1,0 +1,224 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var geom = 
+    /* color: #d63000 */
+    /* shown: false */
+    /* displayProperties: [
+      {
+        "type": "rectangle"
+      }
+    ] */
+    ee.Geometry.Polygon(
+        [[[-122.83067448543764, 48.98747438392816],
+          [-122.83067448543764, 46.67210600748141],
+          [-114.93150456356264, 46.67210600748141],
+          [-114.93150456356264, 48.98747438392816]]], null, false);
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+/**
+ * Introduction:
+ * 1) Change detection for a small region in North America.
+ * 
+ * Update: 1/21/2022.
+ */
+
+
+/* Load module(s). */
+
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var VIS = require("users/ChenyangWei/Public:Modules/Visualization");
+var TNA = require("users/ChenyangWei/Public:Modules/Transect_NDVI_Analysis");
+var FC_AP = require("users/ChenyangWei/Public:Modules/FeatureCollection_Analysis&Processing");
+
+
+/* Data preparation. */
+
+var SCMAG = ee.ImageCollection("projects/sat-io/open-datasets/LCMAP/SCMAG");
+
+var maxSCMAG = SCMAG.max();
+
+// print("Change Magnitude:", SCMAG);
+
+// print("Max. Change Magnitude:", maxSCMAG);
+
+
+var wd_Oc = GATE.wd_Oceania;
+
+// Load the lower and upper segments with the maximum NDVI SDs.
+var lowerSegs_withMaxMWndviSDs = ee.FeatureCollection(wd_Oc
+  + "Transect_NDVI_Analysis/Testing_no1984/"
+  + "Testing_LowerSegs_withMaxMWndviSDs");
+
+var upperSegs_withMaxMWndviSDs = ee.FeatureCollection(wd_Oc
+  + "Transect_NDVI_Analysis/Testing_no1984/"
+  + "Testing_UpperSegs_withMaxMWndviSDs");
+
+// Combine the two types of segments.
+var segments_withMaxMWndviSDs = lowerSegs_withMaxMWndviSDs
+  .merge(upperSegs_withMaxMWndviSDs)
+  .filterBounds(geom);
+
+
+/* Maximum change detection. */
+
+// maxSCMAG = maxSCMAG.unmask().divide(1e4);
+
+// var gradTrend_NAm = ee.FeatureCollection(wd_Oc
+//   + "Transect_NDVI_Analysis/Testing_no1984/"
+//   + "Testing_gradTrend_MaxMinWinSD_NAm");
+
+// var gradTrend_US = gradTrend_NAm.filterBounds(geom);
+
+// var combinedReducer = ee.Reducer.mean().combine({
+//   reducer2: ee.Reducer.max(), 
+//   sharedInputs: true
+// }).setOutputs(["AvgMaxSCMAG", "MaxMaxSCMAG"]);
+
+// var maxChange_transects = maxSCMAG.reduceRegions({
+//   collection: gradTrend_US, 
+//   reducer: combinedReducer, 
+//   scale: 30, 
+//   crs: "EPSG:4326"
+// });
+
+// var fileName = "Testing_transectMaxSCMAG_new";
+
+// Export.table.toAsset({
+//   collection: maxChange_transects, 
+//   description: fileName, 
+//   assetId: wd_Oc
+//     + "Transect_NDVI_Analysis/Testing_no1984/"
+//     + fileName
+// });
+
+
+var maxChange_transects = ee.FeatureCollection(wd_Oc
+  + "Transect_NDVI_Analysis/Testing_no1984/"
+  + "Testing_transectMaxSCMAG_2");
+  // .filter(ee.Filter.neq("AvgMaxSCMAG", 0));
+  // .filter(ee.Filter.neq("MaxMaxSCMAG", 0));
+
+// maxChange_transects = maxChange_transects.map(function(ftr) {
+//   var lowerSD = ftr.get("lowerMaxMinWinSD");
+  
+//   var upperSD = ftr.get("upperMaxMinWinSD");
+  
+//   var avgMaxMovWinSD = ee.Number(lowerSD).add(upperSD).divide(2);
+  
+//   return ftr.set("avgMaxMovWinSD", avgMaxMovWinSD);
+// });
+
+// print("maxChange_transects:", maxChange_transects.first(),
+//   maxChange_transects.size());
+
+
+/* Annual NDVIs. */
+
+// Set the major working directory.
+var wd_Main = GATE.wd_NorthAmerica;
+
+// Load the new CATE.
+var newCATE = ee.Image(wd_Main
+  + "Climate-Based_ATE/" 
+  + GATE.newCATE_fileName);
+
+// Load the annual NDVIs in the new CATE as an Image.
+var annualNDVIs_newCATE = ee.Image(wd_Main
+  + "ATEI_Estimation/"
+  + TNA.annualMaxNDVI_300mBufNewCATE_NorthAmerica_fileName)
+  .updateMask(newCATE);
+
+
+/* Scatterplot visualization. */
+
+if (true) {
+  
+  var generate_ScatterPlots = 
+    function(xAxis, yAxis, hTitle, vTitle, mainTitle) {
+      var scatterPlot = ui.Chart.array.values({
+        array: yAxis,
+        axis: 0,
+        xLabels: xAxis})
+        .setChartType("ScatterChart")
+        .setOptions({
+          legend: {position: "none"},
+          title: mainTitle,
+          hAxis: {title: hTitle},
+          vAxis: {title: vTitle},
+          series: {
+            0: {
+              pointSize: 0.5,
+              dataOpacity: 0.5,
+            }
+          }
+        });
+      
+      return scatterPlot;
+    }; 
+  
+  var Avg_Scatterplot = generate_ScatterPlots(
+    maxChange_transects.aggregate_array("avgMaxMovWinSD"), 
+    maxChange_transects.aggregate_array("AvgMaxSCMAG"), 
+    "Max. moving-window NDVI SD", 
+    "Average change magnitude");
+  
+  var Lower_Scatterplot = generate_ScatterPlots(
+    maxChange_transects.aggregate_array("lowerMaxMinWinSD"), 
+    maxChange_transects.aggregate_array("AvgMaxSCMAG"), 
+    "Lower segment NDVI SD", 
+    "Average change magnitude");
+  
+  print(Avg_Scatterplot);
+  // print(Lower_Scatterplot);
+}
+
+
+/* Map visualization. */
+
+if (true) { // true OR false.
+  
+  Map.setOptions("satellite");
+  Map.setCenter(-120.2473, 48.8701, 8);
+  
+  // Annual NDVI.
+  var NDVIname = "smdNDVI_2000";
+  
+  Map.addLayer(annualNDVIs_newCATE.select(NDVIname), 
+    VIS.NDVI_vis, NDVIname, false);
+  
+  // LCMAP.
+  var palettes = require('users/gena/packages:palettes');
+
+  // Map.addLayer(SCMAG.sort('system:time_start',false),
+  //   {min:651,max:3700,palette:palettes.cmocean.Algae[7]},
+  //   'SCMAG', false);
+
+  Map.addLayer(maxSCMAG,
+    {min: 651, max: 3700,
+    palette: palettes.cmocean.Algae[7]},
+    // {min:651,max:3700, palette: VIS.BWR_palette},
+    "Max. spectral change magnitude", true);
+
+  // NDVI SD.
+  var SD_visParams = {min: 0, max: 0.2, palette: VIS.BWR_palette};
+  
+  var vis_2 = false;
+  
+  Map.addLayer(VIS.paintFtrCol_FillANDEdge(segments_withMaxMWndviSDs, "max_MWndviSD", 1), 
+    SD_visParams, 
+    "Segment NDVI SD", vis_2);
+  
+  // Moving-window year.
+  var MWyr_visParams = {min: 1985, max: 2015, palette: VIS.BWR_2_palette};
+  
+  Map.addLayer(VIS.paintFtrCol_FillANDEdge(segments_withMaxMWndviSDs, "MW_primaryYear", 1), 
+    MWyr_visParams, 
+    "Year with the max. moving-window NDVI SD", vis_2);
+  
+  Map.addLayer(VIS.paintFtrCol_FillANDEdge(maxChange_transects, "avgMaxMovWinSD", 1), 
+    SD_visParams, 
+    "Max. moving-window NDVI SD", true);
+  
+  // Map.addLayer(maxChange_transects, {color: "FFFF00"}, 
+  //   "Raw transects", true);
+  
+}
+

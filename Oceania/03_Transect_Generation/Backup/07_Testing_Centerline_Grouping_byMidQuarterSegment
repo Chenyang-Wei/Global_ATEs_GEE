@@ -1,0 +1,143 @@
+/**
+ * Introduction:
+ * 1) Group transect centerlines with mid-segments within 90m to one another
+ *  and then select the centerline with the largest elevational range 
+ *  (the "steepest") in each group.
+ * 
+ * Update: 10/7/2021.
+ * 
+ * Runtime: 5h.
+ */
+
+
+/* Load module(s). */
+
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var VIS = require("users/ChenyangWei/Public:Modules/Visualization");
+
+
+
+/**** 1) The following section needs to be updated. ****/
+
+// Set the working directory.
+var wd_Main = GATE.wd_Oceania;
+
+/**** The section above needs to be updated. ****/
+
+
+
+/* Data and function preparation. */
+
+// Load the raw transect centerlines.
+var rawCLs = ee.FeatureCollection(wd_Main + "Elevational_Transect_Generation/"
+  + GATE.rawCLs_fileName);
+
+// Load the mid-quarter segments.
+var midQuarters = ee.FeatureCollection(wd_Main + "Elevational_Transect_Generation/"
+  + GATE.midQuarters_fileName);
+
+
+/* Group transect centerlines with mid-segments within 90m to one another
+  and then select the centerline with the largest elevational range 
+  (the "steepest") in each group. */
+
+
+// Function to group transect centerlines with mid-segments within 90m to one another
+//  and then select the centerline with the largest elevational range 
+//  (the "steepest") in each group.
+var selectSteepestCLs_45mGroupedByMidSegment = function(midSegments, centerLines) {
+  // Define the grouping distance.
+  var groupDist = 45;
+  
+  // Create and union the buffers of mid-segments.
+  var unionedBuffer = midSegments.map(function(segment) {
+    return segment.buffer(groupDist);
+  }).union();
+  
+  // Convert the multiPolygon of the unioned buffer
+  //  to a set of individual polygons.
+  var unionedBuffer_IndPlgs = unionedBuffer.first()
+    .geometry().coordinates().map(function(coords) {
+      var plg = ee.Geometry.Polygon(coords);
+      
+      return ee.Feature(plg);
+    });
+  
+  // Define a spatial filter as geometries that intersect.
+  var spatialFilter = ee.Filter.intersects({
+    leftField: ".geo",
+    rightField: ".geo"
+  });
+  
+  // Define a save-all join.
+  var keyName = "groupedFeatures";
+  
+  var saveAllJoin = ee.Join.saveAll({
+    matchesKey: keyName,
+  });
+  
+  // Join each individual polygon of the unioned buffer with 
+  //  mid-segments that it intersects.
+  var joined_FtrCol = saveAllJoin.apply(unionedBuffer_IndPlgs, midSegments, 
+    spatialFilter);
+  
+  // Identify the mid-segment of the centerline with the largest elevational range
+  //  in each group.
+  var identified_Segments = joined_FtrCol.map(function(joined) {
+    var grouped_Ftrs = ee.FeatureCollection(ee.List(joined.get(keyName)));
+  
+    var sorted_Ftrs = grouped_Ftrs.sort({
+      property: "elvRange", 
+      ascending: false
+    });
+    
+    var identified_Ftr = sorted_Ftrs.first();
+    
+    return identified_Ftr;
+  });
+  
+  // Select centerlines sharing the same IDs with the identified mid-segments.
+  var IDname = "CL_ID";
+  
+  var identified_ID_list = identified_Segments.aggregate_array(IDname);
+  
+  var selected_CLs = centerLines.filter(ee.Filter.inList({
+    leftField: IDname, 
+    rightValue: identified_ID_list
+  }));
+  
+  return selected_CLs;
+};
+
+
+var steepestCLs = selectSteepestCLs_45mGroupedByMidSegment(midQuarters, rawCLs);
+
+
+if (false) { // true OR false.
+  print("rawCLs:", rawCLs.size());
+  
+  print("midQuarters:", midQuarters.size());
+  
+  //// Visualization.
+  VIS.centerOceania(13); /**** 2) Need to update. ****/
+  
+  Map.addLayer(rawCLs, 
+    {color: "FF0000"}, 
+    "rawCLs", true);
+  
+  Map.addLayer(midQuarters, 
+    {color: "FFFF00"}, 
+    "midQuarters", true);
+
+} else {
+  //// Export the result(s).
+  var fileName = "selectSteepestCLs_45mGrouped";
+  
+  Export.table.toAsset({
+    collection: steepestCLs, 
+    description: fileName, 
+    assetId: wd_Main + "Elevational_Transect_Generation/"
+      + fileName
+  });
+}
+

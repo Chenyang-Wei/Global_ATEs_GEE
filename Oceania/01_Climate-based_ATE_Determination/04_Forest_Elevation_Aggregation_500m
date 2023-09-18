@@ -1,0 +1,101 @@
+/**
+ * Introduction: 
+ * 1) Aggregate the closed forest elevation within the buffered raw CATE from 30 m to 500 m. 
+ * 
+ * Update: 6/11/2021.
+ * 
+ * Runtime: 9m.
+ */
+
+
+/* Load the required dataset(s). */
+
+// Set the 10-km buffered bounding box of the study domain.
+//  On the west side of 180 degrees.
+var oceanAOI = ee.Geometry.Rectangle({
+  coords: [[112.75775254694261,-54.85230853959079],
+    [180,28.305403384827716]],
+  geodesic: false
+});
+
+// Set the working directory.
+var wdOcean = "users/YushanFu/Oceania_ATE/";
+
+// Function to print the image information.
+function printImgInfo(name, image) {
+  print(name,
+    image.bandTypes(),
+    image.projection().crs(),
+    image.projection().nominalScale());
+}
+
+// Load the closed forest elevation within the buffered raw CATE at the 30-m level.
+var clsdFrstElv = ee.Image(wdOcean + "Climate-Based_ATE/"
+  + "ClosedForests_in2015-2019ALLyears_BufRawCATE_ALOSelv");
+
+// printImgInfo("clsdFrstElv:", clsdFrstElv)
+
+// Get the original resolution.
+var oldScale = 30;
+
+
+/* Aggregate the closed forest elevation to the 500-m level. */
+
+// Determine the new resolution.
+var newScale = 500; // In meters.
+
+// Factor of the resolution scaling of each axis.
+var factor = Math.ceil(newScale / oldScale);
+
+// print("factor:", factor)
+
+// Generate a mean reducer.
+var meanRd = ee.Reducer.mean();
+
+// Elevation aggregation.
+var aggrElv = clsdFrstElv.reduceResolution({ 
+  reducer: meanRd,
+  maxPixels: factor * factor
+}).reproject({ 
+  crs: "EPSG:4326",
+  scale: newScale
+});
+
+// Set the mask of each valid pixel to 1.
+var nomaskElv = aggrElv.updateMask(aggrElv.gte(-1e18));
+
+// Set the dataset to the float type.
+var floatElv = nomaskElv.float();
+
+// printImgInfo("floatElv:", floatElv)
+
+
+if (false) {
+  // Visualization.
+  var elvPalette = ['006600', '002200', 'fff700', 'ab7634', 'c4d0ff', 'ffffff'];
+  var elvVis = {min: 200, max: 1200, palette: elvPalette};
+  
+  Map.setOptions("hybrid");
+  Map.setCenter(170.0157, -43.485, 12);
+  
+  Map.addLayer(floatElv, elvVis, "500m forest elevation", true);
+  Map.addLayer(clsdFrstElv, elvVis, "30m forest elevation", true);
+  
+  Map.addLayer(floatElv.mask(), {min: 0, max: 1}, "500m forest elevation (mask)", true);
+
+} else if (true) {
+  // Export the result.
+  var fileName = "ClosedForestsALLyears_BufRawCATE_" + newScale + "mMeanElv";
+  
+  Export.image.toAsset({
+    image: floatElv,
+    description: fileName, 
+    assetId: wdOcean + "Climate-Based_ATE/"
+      + fileName, 
+    crs: "EPSG:4326",
+    scale: newScale,
+    region: oceanAOI,
+    maxPixels: 1e13
+  }); 
+}
+

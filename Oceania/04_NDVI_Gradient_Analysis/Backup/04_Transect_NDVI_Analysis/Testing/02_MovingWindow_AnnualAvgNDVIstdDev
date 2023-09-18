@@ -1,0 +1,377 @@
+/**
+ * Introduction:
+ * 1) For each transect segment, compute the standard deviation 
+ *  of the annual spatial average NDVIs of each moving window of 5/6 years.
+ * 
+ * Update: 12/21/2021.
+ * 
+ * Runtime: 1h ~ 2h.
+ */
+
+
+/* Load module(s). */
+
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var TNA = require("users/ChenyangWei/Public:Modules/Transect_NDVI_Analysis");
+
+
+/* Data preparation. */
+
+var wd_Oc = GATE.wd_Oceania;
+
+// Load the raw lower and upper segments.
+var raw_LowerSegs = ee.FeatureCollection(wd_Oc
+  + "Transect_NDVI_Analysis/Testing/"
+  + "Testing_lowerSeg_NAm");
+
+var raw_UpperSegs = ee.FeatureCollection(wd_Oc
+  + "Transect_NDVI_Analysis/Testing/"
+  + "Testing_upperSeg_NAm");
+
+// Load the lower and upper segments with annual average NDVIs.
+var lowerSegs_AnnualNDVIs = ee.FeatureCollection(wd_Oc
+  + "Transect_NDVI_Analysis/Testing/"
+  + "Testing_LowerSegs_withAnnualAvgNDVIs");
+
+var upperSegs_AnnualNDVIs = ee.FeatureCollection(wd_Oc
+  + "Transect_NDVI_Analysis/Testing/"
+  + "Testing_UpperSegs_withAnnualAvgNDVIs");
+
+
+/* Compute the maximum standard deviation of annual spatial average NDVIs
+  of all 6-year moving windows of each transect segment. */
+
+// var lowerSegs_MaxMWndviSDs = TNA.calculate_SegmentMaxMovWinNDVIstdDev_byBasin(
+//   raw_LowerSegs, lowerSegs_AnnualNDVIs, "CL_newID"
+// );
+
+// var upperSegs_MaxMWndviSDs = TNA.calculate_SegmentMaxMovWinNDVIstdDev_byBasin(
+//   raw_UpperSegs, upperSegs_AnnualNDVIs, "CL_newID"
+// );
+
+
+/* Average the three maximum standard deviation of annual spatial average NDVIs
+  of all 6-year moving windows of each transect segment. */
+
+var FC_AP = require("users/ChenyangWei/Public:Modules/FeatureCollection_Analysis&Processing");
+
+var average_SegmentMaxMovWinNDVIstdDevs_byBasin = function(
+  rawSegments, segments_withAnnualNDVIs, CLid_Name) {
+    
+    /**
+     * "FeatureCollection": 
+     *  rawSegments, segments_withAnnualNDVIs.
+     * 
+     * "String":
+     *  CLid_Name.
+     * 
+     * Result: FeatureCollection.
+    */
+    
+    // Define the number of the maximum NDVI standard deviations.
+    var maxMWndviSDnum = 3;
+
+    // Determine the names of the properties of interest.
+    var HybasID_name = "Hybas_ID";
+    
+    var Y0_Name = "Year";
+    
+    var targetFtr_Name = "targetFeature_";
+    
+    var targetCount_Name = "targetCount";
+    
+    var MWprimaryYr_Name = "MW_primaryYear";
+    
+    var MWndviSD_name = "MWndvi_SD";
+    
+    var maxMWndviSD_name = "max_MWndviSD";
+    
+    // Create a non-duplicate list of the Hybas IDs.
+    var HybasID_list = segments_withAnnualNDVIs.aggregate_array(HybasID_name)
+      .distinct();
+    
+    
+    /* Compute the annual spatial average NDVIs of each transect segment by basin. */
+
+    var segments_withAvgMaxMWndviSDs_AllBasins = HybasID_list.map(function(HybasID) {
+      
+      // Create a filter of the Hybas ID.
+      var HybasID_filter = ee.Filter.eq(HybasID_name, HybasID);
+      
+      // Identify the raw segments of each basin.
+      var rawSegments_perBasin = rawSegments
+        .filter(HybasID_filter);
+      
+      // Identify the segments with annual NDVIs of each basin.
+      var segments_perBasin = segments_withAnnualNDVIs
+        .filter(HybasID_filter);
+      
+      
+      /* Generate a 6-year moving window for each segment in each basin. */
+      
+      var segments_withMWyrs_perBasin = segments_perBasin.map(function(segment) {
+        
+        // Get the "Year_0" value.
+        var Y0_Value = ee.Number(segment.get(Y0_Name));
+        
+        // Add the following five years.
+        for (var yearID = 1; yearID <= 5; yearID ++) {
+          var yearName = Y0_Name + "_" + yearID;
+          
+          var yearValue = Y0_Value.add(yearID);
+          
+          segment = segment.set(yearName, yearValue);
+        }
+        
+        // Return a segment Feature with 6 moving-window year properties.
+        return segment;
+      });
+      
+      // Obtain the property names including the moving window years.
+      var prptNames_withMWyrs = segments_withMWyrs_perBasin.first()
+        .propertyNames();
+      
+      // Create a non-duplicate list of the centerline IDs of each basin.
+      var CLid_List_perBasin = segments_perBasin.aggregate_array(CLid_Name)
+        .distinct();
+      
+      var segmentAvgMaxMWndviSDs_perBasin = CLid_List_perBasin.map(function(CLid) {
+        
+        // Create a filter of the centerline ID.
+        var CLid_Filter = ee.Filter.eq(CLid_Name, CLid);
+        
+        // Identify the annual Features of each single segment.
+        var singleSegment_withMWyrs = segments_withMWyrs_perBasin
+          .filter(CLid_Filter);
+        
+        
+        /* Create a set of moving windows of Features for each segment. */
+        
+        // Select Features with the first year of each moving window (i.e., 1984 ~ 2015).
+        var primary_FtrCol = singleSegment_withMWyrs.filter(
+          ee.Filter.lte(Y0_Name, 2015)
+        );
+        
+        for (var targetID = 1; targetID <= 5; targetID ++) {
+          // Determine the names of the target year and Feature.
+          var targetYear_Name = Y0_Name + "_" + targetID;
+          
+          var matched = targetFtr_Name + targetID;
+        
+          // Define a filter as the target year of the primary Feature
+          //  and the "Year_0" of the secondary Feature are the same.
+          var targetYear_Filter = ee.Filter.equals({
+            leftField: targetYear_Name,
+            rightField: Y0_Name
+          });
+          
+          // Define a save-first join 
+          //  (Note: Include primary Features without matches in the result).
+          var saveFirstJoin = ee.Join.saveFirst({
+            matchKey: matched,
+            outer: true
+          });
+          
+          // Join each primary Feature with the corresponding secondary Feature.
+          primary_FtrCol = saveFirstJoin.apply(
+            primary_FtrCol, 
+            singleSegment_withMWyrs, 
+            targetYear_Filter
+          );
+        }
+        
+        // Derive the number of target years of each primary Feature.
+        var primary_TargetsCounted_FtrCol = primary_FtrCol.map(function(ftr) {
+          
+          // Count the properties of the joined targets.
+          var targetCount = ftr.select([targetFtr_Name + ".*"])
+            .propertyNames().size();
+          
+          return ftr.set(targetCount_Name, targetCount);
+        });
+        
+        // Select primary Features with at least 3 target years.
+        var selectedPrimary_FtrCol = primary_TargetsCounted_FtrCol.filter(
+          ee.Filter.gte(targetCount_Name, 3)
+        );
+        
+        // Generate a moving window for each selected primary Feature.
+        var movWins_perSegment = selectedPrimary_FtrCol.map(function(primaryFtr_withTargets) {
+          
+          // Get all properties except the joined targets.
+          var primaryFtr = primaryFtr_withTargets.select(prptNames_withMWyrs);
+          
+          // Determine a primary year of the moving window.
+          var MW_primaryYear = primaryFtr.get(Y0_Name);
+          
+          // Set the primary year.
+          var primaryFtr_withMWyr = primaryFtr.set(MWprimaryYr_Name, MW_primaryYear);
+          
+          // Obtain the property names of the joined targets.
+          var targetNames_List = primaryFtr_withTargets.select([targetFtr_Name + ".*"])
+            .propertyNames();
+          
+          // Create a raw moving window.
+          var raw_MovWin = ee.List([primaryFtr_withMWyr]);
+          
+          // Add each joined target into the moving window.
+          var addEachTarget = function(targetName, movWin_List) {
+            var currentTarget = primaryFtr_withTargets.get(targetName);
+            
+            // Set the primary year.
+            var currentTarget_withMWyr = ee.Feature(currentTarget)
+              .set(MWprimaryYr_Name, MW_primaryYear);
+            
+            return ee.List(movWin_List).add(currentTarget_withMWyr);
+          };
+          
+          var movWin_withTargets_List = ee.List(targetNames_List.iterate({
+            function: addEachTarget, 
+            first: raw_MovWin
+          }));
+          
+          var movWin_withTargets_FtrCol = ee.FeatureCollection(movWin_withTargets_List);
+          
+          // Return the moving window of each selected primary Feature.
+          return movWin_withTargets_FtrCol;
+        });
+        
+      
+        /* Calculate the standard deviation of annual average NDVIs
+          of each moving window of each segment. */
+        
+        // Obtain the moving windows of each segment.
+        var movWins_perSegment_FtrCol = movWins_perSegment.flatten();
+        
+        // The grouped reduction:
+        //  1) The "groupField" argument is the index of the input in the selectors array
+        //    that contains the variables by which to group the output.
+        //    The first field is index 0.
+        //  2) The "groupName" argument specifies the name of the property
+        //    to store the value of the grouping variable.
+        var MWndviSDs_perSegment_List = ee.List(movWins_perSegment_FtrCol.reduceColumns({
+          selectors: ["annualAvgNDVI", MWprimaryYr_Name],
+          reducer: ee.Reducer.stdDev().setOutputs([MWndviSD_name]).group({
+            groupField: 1,
+            groupName: MWprimaryYr_Name,
+          })
+        }).get("groups"));
+        
+        // Convert the generated List to a FeatureCollection.
+        var MWndviSDs_perSegment_FtrCol = ee.FeatureCollection(MWndviSDs_perSegment_List.map(
+          function(listElement) {
+            var dictionary = ee.Dictionary(listElement);
+            
+            return ee.Feature(null).set(
+              MWndviSD_name, dictionary.get(MWndviSD_name)
+            );
+          }));
+        
+        
+        /* Identify and average the three maximum standard deviations of annual average NDVIs
+          of all moving windows of each segment. */
+        
+        var avgMaxMWndviSD_perSegment = MWndviSDs_perSegment_FtrCol.limit({
+          max: maxMWndviSDnum, 
+          property: MWndviSD_name, 
+          ascending: false
+        }).aggregate_mean(MWndviSD_name);
+        
+        // Create a Feature with NULL geometry.
+        return ee.Feature(null).set(
+          "avgMaxMWndviSD", avgMaxMWndviSD_perSegment,
+          CLid_Name, CLid
+        );
+      });
+      
+      // Derive the average max. NDVI SD of each segment in each basin.
+      var segmentAvgMaxMWndviSDs_perBasin_FtrCol = ee.FeatureCollection(segmentAvgMaxMWndviSDs_perBasin);
+      
+      // Combine each average max. NDVI SD with the corresponding segment.
+      var segments_withAvgMaxMWndviSDs_perBasin = FC_AP.combine_twoFtrCols_byCommonProperty(
+        rawSegments_perBasin, segmentAvgMaxMWndviSDs_perBasin_FtrCol, CLid_Name
+      );
+      
+      return segments_withAvgMaxMWndviSDs_perBasin;
+    });
+    
+    // Return a FeatureCollection.
+    return ee.FeatureCollection(segments_withAvgMaxMWndviSDs_AllBasins)
+      .flatten();
+  };
+
+var lowerSegs_AvgMaxMWndviSDs = average_SegmentMaxMovWinNDVIstdDevs_byBasin(
+  raw_LowerSegs, lowerSegs_AnnualNDVIs, "CL_newID"
+);
+
+var upperSegs_AvgMaxMWndviSDs = average_SegmentMaxMovWinNDVIstdDevs_byBasin(
+  raw_UpperSegs, upperSegs_AnnualNDVIs, "CL_newID"
+);
+
+
+
+if (false) { //// true OR false.
+
+  print("raw_LowerSegs:",
+    raw_LowerSegs.first(),
+    raw_LowerSegs.size()); // 28413.
+  
+  print("lowerSegs_AnnualNDVIs:",
+    lowerSegs_AnnualNDVIs.first(),
+    lowerSegs_AnnualNDVIs.size()); // 1051236.
+  
+  print("upperSegs_AnnualNDVIs:",
+    upperSegs_AnnualNDVIs.first(),
+    upperSegs_AnnualNDVIs.size()); // 1050367.
+  
+  // print("lowerSegs_MaxMWndviSDs:",
+  //   lowerSegs_MaxMWndviSDs.first());
+  
+  print("lowerSegs_AvgMaxMWndviSDs:",
+    lowerSegs_AvgMaxMWndviSDs.first(),
+    lowerSegs_AvgMaxMWndviSDs.size());
+  
+} else { //// Export the result(s).
+  
+  // var fileName_Lower = "Testing_LowerSegs_withMaxMWndviSDs";
+  
+  // Export.table.toAsset({
+  //   collection: lowerSegs_MaxMWndviSDs, 
+  //   description: fileName_Lower, 
+  //   assetId: wd_Oc
+  //     + "Transect_NDVI_Analysis/Testing/"
+  //     + fileName_Lower
+  // });
+  
+  // var fileName_Upper = "Testing_UpperSegs_withMaxMWndviSDs";
+  
+  // Export.table.toAsset({
+  //   collection: upperSegs_MaxMWndviSDs, 
+  //   description: fileName_Upper, 
+  //   assetId: wd_Oc
+  //     + "Transect_NDVI_Analysis/Testing/"
+  //     + fileName_Upper
+  // });
+  
+  
+  var fileName_Lower = "Testing_LowerSegs_withAvgMaxMWndviSDs";
+  
+  Export.table.toAsset({
+    collection: lowerSegs_AvgMaxMWndviSDs, 
+    description: fileName_Lower, 
+    assetId: wd_Oc
+      + "Transect_NDVI_Analysis/Testing/"
+      + fileName_Lower
+  });
+  
+  var fileName_Upper = "Testing_UpperSegs_withAvgMaxMWndviSDs";
+  
+  Export.table.toAsset({
+    collection: upperSegs_AvgMaxMWndviSDs, 
+    description: fileName_Upper, 
+    assetId: wd_Oc
+      + "Transect_NDVI_Analysis/Testing/"
+      + fileName_Upper
+  });
+}
+

@@ -1,0 +1,157 @@
+/**
+ * Introduction: 
+ * 1) Within the buffered raw CATE, identify areas higher than 
+ *  the smoothed closed forest elevation at the 10-km level.
+ * 2) Determine a new CATE as the identified areas within 3 km 
+ *  to closed forests in the buffered raw CATE.
+ * 
+ * Update: 6/17/2021.
+ * 
+ * Runtime: 1h.
+ */
+
+
+/* Load and reproject the required dataset(s). */
+
+// Set the 10-km buffered bounding box of the study domain.
+//  On the west side of 180 degrees.
+var oceanAOI = ee.Geometry.Rectangle({
+  coords: [[112.75775254694261,-54.85230853959079],
+    [180,28.305403384827716]],
+  geodesic: false
+});
+
+// Target projection.
+var targetPrj = {
+  crs: "EPSG:4326",
+  scale: 30
+};
+
+// Set the working directory.
+var wdOcean = "users/YushanFu/Oceania_ATE/";
+
+// Function to print the image information.
+function printImgInfo(name, image) {
+  print(name,
+    image.bandTypes(),
+    image.projection().crs(),
+    image.projection().nominalScale());
+}
+
+// ALOS elevation (Version 3.2, released in January 2021) in the AOI.
+var ALOSelv = ee.ImageCollection('JAXA/ALOS/AW3D30/V3_2').select('DSM')
+  .filterBounds(oceanAOI)
+  .mosaic()
+  .reproject(targetPrj);
+
+// printImgInfo("ALOSelv:", ALOSelv)
+
+// Land surface area based on the Hansen Global Forest Change dataset (v1.7).
+var land = ee.Image("UMD/hansen/global_forest_change_2019_v1_7")
+  .select("datamask")
+  .eq(1) // Select the "Mapped land surface" area in the Hansen dataset.
+  .reproject(targetPrj);
+
+// printImgInfo("land:", land)
+
+// Load the buffered raw CATE.
+var bufCATE = ee.Image(wdOcean + "Climate-Based_ATE/" +
+  "3kmBuffered_30mRawCATE_500mToAvgTLH_Oceania");
+
+// printImgInfo("bufCATE:", bufCATE)
+
+// Load the smoothed 10-km closed forest elevation.
+var smdElv = ee.Image(wdOcean + "Climate-Based_ATE/"
+  + "ClosedForestsALLyears_BufRawCATE_10kmMeanElv_10pxCircleMean");
+
+// printImgInfo("smdElv:", smdElv)
+
+// Load the 30-m closed forest elevation within the buffered raw CATE.
+var CFelv = ee.Image(wdOcean + "Climate-Based_ATE/"
+  + "ClosedForests_in2015-2019ALLyears_BufRawCATE_ALOSelv");
+
+// printImgInfo("CFelv:", CFelv)
+
+
+/* Within the buffered raw CATE, identify areas higher than  
+  the smoothed closed forest elevation at the 10-km level. */
+
+// Elevation of the buffered raw CATE.
+var bufCATEelv = ALOSelv.updateMask(bufCATE);
+
+// printImgInfo("bufCATEelv:", bufCATEelv)
+
+// Determine areas higher than the smoothed elevation.
+var gteSmdElv = bufCATEelv.gte(smdElv);
+
+// printImgInfo("gteSmdElv:", gteSmdElv)
+
+
+/* Determine a new CATE as the identified areas within 3 km 
+  to closed forests in the buffered raw CATE. */
+
+// Select the closed forests within the buffered raw CATE.
+var CF_5yr = CFelv.mask();
+
+// Determine the size of neighborhood.
+var neighborhood = 200; // Number of 30-m pixels.
+
+// Calculate the distance to closed forests at each pixel in the neighborhood.
+var forestDist = CF_5yr.fastDistanceTransform({
+  neighborhood: neighborhood,
+  units: "pixels",
+  metric: "squared_euclidean"
+}).sqrt() // Get the distance in the number of 30-m pixels.
+  .reproject(targetPrj);
+
+// printImgInfo("forestDist:", forestDist)
+
+// Generate a buffer of closed forests.
+var distThres = 100; // Number of 30-m pixels.
+
+var forestBuffer = forestDist.lte(distThres);
+
+// printImgInfo("forestBuffer:", forestBuffer)
+
+// Determine a new CATE within the forest buffer.
+var newCATE = gteSmdElv.updateMask(forestBuffer)
+  .updateMask(land) // Extract the land area.
+  .selfMask()
+  .rename("newCATE");
+
+// printImgInfo("newCATE:", newCATE)
+
+
+if (false) {
+  // Visualization.
+  var elvPalette = ['006600', '002200', 'fff700', 'ab7634', 'c4d0ff', 'ffffff'];
+  var elvVis = {min: 200, max: 1200, palette: elvPalette};
+  
+  Map.setOptions("hybrid");
+  Map.setCenter(170.0157, -43.485, 10);
+  
+  Map.addLayer(smdElv, elvVis, "smdElv", true);
+  Map.addLayer(bufCATEelv, elvVis, "bufCATEelv", true);
+  Map.addLayer(gteSmdElv, {min: 0, max: 1, palette: "FFFFFF, FF0000"}, "gteSmdElv", true, 0.5);
+  
+  Map.addLayer(forestBuffer, {min: 0, max: 1, palette: "FFFFFF, 0000FF"}, "forestBuffer", true, 0.5);
+  Map.addLayer(CF_5yr, {min: 0, max: 1, palette: "FFFFFF, 00FF00"}, "CF_5yr", true, 0.5);
+  Map.addLayer(newCATE, {min: 0, max: 1, palette: "FFFFFF, FFFF00"}, "newCATE", true, 0.5); 
+
+} else if (true) {
+  //// Export the result.
+  // Buffer of closed forests in the buffered raw CATE & No clipping to the study domain.
+  var fileName = "30mNewCATE_gteSmd10kmCForestElv_3kmCForestBuffer_AOI"; 
+  
+  Export.image.toAsset({
+    image: newCATE,
+    description: fileName, 
+    assetId: wdOcean + "Climate-Based_ATE/"
+      + fileName, 
+    crs: "EPSG:4326",
+    scale: 30,
+    region: oceanAOI,
+    maxPixels: 1e13
+  }); 
+}
+

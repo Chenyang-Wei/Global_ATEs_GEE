@@ -1,0 +1,82 @@
+/**
+ * Introduction:
+ * 1) Select the HydroSHEDS basins ("hybas_12") intersecting the study domain
+ *  with the medial axis between ridges and valleys in the new CATE.
+ * 
+ * Update: 9/29/2021.
+ * 
+ * Runtime: 1m.
+ */
+
+
+/* Load module(s). */
+
+var IMG = require("users/ChenyangWei/Public:Modules/Image_Analysis&Processing");
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var VIS = require("users/ChenyangWei/Public:Modules/Visualization");
+
+
+
+/**** The following section needs to be updated. ****/
+
+// Set the working directory.
+var wd_Main = GATE.wd_Oceania;
+
+// Name of the study domain.
+var studyDomainName = GATE.studyDomain_Oceania;
+
+/**** The section above needs to be updated. ****/
+
+
+
+/* Data and function preparation. */
+
+// Load the medial axis between ridges and valleys in the new CATE.
+var medialAxis = ee.Image(wd_Main + "Elevational_Transect_Generation/"
+  + GATE.medialAxis_fileName);
+
+// Load the study domain.
+var studyDomain = ee.FeatureCollection(wd_Main + "Climate-Based_ATE/" 
+  + studyDomainName);
+
+// Target projection.
+var targetPrj = IMG.WGS84_30m;
+
+
+/* Extract the most detailed (level 12) HydroSHEDS basins 
+  intersecting the study domain. */
+
+var basins_StudyDomain = GATE.extractBasins_StudyDomain(studyDomain);
+
+
+/* Select the HydroSHEDS basins ("hybas_12") 
+  with the medial axis between ridges and valleys in the new CATE. */
+
+var selectedBasins_MedialAxis = GATE.selectBasins_MedialAxis(medialAxis, basins_StudyDomain, targetPrj);
+
+
+if (false) { // true OR false.
+  IMG.printImgInfo("medialAxis:", medialAxis);
+  
+  //// Visualization.
+  VIS.centerOceania(13); ////// Need to update.
+  
+  Map.addLayer(basins_StudyDomain, {color: "0000FF"}, "basins_StudyDomain");
+  Map.addLayer(selectedBasins_MedialAxis, {color: "FFFF00"}, "selectedBasins_MedialAxis");
+  
+  Map.addLayer(medialAxis, 
+    {min: 0, max: 500, palette: VIS.BWR_palette}, 
+    "medialAxis", true);
+
+} else {
+  //// Export the result(s).
+  var fileName = GATE.selectedBasins_fileName;
+  
+  Export.table.toAsset({
+    collection: selectedBasins_MedialAxis, 
+    description: fileName, 
+    assetId: wd_Main + "Elevational_Transect_Generation/"
+      + fileName
+  });
+}
+

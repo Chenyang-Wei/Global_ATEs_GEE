@@ -1,0 +1,108 @@
+/**
+ * Introduction:
+ * 1) Visualize the maximum standard deviation of 
+ *  annual average NDVIs of all 6-year moving windows
+ *  for each transect segment.
+ * 
+ * Update: 1/21/2022.
+ */
+
+
+/* Load module(s). */
+
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var VIS = require("users/ChenyangWei/Public:Modules/Visualization");
+var TNA = require("users/ChenyangWei/Public:Modules/Transect_NDVI_Analysis");
+var FC_AP = require("users/ChenyangWei/Public:Modules/FeatureCollection_Analysis&Processing");
+
+
+/* Data preparation. */
+
+var wd_Oc = GATE.wd_Oceania;
+
+// Load the lower and upper segments with the maximum NDVI SDs.
+var lowerSegs_withMaxMWndviSDs = ee.FeatureCollection(wd_Oc
+  + "Transect_NDVI_Analysis/"
+  + "lowerSegments_withMaxMovWinNDVIsds");
+
+var upperSegs_withMaxMWndviSDs = ee.FeatureCollection(wd_Oc
+  + "Transect_NDVI_Analysis/"
+  + "upperSegments_withMaxMovWinNDVIsds");
+
+var lowerSegments_withAnnualAvgNDVIs = ee.FeatureCollection(wd_Oc
+  + "Transect_NDVI_Analysis/"
+  + "lowerSegments_withAnnualAvgNDVIs");
+
+var upperSegments_withAnnualAvgNDVIs = ee.FeatureCollection(wd_Oc
+  + "Transect_NDVI_Analysis/"
+  + "upperSegments_withAnnualAvgNDVIs");
+
+print("lower Segment #:", 
+  lowerSegs_withMaxMWndviSDs.size());
+
+print("Annual observation #:", 
+  lowerSegments_withAnnualAvgNDVIs.size());
+
+// print("upperSegs_withMaxMWndviSDs:", 
+//   upperSegs_withMaxMWndviSDs.first(),
+//   upperSegs_withMaxMWndviSDs.size());
+
+
+if (true) {
+  
+  // Function to generate histograms.
+  var generate_Histograms_New = 
+    function(FtrCol, propertyName, hAxisTitle, mainTitle) {
+      var histogram = ui.Chart.feature.histogram({
+        features: FtrCol, 
+        property: propertyName, 
+        maxBuckets: 50
+      }).setOptions({
+          legend: {position: "none"},
+          title: mainTitle,
+          hAxis: {title: hAxisTitle},
+          vAxis: {title: "Frequency"},
+        });
+      
+      return histogram;
+    }; 
+  
+  print(generate_Histograms_New(lowerSegs_withMaxMWndviSDs, 
+    "lower_MaxMovWin_FirstYear", "First year of moving window", 
+    "Lower segments"));
+  
+  print(generate_Histograms_New(upperSegs_withMaxMWndviSDs, 
+    "upper_MaxMovWin_FirstYear", "First year of moving window", 
+    "Upper segments"));
+  
+  print(generate_Histograms_New(lowerSegs_withMaxMWndviSDs, 
+    "lower_MovWinNum", "Number of moving windows", 
+    "Lower segments"));
+  
+  print(generate_Histograms_New(upperSegs_withMaxMWndviSDs, 
+    "upper_MovWinNum", "Number of moving windows", 
+    "Upper segments"));
+}
+
+
+/* Map visualization. */
+
+if (true) { // true OR false.
+  
+  Map.setOptions("satellite");
+  VIS.centerOceania(9);
+  
+  // Max. moving-window SD.
+  var SD_visParams = {min: 0, max: 0.2, palette: VIS.BWR_palette};
+  
+  Map.addLayer(VIS.paintFtrCol_FillANDEdge(lowerSegs_withMaxMWndviSDs, 
+    "lower_MaxMovWin_NDVIsd", 1), 
+    SD_visParams, 
+    "Max. moving-window NDVI SD", true);
+  
+  Map.addLayer(VIS.paintFtrCol_FillANDEdge(upperSegs_withMaxMWndviSDs, 
+    "upper_MaxMovWin_NDVIsd", 1), 
+    SD_visParams, 
+    "Avg. Max. moving-window NDVI SD", true);
+}
+
