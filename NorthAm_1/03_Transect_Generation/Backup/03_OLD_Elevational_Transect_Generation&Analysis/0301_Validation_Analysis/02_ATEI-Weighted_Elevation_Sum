@@ -1,0 +1,210 @@
+/**
+ * Introduction:
+ * 1) Buffer the selected transect center lines
+ *  (Optional: mask the ATEI with the optimal ATEI threshold).
+ * 2) Sum the ATEI and the ATEI-weighted elevation within each buffered center line.
+ * 
+ * Update: 3/25/2021.
+ * 
+ * Runtime: 57s ~ 2m.
+*/
+
+
+/* Data preparation. */
+
+var IScenterLine = false;
+var masking = false;
+
+// Set the working directory.
+var wdNA = "users/treeline/NorthAmerica_GME/";
+
+if (IScenterLine) {
+  // Load the selected transect center lines.
+  var centerLines = ee.FeatureCollection(wdNA + "Transect_Analysis/Validation/"
+    + "TransectCenterLines_with5km_2020LuMetaAnalysis");
+  
+} else {
+  // Load the annual ATE segments.
+  var centerLines = ee.FeatureCollection(wdNA + "Transect_Analysis/Validation/"
+    + "TransectCenterLines_annualSegments_ATEIgtPt4329");
+  
+}
+
+print("centerLines:", centerLines.first(),
+  centerLines.size())
+
+// Function to print the image information.
+function printImgInfo(name, image) {
+  print(name,
+    image.bandTypes(),
+    image.projection().crs(),
+    image.projection().nominalScale());
+}
+
+// // Annual ATEIs based on the annual maximum and average NDVIs (no cloud-masking).
+// var ATEI_1 = ee.Image(wdNA +
+//   "Annual_ATEI/ATEI_medianSmdAnlMaxAvgNDVIs_1984to1999");
+// var ATEI_2 = ee.Image(wdNA +
+//   "Annual_ATEI/ATEI_medianSmdAnlMaxAvgNDVIs_2000to2019");
+// var ATEI = ATEI_1.addBands(ATEI_2);
+
+// // Annual ATEIs based on the annual maximum NDVIs (cloud masked).
+// var ATEI = ee.Image(wdNA +
+//   "ATEI_Estimation/AnnualATEI_1984to2020_medianSmdAnnualMaxNDVI_meanSmdElv_newCATE_AOI");
+
+// Annual ATEIs based on the annual maximum NDVIs (cloud masked and biome involved).
+var rawATEI = ee.Image(wdNA +
+  "ATEI_Estimation/AnnualATEI_1984to2020_Biomes356_medianSmdAnnualMaxNDVI_meanSmdElv_newCATE_AOI");
+
+// printImgInfo("rawATEI:", rawATEI)
+
+// Set the 10-km buffered bounding box of the study domain.
+var AOI = ee.Geometry.Rectangle({
+  coords: [-180, 7.114761500193937, -52.095625030545534, 80.24342770493531],
+  geodesic: false
+});
+
+// Target projection.
+var targetPrj = {
+  crs: "EPSG:4326",
+  scale: 30
+};
+
+// ALOS elevation (Version 3.2, released in January 2021) in the AOI.
+var ALOSelv = ee.ImageCollection('JAXA/ALOS/AW3D30/V3_2').select('DSM')
+  .filterBounds(AOI)
+  .mosaic()
+  .reproject(targetPrj);
+
+// printImgInfo("ALOSelv:", ALOSelv)
+
+
+if (masking) {
+  /* Mask the ATEI with the optimal ATEI threshold. */
+  
+  // Get the optimal ATEI threshold.
+  var optimalThreshold = 0.4329;
+  
+  // Create annual masks.
+  var annualMasks = rawATEI.gt(optimalThreshold);
+  
+  // printImgInfo("annualMasks:", annualMasks)
+  
+  // Annually mask the ATEI.
+  var ATEI = rawATEI.updateMask(annualMasks);
+  
+  // printImgInfo("ATEI:", ATEI)
+  
+} else {
+  /* No masking. */
+  
+  var ATEI = rawATEI;
+}
+
+
+/* Weight the elevation with the annual ATEIs. */
+
+// Calculate the annual ATEI-weighted elevation.
+var ATEIwtd_Elv = ATEI.multiply(ALOSelv);
+
+// printImgInfo("ATEIwtd_Elv:", ATEIwtd_Elv)
+
+// Function to rename the annual ATEI-weighted elevation.
+function renameWtdElv(currentYear, previousResult) {
+  // When convert a "floating point" to a "string", 
+  // the result contains a ".", which isn't allowed in band names.
+  var yearName = ee.String(ee.Number(currentYear).int());
+  
+  // Rename the ATEI-weighted elevation.
+  var oldName = ee.String("ATEI_").cat(yearName);
+  var newName = ee.String("wtdElv").cat(yearName);
+  var renamedBand = ATEIwtd_Elv.select([oldName], [newName]);
+  
+  // Append the renamed band to the previous image.
+  var combinedImg = ee.Image(previousResult).addBands(renamedBand);
+  
+  return combinedImg;
+}
+
+// Determine the years of interest.
+// var yearList = ee.List.sequence(1984, 2019); // Old ATEI.
+var yearList = ee.List.sequence(1984, 2020); // New ATEI.
+
+// Rename the annual ATEI-weighted elevation and append the result to the ATEI image.
+var ATEIwtdElv_ATEI = ee.Image(yearList.iterate({
+  function: renameWtdElv, 
+  first: ATEI
+}));
+
+// printImgInfo("ATEIwtdElv_ATEI:", ATEIwtdElv_ATEI)
+
+
+/* Sum the ATEI and the ATEI-weighted elevation within each transect in each year. */
+
+// Set the distance of buffer.
+var bufDist = 45;
+
+// Function to buffer the transect center lines.
+function bufferCL(CL) {
+  return CL.buffer(bufDist);
+}
+
+// Generate transects by buffering each transect center line.
+var transects = centerLines.map(bufferCL);
+
+// print("transects:", transects.first(),
+//   transects.size())
+
+// Sum the annual variables within each transect.
+var annualSum = ATEIwtdElv_ATEI.reduceRegions({
+  collection: transects, 
+  reducer: ee.Reducer.sum(), 
+  scale: 30, 
+  crs: "EPSG:4326"
+});
+
+// print("annualSum:", annualSum.first(),
+//   annualSum.size())
+
+
+if (false) {
+  // Visualization.
+  Map.setOptions("HYBRID");
+  Map.setCenter(-110.50015, 40.84262, 14);
+  
+  Map.addLayer(transects, {color: "FFFF00"}, "transects", false);
+  Map.addLayer(centerLines, {color: "0000FF"}, "centerLines", false);
+  
+  var bandName = "ATEI_2015";
+  
+  Map.addLayer(annualMasks.select(bandName).selfMask(), 
+    {palette: "00FF00"}, "annualMasks");
+  Map.addLayer(ATEI.select(bandName), 
+    {min: 0, max: 1, palette: "0000FF, FFFFFF, FF0000"}, "ATEI");
+  
+} else if (true) {
+  // Export the result.
+  // var fileName = "ATEIwtdElvSum_" + bufDist + "mBufferedCenterLines_"
+  //   + "MaxAvgNDVIs_noCloudMasking";
+  
+  // var fileName = "ATEIwtdElvSum_" + bufDist + "mBufferedCenterLines_"
+  //   + "MaxNDVI_cloudMasked";
+  
+  if (IScenterLine) {
+    var fileName = "ATEIwtdElvSum_" + bufDist + "mBufferedCenterLines_"
+      + "MaxNDVI_cloudMasked_Biomes356_"
+      + "ATEIgtPt4329";
+    
+  } else {
+    var fileName = "ATEIwtdElvSum_" + bufDist + "mBufferedCenterLines_"
+    + "annualSegments_ATEIgtPt4329";
+  }
+  
+  Export.table.toDrive({
+    collection: annualSum, 
+    description: fileName, 
+    folder: "Transect_Validation", 
+    fileFormat: "CSV"
+  });
+}
+

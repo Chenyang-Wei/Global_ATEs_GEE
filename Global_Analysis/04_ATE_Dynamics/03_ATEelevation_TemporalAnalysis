@@ -1,0 +1,178 @@
+/**
+ * Introduction:
+ * 
+ *  1) For each transect, estimate the long-term mean, 
+ *    SD, and trend, and the observation number of 
+ *    the ATEI-weighted average elevation of each 
+ *    filtered annual Feature, respectively.
+ * 
+ * Updated: 6/4/2023.
+ * 
+ * Runtime: 1 ~ 3m.
+ */
+
+
+/* Load module(s). */
+
+var ATEI_EA = require("users/ChenyangWei/Public:Modules/Treeline/ATEI_Estimation&Analysis.js");
+var FC_AP = require("users/ChenyangWei/Public:Modules/General/FeatureCollection_Analysis&Processing.js");
+var GATE = require("users/ChenyangWei/Public:Modules/Treeline/Global_ATE.js");
+
+
+/* Object definition. */
+
+// Determine the continent ID (0 ~ 5).
+var contID = 3;
+
+// Whether output the result. (true OR false)
+var output = true;
+
+// Create a list of the working directories.
+var WDs_List = ATEI_EA.WDs_AllContinents_List;
+
+// Define a list of the GMBA regions.
+var Regions_List = ATEI_EA.GMBA_Regions_List;
+
+
+/* Acquire the information of each continent. */
+
+// Determine the working directory of the continent.
+var contWD = WDs_List[contID];
+
+
+/* Dataset loading. */
+
+// Load the filtered annual features with 
+//  the ATEI-weighted average elevation.
+var annualFtrs_Filtered = ee.FeatureCollection(contWD 
+  + "ATE_Dynamics/"
+  + "noGapAnnualFtrs_Filtered");
+
+
+/* Load the pre-processed transects with NDVI and EG trends. */
+
+if (contID === 5) {
+  
+  // Combine "Asia" and "Pacific Ocean".
+  var transects_Cont = ee.FeatureCollection(GATE.wd_Global
+    + "NDVI_Gradient_Analysis/"
+    + "Preprocessed_Transects_Gte30obs_NegEGmean")
+    .filter(
+      ee.Filter.or(
+        ee.Filter.eq("Regn_GMBA", "Asia"),
+        ee.Filter.eq("Regn_GMBA", "Pacific Ocean")));
+
+} else {
+  
+  // Other continents.
+  var GMBA_region = Regions_List[contID];
+  
+  var transects_Cont = ee.FeatureCollection(GATE.wd_Global
+    + "NDVI_Gradient_Analysis/"
+    + "Preprocessed_Transects_Gte30obs_NegEGmean")
+    .filter(ee.Filter.eq("Regn_GMBA", GMBA_region));
+}
+
+
+/* Create Reducers for the temporal analysis. */
+
+// Sen's slope Reducer for estimating the temporal trend.
+//  (Note: The inputs are expected to be x data followed by y data.
+//  It returns two double values; the estimated slope and the offset.)
+var sens_Reducer = ee.Reducer.sensSlope()
+  .setOutputs(["ATEelv_Trd", "ATEelv_Int"]);
+
+// Reducer for calculating the long-term mean.
+//  (Note: as the Sen's slope Reducer has unweighted inputs,
+//  the mean Reducer inputs have to be unweighted.)
+var mean_Reducer = ee.Reducer.mean().unweighted()
+  .setOutputs(["ATEelv_Avg"]);
+
+// Reducer for calculating the long-term SD.
+var SD_Reducer = ee.Reducer.stdDev()
+  .setOutputs(["ATEelv_SD"]);
+
+// Reducer for counting the non-null annual variables.
+var count_Reducer = ee.Reducer.count()
+  .setOutputs(["ATEelv_Num"]);
+
+
+/* Combine the temporal-analysis Reducers. */
+
+var meanSD_Reducer = mean_Reducer
+  .combine({
+    reducer2: SD_Reducer, 
+    sharedInputs: true
+  });
+
+var meanSDcount_Reducer = meanSD_Reducer.combine({
+  reducer2: count_Reducer, 
+  sharedInputs: true
+});
+
+var combined_Reducers = sens_Reducer
+  .combine({
+    reducer2: meanSDcount_Reducer, 
+    sharedInputs: false // Using different inputs.
+  });
+
+
+/* Perform the temporal analysis. */
+
+// Conduct the grouped reduction by transect.
+var temporalVars_List = ee.List(annualFtrs_Filtered
+  .reduceColumns({
+    selectors: ["Year", "annual_WtdAvgElv", // Sen's slope.
+                "annual_WtdAvgElv", // Other Reducers.
+                "transectID"],
+    reducer: combined_Reducers.group({
+      groupField: 3,
+      groupName: "transectID",
+    })
+  }).get("groups"));
+
+// Convert the generated List to a FeatureCollection 
+//  without Geometries.
+var temporalVars_FtrCol = ee.FeatureCollection(
+  temporalVars_List.map(
+    function(groupedBy_transectID) {
+      
+      // Create a Feature with a NULL Geometry 
+      //  for each transect.
+      return ee.Feature(null).set(groupedBy_transectID);
+    }));
+  
+// Combine each temporal variable Feature with 
+//  the corresponding transect Feature
+//  and keep the unique properties of the former one.
+var transects_TemporalVars = 
+  FC_AP.combine_twoFtrCols_byCommonProperty(
+    transects_Cont, 
+    temporalVars_FtrCol, 
+    "transectID"
+  );
+
+
+/* Check the data or export the final result. */
+
+if (!output) {
+  
+  print(transects_Cont
+    .aggregate_array("Regn_GMBA")
+    .distinct(),
+    transects_Cont.size());
+  
+} else {
+  
+  var outputWD = contWD + "ATE_Dynamics/";
+
+  var fileName = "PreprocessedTransects_ATEelevationTrend";
+  
+  Export.table.toAsset({
+    collection: transects_TemporalVars, 
+    description: fileName, 
+    assetId: outputWD
+      + fileName
+  });
+}
+

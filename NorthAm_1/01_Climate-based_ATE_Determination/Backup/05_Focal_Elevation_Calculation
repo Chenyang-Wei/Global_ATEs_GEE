@@ -1,0 +1,167 @@
+/**
+ * Introduction: 
+ * 1) Calculate the focal elevation at the 10-km level. 
+ * 
+ * Date: 6/21/2020.
+ */
+
+
+/* Setup. */
+
+// Define the extent of North America. 
+var northAmerica = ee.Geometry.Polygon({
+    coords: [[[-165.69002926658334, 72.44551256468144],
+          [-169.40248634956492, 65.69009098298687],
+          [-172.25893166206492, 63.826281515474996],
+          [171.35638590722195, 52.855285271231274],
+          [-159.1340353549648, 17.264443722753843],
+          [-122.14862062448367, 9.59539750905343],
+          [-79.06711256993691, 6.243890041056693],
+          [-77.03677448989225, 7.40316087095261],
+          [-76.78408894301725, 8.990725120234067],
+          [-75.7244458156751, 12.403191738791786],
+          [-71.5276684719251, 13.751533985801833],
+          [-62.8264965969251, 11.651035844929385],
+          [-62.005942990095036, 9.999896817210585],
+          [-60.791953732282536, 9.96743692413247],
+          [-55.5884807162513, 13.889226127218825],
+          [-47.99315852039507, 58.68729606716915],
+          [-66.52860968724042, 71.51769835770313],
+          [-77.86650031224042, 74.25356562488685],
+          [-89.90751593724042, 74.22969620284344],
+          [-106.04844453284761, 74.3012200035139],
+          [-114.63975312659761, 74.20581277506923],
+          [-120.18954789130242, 74.88484689543225],
+          [-136.27353226630242, 74.6772015427699]]],
+    geodesic: true
+});
+
+// Asset path.
+var wdNorthA = "users/treeline/North_America/CATE/";
+// var wd500m = wdNorthA + "AbsTLHdist_Lte500m/"; // 500-m CATE.
+var wd100m = wdNorthA + "AbsTLHdist_Lte100m/"; // 100-m CATE.
+
+// Load the forest elevation data at the 10-km level.
+// 500-m CATE.
+// var maxForElv = ee.Image(wd500m + "500mCATE_3kmBuffer_10kmMaxForElv"); // Local maximum.
+// var pctForElv = ee.Image(wd500m + "500mCATE_3kmBuffer_10kmPctForElv"); // Local percentiles.
+// var forElv = maxForElv.addBands(pctForElv);
+
+// 100-m CATE.
+var forElv = ee.Image(wd100m + "100mCATE_3kmBuffer_10kmPctForElv"); // Local percentiles.
+
+// Load the CATE elevation at the 10-km level.
+// var CATEelv = ee.Image(wd500m + "500mCATE_10kmAvgCATEelv"); // 500-m CATE.
+var CATEelv = ee.Image(wd100m + "100mCATE_10kmAvgCATEelv"); // 100-m CATE.
+
+// Combine the elevation datasets.
+var elv = CATEelv.addBands(forElv);
+
+print("Combined elevation:", elv.bandTypes(), 
+  elv.projection().crs(), elv.projection().nominalScale());
+
+
+/* Calculate focal elevation. */
+
+// Define a focal reducer.
+var rd = ee.Reducer.mean(); // Weighted.
+
+// Calculate focal values.
+var focalElv = elv.reduceNeighborhood({
+  reducer: rd,
+  kernel: ee.Kernel.circle(10), // Default unit: "pixels".
+  skipMasked: false
+}).reproject({ 
+  crs: "EPSG:4326",
+  scale: 10e3
+});
+
+// Subtract the CATE elevation from the forest elevations.
+// All forests.
+var allp75_CATE = focalElv.select("allForElv_p75_p75_mean")
+  .subtract(focalElv.select("CATEelv_mean")).rename("allp75_CATE");
+  
+var allp90_CATE = focalElv.select("allForElv_p90_p90_mean")
+  .subtract(focalElv.select("CATEelv_mean")).rename("allp90_CATE");
+
+var allp95_CATE = focalElv.select("allForElv_p95_p95_mean")
+  .subtract(focalElv.select("CATEelv_mean")).rename("allp95_CATE");
+
+var allp100_CATE = focalElv.select("allForElv_p100_p100_mean")
+  .subtract(focalElv.select("CATEelv_mean")).rename("allp100_CATE");
+
+// Closed forests.
+var cldp75_CATE = focalElv.select("cldForElv_p75_p75_mean")
+  .subtract(focalElv.select("CATEelv_mean")).rename("cldp75_CATE");
+
+var cldp90_CATE = focalElv.select("cldForElv_p90_p90_mean")
+  .subtract(focalElv.select("CATEelv_mean")).rename("cldp90_CATE");
+
+var cldp95_CATE = focalElv.select("cldForElv_p95_p95_mean")
+  .subtract(focalElv.select("CATEelv_mean")).rename("cldp95_CATE");
+
+var cldp100_CATE = focalElv.select("cldForElv_p100_p100_mean")
+  .subtract(focalElv.select("CATEelv_mean")).rename("cldp100_CATE");
+
+focalElv = focalElv.addBands(allp75_CATE)
+  .addBands(allp90_CATE)
+  .addBands(allp95_CATE)
+  .addBands(allp100_CATE)
+  .addBands(cldp75_CATE)
+  .addBands(cldp90_CATE)
+  .addBands(cldp95_CATE)
+  .addBands(cldp100_CATE);
+
+// Reduce the size of the dataset.
+focalElv = focalElv.float();
+
+print("Focal elevation:", focalElv.bandTypes(), 
+  focalElv.projection().crs(), focalElv.projection().nominalScale());
+
+
+if (true) {
+  /* Visualization. */
+  
+  var elvPalette = ['006600', '002200', 'fff700', 'ab7634', 'c4d0ff', 'ffffff'];
+  var elvVis = {min: 1000, max: 3500, palette: elvPalette};
+  
+  Map.setOptions("hybrid");
+  
+  Map.setCenter(-113.655, 48.734, 10);
+  
+  Map.addLayer(elv.select("cldForElv_p90_p90"), elvVis, "cldForElv", false);
+  Map.addLayer(elv.select("allForElv_p90_p90"), elvVis, "allForElv", false);
+  Map.addLayer(elv.select("CATEelv"), elvVis, "CATEelv", false);
+  
+  Map.addLayer(focalElv.select("cldForElv_p90_p90_mean"), elvVis, "focalCldForElv", true);
+  Map.addLayer(focalElv.select("allForElv_p90_p90_mean"), elvVis, "focalAllForElv", true);
+  Map.addLayer(focalElv.select("CATEelv_mean"), elvVis, "focalCATEelv", true);
+  
+  Map.addLayer(focalElv.select("cldp75_CATE"), 
+    {min: -1e3, max: 1e3, palette: "0000FF, FFFFFF, FF0000"}, "cldp75_CATE", true);
+  Map.addLayer(focalElv.select("cldp90_CATE"), 
+    {min: -1e3, max: 1e3, palette: "0000FF, FFFFFF, FF0000"}, "cldp90_CATE", true);
+  Map.addLayer(focalElv.select("cldp95_CATE"), 
+    {min: -1e3, max: 1e3, palette: "0000FF, FFFFFF, FF0000"}, "cldp95_CATE", true);
+  Map.addLayer(focalElv.select("cldp100_CATE"), 
+    {min: -1e3, max: 1e3, palette: "0000FF, FFFFFF, FF0000"}, "cldp100_CATE", true);
+}
+
+else {
+  /* Output the result. */
+  
+  // var fileName = "500mCATE_3kmBuffer_10kmCATEforElv_focalDiff"; // 500-m CATE.
+  var fileName = "100mCATE_3kmBuffer_10kmFocalAvgElvDiff"; // 100-m CATE.
+  
+  Export.image.toAsset({
+    image: focalElv, 
+    description: fileName, 
+    // assetId: wd500m + fileName, // 500-m CATE.
+    assetId: wd100m + fileName, // 100-m CATE.
+    region: northAmerica, 
+    crs: "EPSG:4326",
+    scale: 10e3,
+    maxPixels: 1e13
+  });
+}
+

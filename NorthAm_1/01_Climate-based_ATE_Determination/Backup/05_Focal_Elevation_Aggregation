@@ -1,0 +1,112 @@
+/**
+ * Introduction: 
+ * 1) Calculate the focal percentiles of the elevation datasets. 
+ * 
+ * Date: 6/14/2020.
+ */
+
+
+/* Setup. */
+
+// Define the extent of North America. 
+var northAmerica = ee.Geometry.Polygon({
+    coords: [[[-165.69002926658334, 72.44551256468144],
+          [-169.40248634956492, 65.69009098298687],
+          [-172.25893166206492, 63.826281515474996],
+          [171.35638590722195, 52.855285271231274],
+          [-159.1340353549648, 17.264443722753843],
+          [-122.14862062448367, 9.59539750905343],
+          [-79.06711256993691, 6.243890041056693],
+          [-77.03677448989225, 7.40316087095261],
+          [-76.78408894301725, 8.990725120234067],
+          [-75.7244458156751, 12.403191738791786],
+          [-71.5276684719251, 13.751533985801833],
+          [-62.8264965969251, 11.651035844929385],
+          [-62.005942990095036, 9.999896817210585],
+          [-60.791953732282536, 9.96743692413247],
+          [-55.5884807162513, 13.889226127218825],
+          [-47.99315852039507, 58.68729606716915],
+          [-66.52860968724042, 71.51769835770313],
+          [-77.86650031224042, 74.25356562488685],
+          [-89.90751593724042, 74.22969620284344],
+          [-106.04844453284761, 74.3012200035139],
+          [-114.63975312659761, 74.20581277506923],
+          [-120.18954789130242, 74.88484689543225],
+          [-136.27353226630242, 74.6772015427699]]],
+    geodesic: true
+});
+
+// Asset path.
+var wdNorthA = "users/treeline/North_America/CATE/";
+
+// Load the 10-km aggregated elevation dataset.
+// var elv_10km = ee.Image(wdNorthA +
+//   "avgTLH_absElvDistLte500m_3kmSurroundingForests_elvWeightedAvg_10kmGrid"); // 500-m CATE.
+var elv_10km = ee.Image(wdNorthA +
+  "1kmCATE_3kmForests_wtdAvgElv_10kmGrid"); // 1000-m CATE.
+
+// // Set the mask of each valid pixel to 1.
+// elv_10km = elv_10km.updateMask(elv_10km.gte(-1e18));
+
+print("10-km aggregated elevation:", elv_10km.bandNames(), elv_10km.projection().nominalScale());
+
+
+/* Calculate focal percentiles of the elevation dataset. */
+
+// Define a percentile reducer.
+var pctRd = ee.Reducer.percentile({
+  percentiles: [0, 5, 10, 25, 50, 75, 90, 95, 100]
+}); // Weighted.
+
+// Calculate focal percentiles.
+var elvFocalPcts = elv_10km.reduceNeighborhood({
+  reducer: pctRd,
+  kernel: ee.Kernel.circle(10), // Default unit: "pixels".
+  skipMasked: false
+}).reproject({ 
+  crs: "EPSG:4326",
+  scale: 10e3
+});
+
+// // Reduce the size of the dataset.
+// elvFocalPcts = elvFocalPcts.float();
+
+print("Focal percentiles:", elvFocalPcts.bandTypes(), elvFocalPcts.projection().nominalScale());
+
+
+if (false) {
+  /* Visualization. */
+  
+  var elvPalette = ['006600', '002200', 'fff700', 'ab7634', 'c4d0ff', 'ffffff'];
+  var elvVis = {min: 1000, max: 3500, palette: elvPalette};
+  
+  Map.setOptions("hybrid");
+  
+  Map.setCenter(-113.655, 48.734, 10);
+  
+  Map.addLayer(elv_10km.select("cldForElv"), elvVis, "cldForElv", true);
+  Map.addLayer(elv_10km.select("allForElv"), elvVis, "allForElv", false);
+  Map.addLayer(elv_10km.select("TLHdistElv"), elvVis, "TLHdistElv", false);
+  
+  Map.addLayer(elvFocalPcts.select("cldForElv_p75"), elvVis, "cldForElv_p75", true);
+  Map.addLayer(elvFocalPcts.select("allForElv_p75"), elvVis, "allForElv_p75", true);
+  Map.addLayer(elvFocalPcts.select("TLHdistElv_p75"), elvVis, "TLHdistElv_p75", true);
+}
+
+else {
+  /* Output the result. */
+  
+  // var fileName = "avgTLH_absElvDistLte500m_3kmSurroundingForests_wtdAvgElv_10kmGrid_10pxCircleFocalPcts"; // 500-m CATE.
+  var fileName = "1kmCATE_3kmForests_wtdAvgElv_10kmGrid_10pxCircleFocalPcts"; // 1000-m CATE.
+  
+  Export.image.toAsset({
+    image: elvFocalPcts, 
+    description: fileName, 
+    assetId: wdNorthA + fileName, 
+    region: northAmerica, 
+    crs: "EPSG:4326",
+    scale: 10e3,
+    maxPixels: 1e13
+  });
+}
+

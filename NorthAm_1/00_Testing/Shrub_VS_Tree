@@ -1,0 +1,386 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var shrub = /* color: #0000ff */ee.Feature(
+        ee.Geometry.MultiPoint(
+            [[-148.95443709682863, 63.74032070442584],
+             [-148.9781543504252, 63.742179657839664],
+             [-148.9854177724375, 63.74311352733876],
+             [-149.00350516831446, 63.74165815371112],
+             [-149.01956417135833, 63.74236375598409],
+             [-149.03549042245155, 63.73965859034537],
+             [-149.06300115817092, 63.73750326837671],
+             [-149.09576128079343, 63.734624396962104],
+             [-149.11348011006248, 63.735995320938194],
+             [-149.05524709281536, 63.74150282742073],
+             [-148.9491703369067, 63.74649542885936],
+             [-148.95404773064365, 63.74906358757999],
+             [-148.9519325694812, 63.75242338261255],
+             [-148.96132574461805, 63.75783905858737],
+             [-148.98610973609212, 63.741017004243865],
+             [-149.0026764870088, 63.74527501402665],
+             [-149.02817528191278, 63.745958142448906],
+             [-148.96051268063346, 63.74974525771367],
+             [-149.066282392272, 63.7359543993773],
+             [-149.0135119860562, 63.737935030533535],
+             [-148.98282168187777, 63.58462174642877],
+             [-148.98865816869417, 63.583485750450386],
+             [-148.98237107076326, 63.58331391517805],
+             [-148.98859233636819, 63.58071879025024],
+             [-148.9904162384983, 63.580012281043345],
+             [-148.97541732568703, 63.58490974782514],
+             [-148.96644801874123, 63.587602776063406],
+             [-148.95880908746682, 63.5870682513616],
+             [-148.9542886188239, 63.59132400443045],
+             [-148.95637001301947, 63.592287906463326],
+             [-148.94611324574652, 63.59535118027097],
+             [-148.9162870815009, 63.60113328411793],
+             [-148.91411985661688, 63.6032511864266],
+             [-148.90554149544553, 63.605884034232105],
+             [-148.90554675553324, 63.60842252014151],
+             [-148.9115351435179, 63.60749073024806],
+             [-148.90608489479965, 63.61126395745677],
+             [-148.90908896889633, 63.61278984565623],
+             [-148.9096254106993, 63.61140701295491],
+             [-148.91340196099227, 63.61072033999845],
+             [-148.9785320430533, 63.652501026393004],
+             [-148.982802119805, 63.65320573595174],
+             [-148.98970471113597, 63.64838232065685],
+             [-148.97126449876754, 63.662243148151404],
+             [-148.96435512834518, 63.66210034853031],
+             [-148.95703806215255, 63.663556870934265],
+             [-148.97531999879806, 63.665670123388715],
+             [-148.97081388765304, 63.66583194253658],
+             [-148.9833237104985, 63.664308902242034],
+             [-148.98761524492232, 63.66596520467091],
+             [-148.9902759962651, 63.66307137177684],
+             [-148.97191135995587, 63.66959972679807],
+             [-148.9702591192027, 63.67184576349551],
+             [-148.96263502198263, 63.669917474266036],
+             [-148.95321510392233, 63.676226791786256],
+             [-148.96130464631125, 63.67720684633003],
+             [-148.97061727601096, 63.67985187294471],
+             [-148.96520994263693, 63.68487484106341],
+             [-148.9685358818154, 63.68696748169747],
+             [-148.98061655121847, 63.68439921936507]]),
+        {
+          "Type": "Shrub",
+          "system:index": "0"
+        }),
+    forest = /* color: #ff0000 */ee.Feature(
+        ee.Geometry.MultiPoint(
+            [[-148.93826518928972, 63.73663522171294],
+             [-148.93151672094717, 63.74288423296936],
+             [-148.92324884968826, 63.744279654546204],
+             [-148.91880229752292, 63.74317936667274],
+             [-148.9228374228858, 63.738874347170785],
+             [-148.94262616553485, 63.735176394686825],
+             [-148.9658609380062, 63.73372874730242],
+             [-148.98098488051323, 63.73098868770757],
+             [-149.03071048057424, 63.72607386055263],
+             [-149.0095196273627, 63.72091771136005],
+             [-148.98146946811877, 63.72298504220476],
+             [-148.98708123978915, 63.7223006281757],
+             [-149.0034641724521, 63.72059286825454],
+             [-149.0470062803428, 63.71950912599395],
+             [-149.0510343088275, 63.71873369725032],
+             [-149.0571926607257, 63.71862748732827],
+             [-149.0723109742185, 63.718312456629334],
+             [-149.05819688587434, 63.72370918215929],
+             [-149.02243050075813, 63.72527292878043],
+             [-149.00641607836013, 63.72480246097788],
+             [-148.90160024132675, 63.612723089760784],
+             [-148.90235125985092, 63.61482105722807],
+             [-148.90520513024276, 63.61701422129346],
+             [-148.90207231011337, 63.61002457841601],
+             [-148.9021152254576, 63.60640964634546],
+             [-148.90398204293197, 63.604997885814306],
+             [-148.90619218316024, 63.602670235681835],
+             [-148.91239345040267, 63.60057137140228],
+             [-148.91464650597518, 63.59943601207922],
+             [-148.91754329171127, 63.59781399156786],
+             [-148.92168462243026, 63.59570522661631],
+             [-148.92614781823104, 63.59483686619763],
+             [-148.94219815697616, 63.59002720116877],
+             [-148.94872128930038, 63.588509635903556],
+             [-148.95683228936142, 63.58517834406818],
+             [-148.98356854882186, 63.57962214182587],
+             [-148.98522078957504, 63.57771254357199],
+             [-148.99238765206283, 63.57671950185737],
+             [-148.9959496256346, 63.57430359229097],
+             [-149.01345908608383, 63.57136220830132],
+             [-148.96978804203792, 63.690260784134225],
+             [-148.9329881343536, 63.68756917174475],
+             [-148.92876097294612, 63.685638281674485],
+             [-148.93764444920345, 63.67217546608224],
+             [-148.9466781291656, 63.669567793101464],
+             [-148.9476866397552, 63.66478009032009],
+             [-148.94661375614925, 63.65935368467596],
+             [-148.9450044307403, 63.654392851360086],
+             [-148.95320126148982, 63.651786058582836],
+             [-148.98130571957805, 63.65094798169748],
+             [-148.98752171032285, 63.645579072519176],
+             [-149.00187689297056, 63.6466744888676],
+             [-149.0087648057208, 63.644235939129956],
+             [-149.0122409486041, 63.64596009169609],
+             [-149.01758390896177, 63.644721760670926],
+             [-149.03326946728086, 63.64486464777706],
+             [-149.0495772980914, 63.64054914002658],
+             [-149.0633531235919, 63.639767896313444],
+             [-149.0727730416522, 63.63610910311057],
+             [-149.07515484325742, 63.63370298686797]]),
+        {
+          "Type": "Forest",
+          "system:index": "0"
+        }),
+    ATEI = ee.Image("users/treeline/NorthAmerica_GME/ATEI_Estimation/AnnualATEI_1984to2020_medianSmdAnnualMaxNDVI_meanSmdElv_newCATE_AOI");
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+// var Alaska =
+//     ee.Geometry.Polygon(
+//         [[[-149.2671245878841, 63.813215987134875],
+//           [-149.2671245878841, 63.53917869199591],
+//           [-148.6628765410091, 63.53917869199591],
+//           [-148.6628765410091, 63.813215987134875]]], null, false);
+
+
+/* Image processing function definition. */
+
+// This function removes invalid pixels.
+var removeInvalid_L8 = function(img) {
+  // Remove edge pixels that don't occur in all bands
+  var noNA = img.mask().reduce(ee.Reducer.min());
+  
+  // Identify pixels with all the surface reflectance bands within the valid range: 0-10000.
+  var lowerLimit = img.gt(0).reduce(ee.Reducer.min());
+  var upperLimit = img.lt(1e4).reduce(ee.Reducer.min());
+  
+  var maskedB4B5 = img.updateMask(noNA)
+    .updateMask(lowerLimit)
+    .updateMask(upperLimit)
+    // .select(["B4", "B5"]); // Select "B4" and "B5" for further calculating the NDVI.
+  
+  return maskedB4B5;
+};
+
+// This function calculates NDVI of Landsat imagery.
+var calNDVI_L8 = function(i) {
+  var ndvi = i.addBands(i.normalizedDifference(['B5', 'B4'])
+    .rename('OLI_NDVI'))
+    // .select('OLI_NDVI');
+  
+  return ndvi;
+};
+
+// This function Convert the OLI NDVI to the ETM+ NDVI.
+// ETM+ = 0.0029 + 0.9589 OLI
+var ETM_NDVI = function(i) {
+  var ETM = i.addBands(i.select("OLI_NDVI")
+    .multiply(0.9589).add(0.0029)
+    .rename("ETM_NDVI"))
+    // .select("ETM_NDVI");
+  
+  return ETM;
+};
+
+
+// This function combine all the processing steps.
+function imageProcessing(image) {
+  var invalidRemoved = removeInvalid_L8(image);
+  var ndviCalculated = calNDVI_L8(invalidRemoved);
+  var ndviConverted = ETM_NDVI(ndviCalculated);
+  
+  return ndviConverted;
+}
+
+
+/* Import the Landsat-8 Surface Reflectance dataset. */
+
+var vegetation = ee.FeatureCollection([shrub, forest]);
+
+// Bands of surface reflectance.
+var bands = ["B[1-7]"];
+
+// Landsat 8.
+var L8 = ee.ImageCollection("LANDSAT/LC08/C01/T1_SR")
+  .select(bands)
+  .filterBounds(vegetation.geometry())
+  .filterDate('2014-01-01', '2021-01-01'); // The end date is exclusive.
+
+
+/* Image processing and analysis. */
+
+// Image pre-processing and NDVI calculation.
+var ndvi_L8 = L8.map(imageProcessing);
+
+// print("NDVI:", ndvi_L8)
+
+var ndvi2019 = ndvi_L8.filterDate('2019-01-01', '2020-01-01'); 
+
+var postiveNDVI2019 = ndvi2019.select("ETM_NDVI").map(function(img) {
+  return img.updateMask(img.gt(0));
+});
+
+// print("avgNDVI2019:", avgNDVI2019)
+
+// var shrubNDVI = ui.Chart.image.series({
+//     imageCollection: ndvi_L8.select(["ETM_NDVI", "OLI_NDVI"]), 
+//     region: shrub, 
+//     reducer: ee.Reducer.mean(), 
+//     scale: 30
+//   }).setOptions({
+//     title: {position: 'none'},
+//     vAxis: {title: "NDVI", gridlines: {count: 5}},
+//     hAxis: {title: "Time", gridlines: {count: 10}},
+//     lineWidth: 2,
+//     // pointSize: 4,
+//     series: {
+//       0: {color: "228B22"},
+//       1: {color: "8BFF00"}
+//     }
+//   });
+  
+// print(shrubNDVI)
+
+// Define a list of Landsat 8 wavelengths for X-axis labels.
+var wavelengths = [0.44, 0.48, 0.56, 0.65, 0.86, 1.61, 2.2];
+
+// Define customization options.
+var options = {
+  title: 'Landsat 8 SR average values in 2019 in the regions of shrub and forest',
+  hAxis: {title: 'Wavelength (micrometers)'},
+  vAxis: {title: 'Reflectance'},
+  lineWidth: 1,
+  pointSize: 1,
+  series: {
+    0: {color: "0000FF"},
+    1: {color: "FF0000"}
+  }
+};
+
+// // Generate a chart for average band values in 2019.
+// var avgBands2019 = ui.Chart.image.regions({
+//   image: avgNDVI2019.select("B.*"), 
+//   regions: vegetation, 
+//   reducer: ee.Reducer.mean(), 
+//   scale: 30, 
+//   seriesProperty: "Type", 
+//   xLabels: wavelengths
+// })// .setChartType('ScatterChart')
+//   .setOptions(options);
+
+
+// print(avgBands2019);
+
+// Function to generate a time-series chart for each band.
+function generateTSchart(band, label) {
+  var TSchart = ui.Chart.image.seriesByRegion({
+    imageCollection: ndvi_L8, 
+    regions: vegetation, 
+    reducer: ee.Reducer.mean(), 
+    band: band, 
+    scale: 30, 
+    seriesProperty: "Type"
+  })// .setChartType('ScatterChart')
+    .setOptions({
+      title: label + " average values from 2014 to 2020 in the regions of shrub and forest",
+      vAxis: {title: label},
+      hAxis: {title: "Time"},
+      lineWidth: 1,
+      pointSize: 1,
+      series: {
+        0: {color: "0000FF"},
+        1: {color: "FF0000"}
+      }
+    });
+  
+  return TSchart;
+}
+
+print(generateTSchart("ETM_NDVI", "NDVI"))
+// print(generateTSchart("B1", "Ultra blue band"))
+// print(generateTSchart("B2", "Blue band"))
+// print(generateTSchart("B3", "Green band"))
+// print(generateTSchart("B4", "Red band"))
+// print(generateTSchart("B5", "Near infrared band"))
+// print(generateTSchart("B6", "Shortwave infrared band 1"))
+// print(generateTSchart("B7", "Shortwave infrared band 2"))
+
+
+/* Final visualization. */
+
+if (false) {
+  var ndvi_palette =
+      'FFFFFF, CE7E45, DF923D, F1B555, FCD163, 99B718, 74A901, 66A000, 529400,' +
+      '3E8601, 207401, 056201, 004C00, 023B01, 012E01, 011D01, 011301';
+
+  var NDVIvisParams = {min: 0, max: 1, palette: ndvi_palette};
+  
+  var newPalette = ['0000ff', '00ffff', 'ffffff', 'ffff00', 'ff0000'];
+  
+  // Map.centerObject(shrub, 13);
+  Map.setCenter(-148.99293, 63.737, 13);
+  
+  Map.setOptions("hybrid");
+  
+  Map.addLayer(ndvi2019.select("ETM_NDVI").max(), NDVIvisParams,
+    "Max. NDVI in 2019", false); 
+  
+  Map.addLayer(ndvi2019.select("ETM_NDVI").mean(), NDVIvisParams,
+    "Average NDVI in 2019", true); 
+  
+  Map.addLayer(ndvi2019.select("ETM_NDVI").sum(), {min: 1, max: 15, palette: ndvi_palette},
+    "NDVI Sum in 2019", true); 
+  
+  Map.addLayer(postiveNDVI2019.max(), NDVIvisParams,
+    "Max. NDVI in 2019 (postive)", false); 
+  
+  Map.addLayer(postiveNDVI2019.mean(), NDVIvisParams,
+    "Average NDVI in 2019 (postive)", true); 
+  
+  Map.addLayer(postiveNDVI2019.sum(), {min: 1, max: 15, palette: ndvi_palette},
+    "NDVI Sum in 2019 (postive)", true); 
+  
+  // Map.addLayer(ndvi2019.select("ETM_NDVI").median(), NDVIvisParams,
+  //   "NDVI median in 2019", false); 
+  
+  // Map.addLayer(ndvi2019.select("ETM_NDVI").reduce(ee.Reducer.stdDev()), 
+  //   {min: 0, max: 0.5, palette: newPalette},
+  //   "NDVI standard deviation in 2019", false); 
+  
+  // Map.addLayer(avgNDVI2019.select("B1"), 
+  //   {min: 2e3, max: 6e3, palette: newPalette},
+  //   "Ultra blue band mean in 2019", true); 
+  
+  // Map.addLayer(avgNDVI2019.select("B2"), 
+  //   {min: 2e3, max: 6e3, palette: newPalette},
+  //   "Blue band mean in 2019", true); 
+  
+  // Map.addLayer(avgNDVI2019.select("B3"), 
+  //   {min: 2e3, max: 6e3, palette: newPalette},
+  //   "Green band mean in 2019", true); 
+  
+  // Map.addLayer(avgNDVI2019.select("B4"), 
+  //   {min: 2e3, max: 6e3, palette: newPalette},
+  //   "Red band mean in 2019", true); 
+  
+  // Map.addLayer(avgNDVI2019.select("B5"), 
+  //   {min: 3e3, max: 7e3, palette: newPalette},
+  //   "Near infrared band mean in 2019", true); 
+  
+  // Map.addLayer(avgNDVI2019.select("B6"), 
+  //   {min: 1e3, max: 4e3, palette: newPalette},
+  //   "Shortwave infrared band 1 mean in 2019", true); 
+  
+  // Map.addLayer(avgNDVI2019.select("B7"), 
+  //   {min: 1e3, max: 4e3, palette: newPalette},
+  //   "Shortwave infrared band 2 mean in 2019", true); 
+  
+} else {
+  // /* Output the result. */
+  // Export.image.toAsset({
+  //   image: avgNDVI2019, 
+  //   description: "avgNDVI2019_Alaska", 
+  //   assetId: "users/treeline/NorthAmerica_GME/Pixel_Sampling/Random/avgNDVI2019_Alaska", 
+  //   region: Alaska, 
+  //   scale: 30, 
+  //   crs: "EPSG:4326"
+  // });
+}

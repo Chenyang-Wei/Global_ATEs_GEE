@@ -1,0 +1,153 @@
+/**
+ * Introduction:
+ * 
+ *  1) Choose annual Features with a pixel number ratio 
+ *    (NDVI/elevation in the study domain) greater than or 
+ *    equal to 1 (i.e., no gap in annual NDVIs).
+ * 
+ *  2) Calculate the long-term NDVI median for the no-gap 
+ *    annual Features of each transect.
+ * 
+ *  3) For each transect, select the no-gap annual Features 
+ *    with NDVI greater than 50% of the long-term median and
+ *    the ATEI-weighted average elevation over zero.
+ * 
+ * Updated: 6/4/2023.
+ * 
+ * Runtime: 13m ~.
+ */
+
+
+/* Load module(s). */
+
+var ATEI_EA = require("users/ChenyangWei/Public:Modules/Treeline/ATEI_Estimation&Analysis.js");
+var FC_AP = require("users/ChenyangWei/Public:Modules/General/FeatureCollection_Analysis&Processing.js");
+
+
+/* Object definition. */
+
+// Determine the continent ID (0 ~ 5).
+var contID = 3;
+
+// Whether output the result. (true OR false)
+var output = true;
+
+// Create a list of the working directories.
+var WDs_List = ATEI_EA.WDs_AllContinents_List;
+
+
+/* Acquire the information of each continent. */
+
+// Determine the working directory of the continent.
+var contWD = WDs_List[contID];
+
+
+/* Dataset loading. */
+
+// Load annual features with the ATEI-weighted average elevation.
+var rawAnnualFtrs = ee.FeatureCollection(contWD 
+  + "ATE_Dynamics/"
+  + "AnnualFtrs_ATEIwtd_AvgElv");
+
+
+/* Choose annual Features with no gap in NDVI. */
+
+var pixelNumRatio_Filter = 
+  ee.Filter.gte("annual_PN_ratio", 1);
+
+var noGap_AnnualFtrs = rawAnnualFtrs
+  .filter(pixelNumRatio_Filter);
+
+
+/* Calculate the long-term NDVI median for the no-gap 
+  annual Features of each transect. */
+
+// Reducer for computing the long-term NDVI median.
+var NDVImedian_Reducer = ee.Reducer.median()
+  .setOutputs(["noGapNDVI_rawMedian"]);
+
+// Median calculation by transect.
+var transects_NDVImedian_List = ee.List(noGap_AnnualFtrs
+  .reduceColumns({
+    selectors: ["annual_AvgNDVI", "transectID"],
+    reducer: NDVImedian_Reducer.group({
+      groupField: 1,
+      groupName: "transectID",
+    })
+  }).get("groups"));
+
+// Convert the generated List to a FeatureCollection 
+//  without Geometries.
+var transects_NDVImedian_FtrCol = ee.FeatureCollection(
+  transects_NDVImedian_List.map(function(groupedBy_Transect) {
+    
+    // Create a Feature with a NULL Geometry for each transect.
+    return ee.Feature(null).set(groupedBy_Transect);
+  }));
+
+// Combine each long-term NDVI median with 
+//  all the corresponding no-gap annual Features.
+var noGapAnnualFtrs_withNDVImedian = 
+  FC_AP.combine_twoFtrCols_byCommonProperty(
+    noGap_AnnualFtrs, 
+    transects_NDVImedian_FtrCol, 
+    "transectID"
+  );
+
+
+/* For each transect, select the no-gap annual Features
+  with NDVI greater than 50% of the long-term median and
+  the ATEI-weighted average elevation over zero. */
+
+// Calculate the ratio between the annual average NDVI 
+//  and its long-term median.
+var noGapAnnualFtrs_withMedianRatio = 
+  FC_AP.FtrCol_PropertyRatioCalculation(
+    noGapAnnualFtrs_withNDVImedian, 
+    "annual_AvgNDVI", 
+    "noGapNDVI_rawMedian", 
+    "annual_NDVImedianRatio"
+  );
+
+// Create and combine Filters.
+var NDVImedianRatio_Filter = 
+  ee.Filter.gt("annual_NDVImedianRatio", 0.5);
+
+var wtdAvgElv_Filter = 
+  ee.Filter.gt("annual_WtdAvgElv", 0);
+
+var combined_Filters = ee.Filter.and(
+  NDVImedianRatio_Filter,
+  wtdAvgElv_Filter
+);
+
+// Apply the combined Filters.
+var noGapAnnualFtrs_Filtered = 
+  noGapAnnualFtrs_withMedianRatio.filter(
+    combined_Filters
+  );
+
+
+/* Check the data or export the result. */
+
+if (!output) {
+  
+  print(rawAnnualFtrs.size());
+
+} else {
+  
+  var outputWD = contWD + "ATE_Dynamics/";
+
+  var fileName = "noGapAnnualFtrs_Filtered";
+  
+  Export.table.toAsset({
+    collection: noGapAnnualFtrs_Filtered, 
+    description: fileName, 
+    assetId: outputWD
+      + fileName
+  });
+}
+
+
+
+

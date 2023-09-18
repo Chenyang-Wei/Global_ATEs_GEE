@@ -1,0 +1,457 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var pt = 
+    /* color: #d63000 */
+    /* shown: false */
+    ee.Geometry.Point([-123.39219111614376, 47.839218645787675]),
+    geom = 
+    /* color: #98ff00 */
+    /* shown: false */
+    /* displayProperties: [
+      {
+        "type": "rectangle"
+      }
+    ] */
+    ee.Geometry.Polygon(
+        [[[-123.61126049043642, 47.99125509261375],
+          [-123.61126049043642, 47.78220510426003],
+          [-123.28991039278017, 47.78220510426003],
+          [-123.28991039278017, 47.99125509261375]]], null, false);
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+// Set the 10-km buffered bounding box of the study domain.
+var AOI = ee.Geometry.Rectangle({
+  coords: [-180, 7.114761500193937, -52.095625030545534, 80.24342770493531],
+  geodesic: false
+});
+
+// Target projection.
+var targetPrj = {
+  crs: "EPSG:4326",
+  scale: 30
+};
+
+// ALOS elevation (Version 3.2, released in January 2021) in the AOI.
+var ALOSelv = ee.ImageCollection('JAXA/ALOS/AW3D30/V3_2').select('DSM')
+  .filterBounds(AOI)
+  .mosaic()
+  .reproject(targetPrj);
+
+// Set the working directory.
+var wdNA = "users/treeline/NorthAmerica_GME/";
+
+// Load the transect center lines.
+var centerLines = ee.FeatureCollection(wdNA + 
+  "Transect_Analysis/" + 
+  "TransectCL_withID_20210405");
+
+// Load the previously selected hydrobasin subwatersheds.
+var subwatersheds = ee.FeatureCollection(wdNA + 
+  "Transect_Analysis/" + 
+  "Hybas12Basins_LowerClosedForests_UpperNonForested_30mSegmentedNewCATE");
+
+var selectedSWS = subwatersheds.filterBounds(pt);
+
+// Load the new CATE.
+var newCATE = ee.Image(wdNA + "Climate-Based_ATE/" +
+  "30mNewCATE_gteSmd10kmCForestElv_3kmCForestBuffer_AOI");
+
+// Load the smoothed annual maximum NDVIs in the buffered new CATE.
+var NDVI = ee.Image(wdNA + "ATEI_Estimation/" +
+  "medianSmdAnnualMaxNDVI_1984to2020_cloudShadowMasked_300mBufNewCATE_AOI").updateMask(newCATE);
+// print(NDVI.bandNames())
+
+// Extract elevation within the buffered new CATE.
+var newCATEelv = ALOSelv.updateMask(newCATE);
+
+function buffering(CL) {
+  return CL.buffer(45);
+}
+
+var transects = centerLines.map(buffering);
+
+/* Pre-process the ALOS landform dataset. */
+
+// The landform dataset is based on the 30m "AVE" band of JAXA's ALOS DEM 
+// (available in EE as JAXA/ALOS/AW3D30_V1_1).
+// There are stripes in the area over 60 degrees in latitude.
+var rawLF = ee.Image('CSP/ERGo/1_0/Global/ALOS_landforms').select('constant')
+  .reproject(targetPrj);
+
+// Landforms within the segmented new CATE
+// (with both ridges and invalid landform stripes removed).
+var CATE_LF = rawLF.updateMask(newCATE);
+
+
+/* Extract the landforms of interest in the segmented new CATE
+  (with both ridges and invalid landform stripes removed). */
+
+// Upper regions (Cliff and Upper slopes).
+var upper = CATE_LF.gte(15).and(CATE_LF.lte(24));
+
+// Lower regions (Lower slopes and Valleys).
+var lower = CATE_LF.gte(31);
+
+
+/* Load the Copernicus Global Land Cover datasets (v3.0.1) from 2015 to 2019. */
+
+// Set the file path and band name of land cover data.
+var lcPath = "COPERNICUS/Landcover/100m/Proba-V-C3/Global/";
+
+var lcName = "discrete_classification";
+
+// Function to read the annual land cover datasets.
+function readAnnualLC(year) {
+  return ee.Image(lcPath + year).select(lcName);
+}
+
+// Read the datasets of 2015-2019.
+var landCover = ee.ImageCollection.fromImages([
+  readAnnualLC(2015),
+  readAnnualLC(2016),
+  readAnnualLC(2017),
+  readAnnualLC(2018),
+  readAnnualLC(2019),
+]);
+
+
+/* Extract and reproject the elevation of closed forests 
+  (tree canopy > 70 %) in 2015-2019. */
+
+// Function to extract the annual closed forests.
+function extractCF(lcImg) {
+  return lcImg.gte(111).and(lcImg.lte(116));
+}
+
+// Annual closed forests from 2015 to 2019.
+var annualCF = landCover.map(extractCF);
+
+// Extract and reproject areas classified as closed forests 
+// in ALL the five years.
+var CF_5yr = annualCF.min()
+  .reproject(targetPrj);
+
+
+/* Extract and reproject the non-forested areas in 2015-2019. */
+
+// Function to extract the annual non-forested areas
+// (from "Shrubs" to "Moss and lichen").
+function extractNonF(lcImg) {
+  return lcImg.gte(20).and(lcImg.lte(100));
+}
+
+// Annual non-forested areas from 2015 to 2019.
+var annualNonF = landCover.map(extractNonF);
+
+// Extract and reproject areas classified as non-forested areas 
+// in ALL the five years.
+var NonF_5yr = annualNonF.min()
+  .reproject(targetPrj);
+
+
+/* Obtain the qualified closed forests and non-forested areas. */
+
+// Closed forests on the lower slope or in the valley.
+var CF_lower = CF_5yr.updateMask(lower).rename("CF_lower");
+
+// non-forested areas on the upper slope or the cliff.
+var nonF_upper = NonF_5yr.updateMask(upper).rename("nonF_upper");
+
+var selectedTR = centerLines.filterBounds(selectedSWS).map(buffering);
+
+var img = NDVI
+  .addBands(newCATEelv)
+  .addBands(CF_lower)
+  .addBands(nonF_upper)
+  .float()
+  .clipToCollection(selectedTR);
+
+// print(img.bandNames())
+
+// Export.image.toDrive({
+//   image: img, 
+//   description: "transectNDVI_img", 
+//   folder: "transectNDVI_img", 
+//   region: geom, 
+//   scale: 30, 
+//   crs: "EPSG:4326", 
+//   maxPixels: 1e13, 
+//   skipEmptyTiles: true,
+//   fileFormat: "GeoTIFF"
+// });
+
+// Export.table.toDrive({
+//   collection: selectedTR, 
+//   description: "transectNDVI_shp", 
+//   folder: "transectNDVI_shp", 
+//   fileFormat: "SHP"
+// });
+
+
+// Function to remove cloud (high confidence), cloud shadow, and NA edge pixels 
+// in each LANDSAT image.
+var maskCloudShadow = function(image) {
+  // Get the pixel QA band.
+  var qa = image.select('pixel_qa');
+  
+  // If the cloud bit (5) is set and the cloud confidence (7) is high
+  // or the cloud shadow bit is set (3), then it's a bad pixel.
+  var cloud_shadow = qa.bitwiseAnd(1 << 5).and(qa.bitwiseAnd(1 << 7))
+    .or(qa.bitwiseAnd(1 << 3));
+  
+  // Remove edge pixels that don't occur in all bands
+  var removeEdge = image.mask().reduce(ee.Reducer.min());
+  
+  // Mask the unwanted pixels.
+  var masked = image.updateMask(cloud_shadow.not())
+    .updateMask(removeEdge);
+  
+  // Select the bands of surface reflectance. 
+  return masked.select('B.*');
+};
+
+
+// Function to remove invalid pixels (both < 0 and > 10000) 
+// from each band of surface reflectance. 
+var removeInvalid = function(image) {
+  // Keep pixels with all the surface reflectance bands 
+  // within the valid range: 0-10000.
+  var lowerLimit = image.gte(0).reduce(ee.Reducer.min());
+  var upperLimit = image.lte(1e4).reduce(ee.Reducer.min());
+  
+  var masked = image.updateMask(lowerLimit)
+    .updateMask(upperLimit);
+  
+  return masked;
+};
+
+var calendarFilter = ee.Filter.calendarRange(6, 8, 'month');
+
+// LANDSAT 5.
+var L5 = ee.ImageCollection("LANDSAT/LT05/C01/T1_SR")
+  .filterBounds(selectedSWS)
+  .filterDate('1984-01-01', '2012-01-01')
+  .filter(calendarFilter)
+  .select(['B[1-5]', 'B7', 'pixel_qa']);
+
+// LANDSAT 7.
+var L7 = ee.ImageCollection("LANDSAT/LE07/C01/T1_SR")
+  .filterBounds(selectedSWS)
+  .filterDate('2012-01-01', '2014-01-01')
+  .filter(calendarFilter)
+  .select(['B[1-5]', 'B7', 'pixel_qa']);
+
+// LANDSAT 8.
+var L8 = ee.ImageCollection("LANDSAT/LC08/C01/T1_SR")
+  .filterBounds(selectedSWS)
+  .filterDate('2014-01-01', '2021-01-01')
+  .filter(calendarFilter)
+  .select(['B[1-7]', 'pixel_qa']);
+
+// Merge the NDVIs of LANDSAT 5, 7, and 8.
+var LANDSAT = L5.merge(L7)
+  .merge(L8);
+  // .map(maskCloudShadow)
+  // .map(removeInvalid);
+
+var visParams = {
+  bands: ['B3', 'B2', 'B1'],
+  min: 0,
+  max: 3000,
+  gamma: 1.4,
+};
+
+var visParams2 = {
+  bands: ['B4', 'B3', 'B2'],
+  min: 0,
+  max: 3000,
+  gamma: 1.4,
+};
+
+var width = '400px';
+
+// Choose a transect of interest.
+var ID_list = selectedTR.aggregate_array("ID").getInfo();
+// print(ID_list)
+
+var transectLayerName = "Transects in the example";
+var layer1 = 9;
+var layer2 = 10;
+
+var select = ui.Select({
+  items: ID_list,
+  onChange: function(selectedID) {
+    var TR = selectedTR.filterMetadata("ID", "equals", selectedID);
+    var TRofI = ui.Map.Layer(TR, {color: "00FFFF"}, "Transect of interest");
+    var TRs = ui.Map.Layer(selectedTR, {color: "FF0000"}, transectLayerName, false);
+    
+    map.centerObject(TR, 14);
+    map.layers().set(layer1, TRs);
+    map.layers().set(layer2, TRofI);
+  },
+  style: {
+    position: "top-left",
+    padding: '2px',
+    width: width
+  }
+});
+
+select.setPlaceholder('Choose a transect ID...');
+
+
+// Choose a year of interest.
+var NDVIlayer1 = 1;
+var NDVIlayer2 = 0;
+var LANDSATlayerNum = 2;
+
+function showLayer(year) {
+  var NDVIname = "smdNDVI_" + year;
+  var displayName = "Smoothed NDVI in " + year;
+  
+  var selectedNDVI = NDVI.select(NDVIname);
+  var NDVIofI = ui.Map.Layer(selectedNDVI, NDVIvis, displayName, true);
+  
+  map.layers().set(NDVIlayer1, NDVIofI);
+}
+function showLayer2(year) {
+  var NDVIname = "smdNDVI_" + year;
+  var displayName = "Smoothed NDVI in " + year;
+  
+  var selectedNDVI = NDVI.select(NDVIname);
+  var NDVIofI = ui.Map.Layer(selectedNDVI, NDVIvis, displayName, true);
+  
+  map.layers().set(NDVIlayer2, NDVIofI);
+}
+function showlayerLANDSAT(year) {
+  var LANDSATdata = LANDSAT.filter(ee.Filter.calendarRange(year, year, 'year'));
+  
+  var visual;
+  if (year < 2014) {
+    visual = visParams;
+  } else {
+    visual = visParams2;
+  }
+  
+  var LANDSATname = "Summer-time LANDSAT in " + year;
+  var LANDSATlayer = ui.Map.Layer(LANDSATdata.median(), visual, LANDSATname, true);
+  
+  map.layers().set(LANDSATlayerNum, LANDSATlayer);
+}
+
+// Create a label and slider.
+var label = ui.Label('Choose two years for NDVI comparison');
+var Caption = ui.Label('Top layer:');
+var Caption2 = ui.Label('Bottom layer:');
+
+
+var slider = ui.Slider({
+  min: 1984,
+  max: 2020,
+  step: 1,
+  onChange: showLayer,
+  style: {stretch: 'horizontal'}
+});
+var slider2 = ui.Slider({
+  min: 1984,
+  max: 2020,
+  step: 1,
+  onChange: showLayer2,
+  style: {stretch: 'horizontal'}
+});
+
+
+// Create a panel that contains both the slider and the label.
+var sliderCaption = ui.Panel({
+  widgets: [Caption, slider],
+  layout: ui.Panel.Layout.flow('horizontal'),
+  style: {
+    stretch: 'horizontal'
+  }
+});
+
+// Create a panel that contains both the slider and the label.
+var sliderCaption2 = ui.Panel({
+  widgets: [Caption2, slider2],
+  layout: ui.Panel.Layout.flow('horizontal'),
+  style: {
+    stretch: 'horizontal'
+  }
+});
+
+
+// Create a panel that contains both the slider and the label.
+var panel = ui.Panel({
+  widgets: [label, sliderCaption, sliderCaption2],
+  layout: ui.Panel.Layout.flow('vertical'),
+  style: {
+    position: 'middle-left',
+    padding: '2px',
+    width: width
+  }
+});
+
+// Create a LANDSAT label and slider.
+var labelLANDSAT = ui.Label('Display the summer-time LANDSAT imagery in:');
+var sliderLANDSAT = ui.Slider({
+  min: 1984,
+  max: 2020,
+  step: 1,
+  onChange: showlayerLANDSAT,
+  style: {stretch: 'horizontal'}
+});
+
+// Create a panel that contains both the slider and the label.
+var panelLANDSAT = ui.Panel({
+  widgets: [labelLANDSAT, sliderLANDSAT],
+  layout: ui.Panel.Layout.flow('vertical'),
+  style: {
+    position: 'bottom-left',
+    padding: '2px',
+    width: width
+  }
+});
+
+var map = ui.Map();
+
+map.setOptions("HYBRID");
+map.setCenter(-123.3352, 47.8262, 12);
+
+map.add(select);
+map.add(panel);
+map.add(panelLANDSAT);
+
+var VIS = require("users/ChenyangWei/Public:Modules/Visualization");
+// print(VIS.NDVI_palette)
+var NDVI_vis = VIS.NDVI_vis;
+
+
+var elvPalette = ['006600', '002200', 'fff700', 'ab7634', 'c4d0ff', 'ffffff'];
+var elvVis = {min: 500, max: 2000, palette: elvPalette};
+
+map.addLayer(NDVI.select("smdNDVI_1984"), NDVI_vis, 
+  "Smoothed NDVI in 1984", true);
+
+map.addLayer(NDVI.select("smdNDVI_1984"), NDVI_vis, 
+  "Smoothed NDVI in 1984", false);
+
+var yr = 1984;
+var LTdata = LANDSAT.filter(ee.Filter.calendarRange(yr, yr, 'year'));
+  
+var LTname = "Summer-time LANDSAT in " + yr;
+  
+map.addLayer(LTdata.median(), visParams, LTname, true);
+
+map.addLayer(newCATEelv, elvVis, "Raw elevation", false);
+
+map.addLayer(CF_lower, {palette: "00FF00"}, "Lower closed forest", false, 0.5);
+map.addLayer(nonF_upper, {palette: "0000FF"}, "Upper non-forested area", false, 0.5);
+
+map.addLayer(subwatersheds, {color: "FFFF00"}, "All subwatersheds", false);
+map.addLayer(selectedSWS, {color: "FFFF00"}, "Subwatersheds in the example", false);
+
+map.addLayer(transects, {color: "FF0000"}, "All transects", false);
+map.addLayer(selectedTR, {color: "FF0000"}, transectLayerName, true);
+// map.addLayer(centerLines, {color: "FF0000"}, "centerLines", false);
+
+
+ui.root.clear();
+ui.root.add(map);
+

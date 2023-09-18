@@ -1,0 +1,64 @@
+/**
+ * Introduction:
+ * 
+ * 1) Combine the transects of all continents 
+ *  with the results of the moving-window detection and 
+ *  the temporal analyses into a single dataset.
+ * 
+ * 2) Calculate the ratio between the max. moving-window NDVI SD
+ *  and the long-term NDVI mean for each transect.
+ * 
+ * Update: 4/8/2022.
+ * 
+ * Runtime: 2h (shared).
+ */
+
+
+/* Load module(s). */
+
+var NGA = require("users/ChenyangWei/Public:Modules/NDVI_Gradient_Analysis.js");
+var FC_AP = require("users/ChenyangWei/Public:Modules/FeatureCollection_Analysis&Processing");
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+
+
+/* Load and combine the transect results of all continents. */
+
+var transectResults_AllContinents = NGA.Combine_GlobalTransectResults(NGA.allTransects_MovWinTempVars_Name);
+
+
+// /* Calculate the ratio between the max. moving-window NDVI SD
+//   and the long-term NDVI mean for each transect. */
+
+// var transectResults_withSDmeanRatio = 
+//   NGA.Calculate_NDVI_movWinMaxSD_mean_Ratio(transectResults_AllContinents);
+
+// Whether to output the result.
+var output = true; // true OR false.
+
+
+if (!output) {
+  // Data examination.
+  
+  // FC_AP.Print_FtrColInfo("transectResults_withSDmeanRatio:", 
+  //   transectResults_withSDmeanRatio); // 2294253.
+
+  FC_AP.Print_FtrColInfo("transectResults_AllContinents:", 
+    transectResults_AllContinents); // 2294222.
+
+} else {
+  // Export the final result.
+  
+  var wd_Output = GATE.wd_Global
+    + "NDVI_Gradient_Analysis/";
+  
+  var fileName = NGA.globalTransects_MovWinTempVars_Name;
+  
+  Export.table.toAsset({
+    // collection: transectResults_withSDmeanRatio, 
+    collection: transectResults_AllContinents, 
+    description: fileName, 
+    assetId: wd_Output
+      + fileName
+  });
+}
+

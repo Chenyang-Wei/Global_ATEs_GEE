@@ -1,0 +1,99 @@
+/**
+ * Introduction:
+ * 
+ *  1) Mosaic the climate-based ATEs (CATEs) 
+ *    of all continents.
+ * 
+ * Runtime: 2h (shared).
+ * 
+ * Update: 3/13/2023.
+*/
+
+
+/* Load module(s). */
+
+var IMG = require("users/ChenyangWei/Public:Modules/General/Image_Analysis&Processing.js");
+var ATEI_EA = require("users/ChenyangWei/Public:Modules/Treeline/ATEI_Estimation&Analysis.js");
+var GATE = require("users/ChenyangWei/Public:Modules/Treeline/Global_ATE.js");
+
+
+/* Object definition. */
+
+// Determine the target projection.
+var targetPrj = IMG.WGS84_30m;
+
+// Create a list of the working directories.
+var WDs_List = ATEI_EA.WDs_AllContinents_List;
+
+// Define a global AOI.
+var global_AOI = ee.Geometry.Rectangle({
+  coords: [[-180, -85],
+    [180, 85]],
+  geodesic: false
+});
+
+
+/* Function definition. */
+
+// Define a function to load and reproject the new CATE 
+//  of each continent.
+var Read_NewCATE = function(wd_Cont) {
+  var newCATE_Cont = ee.Image(wd_Cont
+    + "Climate-Based_ATE/" 
+    + GATE.newCATE_fileName)
+    .reproject(targetPrj);
+  
+  return newCATE_Cont;
+};
+
+
+/* Load and mosaic the new CATE of all continents. */
+
+var all_NewCATEs = ee.ImageCollection.fromImages([
+    Read_NewCATE(WDs_List[0]),
+    Read_NewCATE(WDs_List[1]),
+    Read_NewCATE(WDs_List[2]),
+    Read_NewCATE(WDs_List[3]),
+    Read_NewCATE(WDs_List[4]),
+    Read_NewCATE(WDs_List[5])
+  ]).mosaic()
+  .reproject(targetPrj);
+
+
+var output = true;
+
+if (!output) {
+  
+  // Check the mosaicing result.
+  IMG.printImgInfo("all_NewCATEs", all_NewCATEs);
+  
+  // Visualize the result.
+  Map.setOptions("satellite");
+  
+  Map.setCenter(7.7537, 46.0153, 12); // Zermatt.
+  
+  Map.addLayer(global_AOI, {color: "FFFFFF"}, 
+    "global_AOI", true, 0.5);
+
+  Map.addLayer(all_NewCATEs, {palette: "0000FF"}, 
+    "all_NewCATEs", true, 0.5);
+
+} else {
+  
+  // Export the result to Asset.
+  var fileName = "Broad_Alpine_Treeline_Ecotones_v1_0";
+  
+  var outputWD = GATE.wd_Global 
+    + "Climate-Based_ATE/";
+  
+  Export.image.toAsset({
+    image: all_NewCATEs,
+    description: fileName, 
+    assetId: outputWD + fileName, 
+    crs: targetPrj.crs,
+    scale: targetPrj.scale,
+    region: global_AOI,
+    maxPixels: IMG.maxPxNum
+  });
+}
+

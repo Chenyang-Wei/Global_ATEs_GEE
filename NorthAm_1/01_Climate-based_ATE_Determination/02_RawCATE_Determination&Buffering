@@ -1,0 +1,175 @@
+/**
+ * Introduction: 
+ * 1) Downscale the climatically estimated treeline elevation (V1.2 CHELSA TLH dataset)
+ *  to 30 m.
+ * 2) Extract the average climatic treeline elevation from 1979 to 2013 within
+ *  the "Global Mountain Explorer (GME) K3" mountain ranges.
+ * 3) Extract the region within a vertical distance to the temporal average climate treeline elevation 
+ *  at the 30-m level as the raw climate-based ATE (CATE).
+ * 4) Determine a surrounding region of the extracted CATE.
+ * 
+ * Update: 2/23/2021.
+ * 
+ * Runtime: 14h.
+*/
+
+
+/* Load and reproject the required datasets. */
+
+// Set the 10-km buffered bounding box of the study domain.
+var AOI = ee.Geometry.Rectangle({
+  coords: [-180, 7.114761500193937, -52.095625030545534, 80.24342770493531],
+  geodesic: false
+});
+
+// Target projection.
+var targetPrj = {
+  crs: "EPSG:4326",
+  scale: 30
+};
+
+// Set the working directories.
+var wdGlobal = "users/treeline/Global/";
+var wdGME = wdGlobal + "Global_Mountain_Explorer/";
+var wdNA = "users/treeline/NorthAmerica_GME/";
+
+// Global Mountain Explorer K3 Binary dataset.  
+var k3Binary = ee.Image(wdGME +
+  "k3binary")
+  .reproject(targetPrj);
+
+// ALOS elevation (Version 3.2, released in January 2021) in the AOI.
+var ALOSelv = ee.ImageCollection('JAXA/ALOS/AW3D30/V3_2').select('DSM')
+  .filterBounds(AOI)
+  .mosaic()
+  .reproject(targetPrj);
+
+// print("ALOSelv:", ALOSelv,
+//   ALOSelv.projection().crs(),
+//   ALOSelv.projection().nominalScale())
+
+// Load the 30-arcsec Chelsa climatically estimated treeline elevation dataset.
+var chelsa_tlh = ee.Image(wdGlobal + "Global_CHELSA_TLH_V1_2/" +
+  "Stacked_CHELSA_v12_TLH_1979to2013_10000pixels_NAinterpolated_Predictor2_Zlevel9_DeflateCompressed");
+
+// print('CHELSA TLH:', // chelsa_tlh.bandTypes(),
+//   chelsa_tlh.projection().crs(),
+//   chelsa_tlh.projection().nominalScale())
+
+// Read the 30-arcsec GMTED (Global Multi-resolution Terrain Elevation Data) dataset.
+var gmted = ee.Image(wdGlobal + "GMTED/GMTED2010_30arcsec")
+  .reproject({
+    crs: chelsa_tlh.projection().crs(),
+    scale: chelsa_tlh.projection().nominalScale()
+  });
+
+// print('gmted:', gmted.bandTypes(),
+//   gmted.projection().crs(),
+//   gmted.projection().nominalScale())
+
+
+/* Temporal average the climatic treeline elevation. */
+
+// Reproject the CHELSA treeline elevation to 1-arcsecond level.
+var TLHreprj = ee.ImageCollection.fromImages(
+  chelsa_tlh.bandNames().map(function(b){
+    // Select the CHELSA treeline elevation in each year.
+    var tlh = chelsa_tlh.select([b]);
+    
+    // Calculate the absolute treeline height at 30 arcsec.
+    var height = tlh.add(gmted);
+    // add(): Only the intersection of unmasked pixels between the two inputs of the operation 
+    // are considered and returned as unmasked, all else are masked.
+    
+    // Downscale the absolute treeline height 
+    // from 30 arcsec to 30 m
+    // by using the "bilinear" resampling algorithm.
+    var heightReprj = height.resample("bilinear")
+      .reproject(targetPrj);
+    
+    // Rename the reprojected treeline elevation.
+    return heightReprj.rename("TLH");
+  })
+);
+
+// print("TLHreprj:", TLHreprj,
+//   TLHreprj.first().projection().crs(),
+//   TLHreprj.first().projection().nominalScale())
+
+// Calculate the temporal average treeline elevation from 1979 to 2013
+// at the 30-m level.
+var avgTLH = TLHreprj.mean()
+  .reproject(targetPrj);
+
+// Extract the average treeline elevation within the GME K3 mountain ranges.
+avgTLH = avgTLH.updateMask(k3Binary);
+
+// print("avgTLH:", avgTLH.bandTypes(),
+//   avgTLH.projection().crs(),
+//   avgTLH.projection().nominalScale())
+
+
+/* Extract the raw CATE within an absolute vertical distance to the average TLH. */ 
+
+// Calculate the absolute vertical distance to the average TLH.
+var absTLHdist = avgTLH.subtract(ALOSelv).abs(); 
+
+// Extract the raw CATE within a certain distance.
+var CATEthres = 500; // In meters.
+
+var rawCATE = absTLHdist.lte(CATEthres);
+
+// print("rawCATE:", 
+//   rawCATE.bandTypes(), 
+//   rawCATE.projection().crs(), 
+//   rawCATE.projection().nominalScale())
+
+
+/* Determine a surrounding region of the extracted CATE. */
+
+// Determine the size of neighborhood.
+var neighborhood = 200; // Number of 30-m pixels.
+
+// Calculate the distance to the raw CATE at each pixel in the neighborhood.
+var surroundingDist = rawCATE.fastDistanceTransform({
+  neighborhood: neighborhood,
+  units: "pixels",
+  metric: "squared_euclidean"
+}).sqrt() // Get the distance in the number of pixels (30 m).
+  .reproject(targetPrj);
+
+// print("surroundingDist:", 
+//   surroundingDist.bandTypes(),
+//   surroundingDist.projection().crs(), 
+//   surroundingDist.projection().nominalScale())
+
+// Threshold of the horizontal distance for the surrounding region.
+var surroundingThres = 100; // Number of 30-m pixels.
+
+// Identify the surrounding area.
+var surroundingArea = surroundingDist.lte(surroundingThres)
+  .selfMask();
+
+print("surroundingArea:", 
+  surroundingArea.bandTypes(),
+  surroundingArea.projection().crs(), 
+  surroundingArea.projection().nominalScale())
+
+
+/* Export the result. */
+
+if (true) {
+  var fileName = "30mRawCATE_" + CATEthres + "mToAvgTLH_3kmBuf_NorthAmerica_10kmBufBBoxTo-180";
+
+  Export.image.toAsset({
+    image: surroundingArea,
+    description: fileName, 
+    assetId: wdNA + "Climate-Based_ATE/"
+      + fileName, 
+    crs: "EPSG:4326",
+    scale: 30,
+    region: AOI,
+    maxPixels: 1e13
+  }); 
+}
+

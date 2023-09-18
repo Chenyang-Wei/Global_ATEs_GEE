@@ -1,0 +1,288 @@
+/**
+ * Introduction:
+ * 1) Display global transect-level results.
+ * 
+ * Update: 2/4/2022.
+*/
+
+
+/* Load module(s). */
+
+var TNA = require("users/ChenyangWei/Public:Modules/Transect_NDVI_Analysis");
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var FC_AP = require("users/ChenyangWei/Public:Modules/FeatureCollection_Analysis&Processing");
+var VIS = require("users/ChenyangWei/Public:Modules/Visualization");
+var IMG = require("users/ChenyangWei/Public:Modules/Image_Analysis&Processing");
+var palettes = require("users/gena/packages:palettes");
+var NGA = require("users/ChenyangWei/Public:Modules/NDVI_Gradient_Analysis.js");
+
+
+/* Function preparation. */
+
+var printFC = FC_AP.Print_FtrColInfo;
+
+
+/* Load the annual NDVI data. */
+
+// Set the major working directory.
+// var wd_Main = GATE.wd_Asia;
+// var wd_Main = GATE.wd_Europe;
+var wd_Main = GATE.wd_Oceania;
+
+// Determine the working directory of the NDVI dataset.
+// var wd_NDVI = GATE.wd_Asia_2;
+var wd_NDVI = wd_Main;
+
+// Load the new CATE.
+var newCATE = ee.Image(wd_Main
+  + "Climate-Based_ATE/" 
+  + GATE.newCATE_fileName);
+
+// Read the annual NDVIs in the new CATE as an Image.
+//  (Note: apply for all continents other than North America.)
+var rawAnnualNDVIs_newCATE = TNA.loadAnnualNDVIs_nonNorthAmerica(wd_NDVI)
+  .updateMask(newCATE);
+
+// Remove the annual NDVI of 1984.
+var annualNDVIs_newCATE = IMG.RemoveBands_fromImage(
+  rawAnnualNDVIs_newCATE, 
+  ["smdNDVI_1984"]);
+
+
+/* Load the annual NDVIs of Asia. */
+
+var vis_Asia = false;
+
+if (vis_Asia) {
+  
+  // Load and combine the transect-level results of all AOIs.
+  var lowerSegments = TNA.LoadAOIdata_Asia(
+    TNA.lowerSegments_AnnualAvgNDVIs_fileName,
+    TNA.lowerAnnualAvgNDVIs_byBasinGroup_fileName);
+  
+  var upperSegments = TNA.LoadAOIdata_Asia(
+    TNA.upperSegments_AnnualAvgNDVIs_fileName,
+    TNA.upperAnnualAvgNDVIs_byBasinGroup_fileName);
+
+  printFC("lowerSegments:", 
+    lowerSegments);
+
+  printFC("upperSegments:", 
+    upperSegments);
+
+}
+
+
+/* Load the annual Features of Oceania. */
+
+var vis_Oc = true;
+
+if (vis_Oc) {
+  var annualFtrs = NGA.LoadContinentFiles_bySubset(
+    GATE.wd_Oceania, 
+    NGA.Annual_ElvGrads_AvgNDVIs_fullName, 
+    NGA.Annual_ElvGrads_AvgNDVIs_shortName
+  );
+  
+  printFC("annual features:", annualFtrs);
+}
+
+
+/* Load the annual Features of Europe. */
+
+var vis_Eu = false;
+
+if (vis_Eu) {
+  
+  // Load and combine the segment-level results of all subsets.
+  var lowerSegments = TNA.LoadCLidSubsetData(
+    wd_Main,
+    TNA.lowerSegments_AnnualAvgNDVIs_fileName,
+    TNA.lowerAnnualAvgNDVIs_CLidSubset_fileName);
+
+  // printFC("Annual lower segments:", 
+  //   lowerSegments);
+
+  // var upperSegments = TNA.LoadCLidSubsetData(
+  //   wd_Main,
+  //   TNA.upperSegments_AnnualAvgNDVIs_fileName,
+  //   TNA.upperAnnualAvgNDVIs_CLidSubset_fileName);
+
+  // printFC("upperSegments:", 
+  //   upperSegments);
+
+}
+
+
+/* Load the transect-level result of each continent. */
+
+var loadTransects = function(wd, fileName) {
+  var transects = ee.FeatureCollection(wd + "Transect_NDVI_Analysis/"
+    + fileName);
+  
+  return transects;
+};
+
+// File name of Africa and Oceania.
+var fileName_1 = TNA.transects_withBothSegments_fileName;
+
+// File name of other continents.
+var fileName_2 = TNA.combinedTransects_withBothSegments_fileName;
+
+var transects_Africa = loadTransects(GATE.wd_Africa, 
+  fileName_1);
+
+var transects_Oceania = loadTransects(GATE.wd_Oceania, 
+  fileName_1);
+
+var transects_SouthAmerica = loadTransects(GATE.wd_SouthAmerica, 
+  fileName_2);
+
+var transects_Europe = loadTransects(GATE.wd_Europe, 
+  fileName_2);
+
+var transects_NorthAmerica = loadTransects(GATE.wd_NorthAmerica, 
+  fileName_2);
+
+var transects_Asia = loadTransects(GATE.wd_Asia, 
+  fileName_2);
+
+// Combine the transects of all continents.
+var globalTransects = ee.FeatureCollection([
+  transects_Africa,
+  transects_Oceania,
+  transects_SouthAmerica,
+  transects_Europe,
+  transects_NorthAmerica,
+  transects_Asia
+]).flatten();
+
+// // Examine the global transects.
+// printFC("globalTransects:", 
+//   globalTransects);
+
+// FC_AP.Examine_FtrCol_PropertyPercentiles(
+//   "globalTransects", globalTransects, 
+//   "lower_MaxMovWin_NDVIsd", 5);
+
+// FC_AP.Examine_FtrCol_PropertyPercentiles(
+//   "globalTransects", globalTransects, 
+//   "upper_MaxMovWin_NDVIsd", 5);
+
+// Filter the global transects based on
+//  the maximum moving-window NDVI standard deviation.
+var lower_Thres = 0.2207025;
+var upper_Thres = 0.1972513;
+
+var NDVIsd_ToRemove = ee.Filter.or(
+  ee.Filter.gt("lower_MaxMovWin_NDVIsd", lower_Thres),
+  ee.Filter.gt("upper_MaxMovWin_NDVIsd", upper_Thres)
+);
+
+var transectsToRemove = globalTransects.filter(
+  NDVIsd_ToRemove
+);
+
+// printFC("transectsToRemove:", 
+//   transectsToRemove);
+
+
+/* Map visualization. */
+
+if (true) { // true OR false.
+
+  // VIS.centerAsia(7);
+  // VIS.centerNorthAmerica(7);
+  // VIS.centerOceania(7);
+  
+  Map.setOptions("satellite");
+  
+  // Map.setCenter(-120.2934, 48.8162, 8); // North America.
+  // Map.setCenter(98.3262, 28.2865, 8); // Asia.
+  // Map.setCenter(110.3875, 55.3826, 8); // Asia.
+  Map.setCenter(169.14, -44.1963, 12); // Oceania.
+  // Map.setCenter(10.64525, 47.27843, 11); // Europe.
+  
+  var firstYear = 2007;
+  
+  // for (var yearID = -5; yearID <= 5; yearID ++) {
+  for (var yearID = 0; yearID <= 5; yearID ++) {
+    var year = firstYear + yearID;
+    
+    var NDVIname = "smdNDVI_" + year;
+    
+    Map.addLayer(annualNDVIs_newCATE.select(NDVIname), 
+      VIS.NDVI_vis, NDVIname, false);
+  }
+  
+  Map.addLayer(globalTransects,
+    {color: "FFFFFF"},
+    "Global transects", false);
+
+  Map.addLayer(transectsToRemove,
+    {color: "FFFF00"},
+    "Transects to remove", true);
+
+  // Map.addLayer(VIS.paintFtrCol_FillANDEdge(
+  //   globalTransects, "lower_MaxMovWin_FirstYear", 1), 
+  //   {min: 1985, max: 2015, 
+  //   palette: palettes.crameri.buda[50]}, 
+  //   "lower_MaxMovWin_FirstYear", false);
+
+  Map.addLayer(VIS.paintFtrCol_FillANDEdge(
+    transectsToRemove, "lower_MaxMovWin_FirstYear", 1), 
+    {min: 1985, max: 2015, 
+    palette: palettes.crameri.buda[50]}, 
+    "Moving-window first year (lower segments)", false);
+
+  if (vis_Asia) {
+    var YOI = 1988;
+    
+    Map.addLayer(lowerSegments.filter(
+      ee.Filter.eq("Year", YOI)),
+      {color: "FF0000"},
+      "lowerSegments " + YOI);
+    
+    Map.addLayer(upperSegments.filter(
+      ee.Filter.eq("Year", YOI)),
+      {color: "0000FF"},
+      "upperSegments " + YOI);
+    
+  }
+
+  if (vis_Oc) {
+    var YOI = 2009;
+    
+    Map.addLayer(annualFtrs.filter(
+      ee.Filter.eq("Year", YOI)),
+      {color: "FF0000"},
+      "Annual Features " + YOI, false);
+    
+    Map.addLayer(transectsToRemove.filter(
+      ee.Filter.eq("lower_MaxMovWin_FirstYear", YOI)),
+      {color: "0000FF"},
+      "Transects To Remove " + YOI);
+    
+  }
+
+  if (vis_Eu) {
+    var YOI = 2002;
+    
+    Map.addLayer(lowerSegments.filter(
+      ee.Filter.eq("Year", YOI)),
+      {color: "FF0000"},
+      "Annual features (lower segments) " + YOI,
+      false);
+    
+    Map.addLayer(transectsToRemove.filter(
+      ee.Filter.and(
+        ee.Filter.gte("lower_MaxMovWin_FirstYear", YOI-5),
+        ee.Filter.lte("lower_MaxMovWin_FirstYear", YOI))
+      ),
+      {color: "0000FF"},
+      "Transects to remove " + (YOI-5)
+        + " to " + YOI);
+    
+  }
+}
+

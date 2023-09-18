@@ -1,0 +1,89 @@
+/**
+ * Introduction:
+ * 1) Assign the Hybas ID of each centerline centroid
+ *  to the mid-segment that shares the same "CL_newID"
+ *  and drop the old centerline ID of that mid-segment
+ *  by basin group.
+ * 
+ * Update: 10/22/2021.
+ * 
+ * Runtime: 1h.
+ */
+
+
+/* Load module(s). */
+
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+
+
+/* Data and function preparation. */
+
+// Set the major working directory.
+var wd_Main = GATE.wd_NorthAmerica
+  + "Elevational_Transect_Generation/";
+
+// Load the mid-quarter segments.
+var midQuarters = ee.FeatureCollection(wd_Main
+  + GATE.midQuarters_AllRawCLs_fileName);
+
+// Determine the universal file path of the centerline centroids with Hybas IDs.
+var wd_Centroids = wd_Main
+  + GATE.CLcentroids_withHybasIDs_fileName
+  + "/"
+  + GATE.CLcentroids_withHybasIDs_byBasinGroup_fileName;
+
+// Check the loaded data.
+var check = false; // true OR false.
+
+if (check) {
+  print("midQuarters:", 
+    midQuarters.first(),
+    midQuarters.size());
+}
+
+
+/* Operations by basin group (1 ~ 5). */
+
+for (var basinGroupID = 1; basinGroupID <= 5; basinGroupID ++) {
+  
+  // Load the centerline centroids with Hybas IDs of each basin group.
+  var CLcentroids_withHybasIDs = ee.FeatureCollection(wd_Centroids
+    + basinGroupID);
+
+
+  /* Assign the Hybas ID of each centerline centroid
+    to the mid-segment that shares the same "CL_newID"
+    and drop the old centerline ID. */
+  
+  var midQuarters_withHybasIDs = 
+    GATE.assignHybasIDs_toFeatures_byCLnewID_and_DropCLoldID(
+      midQuarters, CLcentroids_withHybasIDs);
+
+  
+  if (check) {
+    print("basinGroupID:", basinGroupID);
+    
+    print("CLcentroids_withHybasIDs:", 
+      CLcentroids_withHybasIDs.first(),
+      CLcentroids_withHybasIDs.size());
+    
+    print("midQuarters_withHybasIDs:", 
+      midQuarters_withHybasIDs.first());
+  
+  } else {
+    //// Export the results by basin group.
+    var wd_Output = wd_Main
+      + GATE.midQuarters_withHybasIDs_fileName
+      + "/";
+    
+    var fileName = GATE.midQuarters_withHybasIDs_byBasinGroup_fileName
+      + basinGroupID;
+    
+    Export.table.toAsset({
+      collection: midQuarters_withHybasIDs, 
+      description: fileName, 
+      assetId: wd_Output + fileName
+    });
+  }
+}
+

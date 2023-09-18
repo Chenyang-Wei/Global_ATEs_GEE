@@ -1,0 +1,186 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var testing = 
+    /* color: #d63000 */
+    /* shown: false */
+    /* displayProperties: [
+      {
+        "type": "rectangle"
+      }
+    ] */
+    ee.Geometry.Polygon(
+        [[[-113.35734598404781, 48.45581629259272],
+          [-113.35734598404781, 48.403420406460675],
+          [-113.27700845963376, 48.403420406460675],
+          [-113.27700845963376, 48.45581629259272]]], null, false);
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+/*
+  Introduction:
+  1) Visualize the elevational transects and annual ATEIs.
+  
+  Update: 11/29/2020.
+*/
+
+
+/* Setup. */
+
+// Set the work directory.
+var wd = "users/treeline/NorthAmerica_GME/";
+
+// Annual ATEIs.
+var ATEI = ee.Image(wd +
+  "Annual_ATEI/ATEI_medianSmdAnlMaxAvgNDVIs_2000to2019");
+
+// print("ATEI:", ATEI.bandTypes(),
+//   ATEI.projection().crs(),
+//   ATEI.projection().nominalScale())
+
+// Load the the variables of annual maximum NDVIs from 2000 to 2019.
+var maxL5L7 = ee.Image(wd + "Annual_NDVI/" +
+  "medianSmdAnlMaxNDVI_gradMagDir_L5L7_2000to2013");
+
+var maxL8 = ee.Image(wd + "Annual_NDVI/" +
+  "medianSmdAnlMaxNDVI_gradMagDir_L8_2014to2019");
+
+var maxNDVI = maxL5L7.addBands(maxL8);
+
+// Load the the variables of annual average NDVIs from 2000 to 2019.
+var avgL5L7 = ee.Image(wd + "Annual_NDVI/" +
+  "medianSmdAnlAvgNDVI_gradMagDir_L5L7_2000to2013");
+
+var avgL8 = ee.Image(wd + "Annual_NDVI/" +
+  "medianSmdAnlAvgNDVI_gradMagDir_L8_2014to2019");
+
+var avgNDVI = avgL5L7.addBands(avgL8);
+
+
+var ndvi_palette =
+  'FFFFFF, CE7E45, DF923D, F1B555, FCD163, 99B718, 74A901, 66A000, 529400,' +
+  '3E8601, 207401, 056201, 004C00, 023B01, 012E01, 011D01, 011301';
+
+var elevationPalette = ['006600', '002200', 'fff700', 'ab7634', 'c4d0ff', 'ffffff'];
+
+var NDVIvisParams = {min: 0, max: 1, palette: ndvi_palette};
+
+var ATEIvisParams = {min: 0, max: 1, palette: "0000FF, FFFFFF, FF0000"};
+
+// Convert an image to an image collection.
+var maxNDVI_ic = ee.ImageCollection.fromImages(maxNDVI.select("s.*").bandNames().map(function(b) {
+  return maxNDVI.select([b]).visualize(NDVIvisParams);
+}));
+
+var avgNDVI_ic = ee.ImageCollection.fromImages(avgNDVI.select("s.*").bandNames().map(function(b) {
+  return avgNDVI.select([b]).visualize(NDVIvisParams);
+}));
+
+var ATEI_ic = ee.ImageCollection.fromImages(ATEI.bandNames().map(function(b) {
+  return ATEI.select([b]).visualize(ATEIvisParams);
+}));
+
+// Combine the preprocessed transects.
+function combineTransects(index) {
+  // Load the transects of each group.
+  var transects = ee.FeatureCollection(wd + 
+    "Transects/ATEI_analysis/Transects_maxATEI_elevation/transects"+ index +
+    "_500mTo3km_maxATEI2000to2019_elevation");
+  
+  return transects;
+}
+
+var indices = ee.List.sequence(1, 8).getInfo();
+var combinedTransects = ee.FeatureCollection(indices.map(combineTransects)).flatten();
+
+// print("combinedTransects:", combinedTransects.first(),
+//   combinedTransects.size()) // 1,153,928.
+
+// Define an empty image to paint features to.
+var empty = ee.Image().byte();
+
+// Paint country feature edges to the empty image.
+var transectsOutline = empty.
+  paint({featureCollection: combinedTransects, color: 1, width: 3})
+  // Convert to an RGB visualization image; set line color to black.
+  .visualize({palette: '000000'});
+
+// Map a blend operation over the temperature collection to overlay the country
+// border outline image on all collection images.
+maxNDVI_ic = maxNDVI_ic.map(function(img) {
+  return img.blend(transectsOutline);
+});
+
+maxNDVI_ic = maxNDVI_ic.merge(ee.Image.constant(0).visualize(NDVIvisParams));
+
+avgNDVI_ic = avgNDVI_ic.map(function(img) {
+  return img.blend(transectsOutline);
+});
+
+avgNDVI_ic = avgNDVI_ic.merge(ee.Image.constant(0).visualize(NDVIvisParams));
+
+ATEI_ic = ATEI_ic.map(function(img) {
+  return img.blend(transectsOutline);
+});
+
+ATEI_ic = ATEI_ic.merge(ee.Image.constant(0).visualize(ATEIvisParams));
+
+
+/* Visualization. */
+
+
+// Map.setCenter(-114.00739, 48.9531, 15);
+
+// Map.centerObject(testing, 12);
+Map.setOptions("HYBRID");
+
+var dim = 1100;
+
+var point = ee.Geometry.Point([-113.3913, 48.4172]);
+Map.centerObject(point, 12); // Banff
+
+var params = {
+  dimensions: dim,
+  region: point.buffer(3e3),
+  framesPerSecond: 2,
+  crs: 'EPSG:3857'
+};
+
+print(ui.Thumbnail(maxNDVI_ic, params));
+print(ui.Thumbnail(avgNDVI_ic, params));
+print(ui.Thumbnail(ATEI_ic, params));
+
+// Copernicus land cover product.
+var oldLC = ee.ImageCollection("COPERNICUS/Landcover/100m/Proba-V/Global")
+  .select('discrete_classification').first();
+var newLC = ee.Image("COPERNICUS/Landcover/100m/Proba-V-C3/Global/2015")
+  .select('discrete_classification');
+
+Map.addLayer(oldLC, {}, "Old Land Cover", false);
+Map.addLayer(newLC, {}, "New Land Cover");
+
+var year  = 2019;
+
+Map.addLayer(maxNDVI.select("sNDVI_" + year), 
+  NDVIvisParams, "maxNDVI " + year);
+
+Map.addLayer(avgNDVI.select("sNDVI_" + year), 
+  NDVIvisParams, "avgNDVI " + year);
+
+Map.addLayer(ATEI.select("ATEI_" + year), 
+  ATEIvisParams, "ATEI " + year);
+
+Map.addLayer(combinedTransects, {color: "000000"}, "combinedTransects");
+
+Map.onClick(function(coordinates){
+  var point = ee.Geometry.Point([coordinates.lon, coordinates.lat]);
+  var params = {
+    dimensions: dim,
+    region: point.buffer(3e3),
+    framesPerSecond: 2,
+    crs: 'EPSG:3857'
+  };
+  
+  print(ui.Thumbnail(maxNDVI_ic, params));
+  print(ui.Thumbnail(avgNDVI_ic, params));
+  print(ui.Thumbnail(ATEI_ic, params));
+})
+
+
+// print(ATEI_ic.getVideoThumbURL(params))

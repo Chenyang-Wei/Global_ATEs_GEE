@@ -1,0 +1,171 @@
+/**
+ * Introduction:
+ * 
+ *  1) Divide Lu's validation points by continent.
+ * 
+ * Update: 6/8/2023.
+ * 
+ * Runtime: < 1m.
+*/
+
+
+/* Load module(s). */
+
+var GATE = require("users/ChenyangWei/Public:Modules/Treeline/Global_ATE.js");
+var FC_AP = require("users/ChenyangWei/Public:Modules/General/FeatureCollection_Analysis&Processing.js");
+
+
+/* Setup. */
+
+// Load Lu's validation points.
+var samples = ee.FeatureCollection(
+  GATE.wd_Global
+  + "ATEI_Validation/2020Lu_MetaAnalysis/"
+  + "Raw_DataPoint");
+
+
+/* Load the study domain of each continent. */
+
+// North America.
+var SD_NorthAmerica = ee.FeatureCollection(
+  GATE.wd_NorthAmerica
+  + "Climate-Based_ATE/"
+  + GATE.studyDomain_NorthAmerica);
+
+// South America.
+var SD_SouthAmerica = ee.FeatureCollection(
+  GATE.wd_SouthAmerica
+  + "Climate-Based_ATE/"
+  + GATE.studyDomain_SouthAmerica);
+
+// Africa.
+var SD_Africa = ee.FeatureCollection(
+  GATE.wd_Africa
+  + "Climate-Based_ATE/"
+  + GATE.studyDomain_Africa);
+
+// Oceania.
+var SD_Oceania = ee.FeatureCollection(
+  GATE.wd_Oceania
+  + "Climate-Based_ATE/"
+  + GATE.studyDomain_Oceania);
+
+// Europe.
+var SD_Europe = ee.FeatureCollection(
+  GATE.wd_Europe
+  + "Climate-Based_ATE/"
+  + GATE.studyDomain_Europe);
+
+// Asia.
+var SD_Asia = ee.FeatureCollection(
+  GATE.wd_Asia
+  + "Climate-Based_ATE/"
+  + GATE.studyDomain_Asia);
+
+
+/* Divide the validation points by continent. */
+
+// Function to add a Continent ID to each point.
+var Add_ContinentID = function(samplePt_Ftr) {
+  
+  return samplePt_Ftr.set({
+    Continent: contName_String
+  });
+};
+
+// North America.
+var contName_String = "North_America";
+
+var samples_NorthAmerica = samples
+  .filterBounds(SD_NorthAmerica)
+  .map(Add_ContinentID);
+
+// South America.
+var contName_String = "South_America";
+
+var samples_SouthAmerica = samples
+  .filterBounds(SD_SouthAmerica)
+  .map(Add_ContinentID);
+
+// Africa.
+var contName_String = "Africa";
+
+var samples_Africa = samples
+  .filterBounds(SD_Africa)
+  .map(Add_ContinentID);
+
+// Oceania.
+var contName_String = "Oceania";
+
+var samples_Oceania = samples
+  .filterBounds(SD_Oceania)
+  .map(Add_ContinentID);
+
+// Europe.
+var contName_String = "Europe";
+
+var samples_Europe = samples
+  .filterBounds(SD_Europe)
+  .map(Add_ContinentID);
+
+// Asia.
+var contName_String = "Asia";
+
+var samples_Asia = samples
+  .filterBounds(SD_Asia)
+  .map(Add_ContinentID);
+
+// Combine the validation points of all continents.
+var samples_AllContinents = ee.FeatureCollection([
+  samples_NorthAmerica,
+  samples_SouthAmerica,
+  samples_Africa,
+  samples_Oceania,
+  samples_Europe,
+  samples_Asia
+]).flatten();
+
+
+if (false) {
+  
+  // Check the validation points.
+  FC_AP.Print_FtrColInfo("samples:", samples);
+
+  FC_AP.Print_FtrColInfo("samples_AllContinents:", 
+    samples_AllContinents);
+  
+  print(samples_AllContinents
+    .aggregate_array("Continent").distinct());
+
+  // Visualization.
+  Map.setOptions("satellite");
+  
+  Map.addLayer(SD_NorthAmerica, {color: "FF0000"}, 
+    "SD_NorthAmerica");
+  Map.addLayer(SD_SouthAmerica, {color: "FF0000"}, 
+    "SD_SouthAmerica");
+  Map.addLayer(SD_Africa, {color: "FF0000"}, 
+    "SD_Africa");
+  Map.addLayer(SD_Oceania, {color: "FF0000"}, 
+    "SD_Oceania");
+  Map.addLayer(SD_Europe, {color: "FF0000"}, 
+    "SD_Europe");
+  Map.addLayer(SD_Asia, {color: "FF0000"}, 
+    "SD_Asia");
+  
+  Map.addLayer(samples, {color: "FFFF00"}, "samples");
+  
+} else {
+  
+  // Export the processed validation points.
+  var fileName = "DataPoints_byContinent";
+  
+  Export.table.toAsset({
+    collection: samples_AllContinents, 
+    description: fileName, 
+    assetId: GATE.wd_Global
+      + "ATEI_Validation/2020Lu_MetaAnalysis/"
+      + fileName
+  });
+}
+

@@ -1,0 +1,113 @@
+/**
+ * Introduction:
+ * 1) Visualize all types of elevation trends.
+ * 
+ * Update: 4/6/2021.
+*/
+
+
+/* Data preparation. */
+
+function buffering(CL) {
+  return CL.buffer(45);
+}
+
+// Set the working directory.
+var wdNA = "users/treeline/NorthAmerica_GME/";
+
+// Load the elevational trends.
+var elvTrends = ee.FeatureCollection(wdNA + 
+  "Transect_Analysis/ATEsegmentTrend_ATEImaskedTrend_ATEIgtPt4329_gte10obs")
+  .select(".*Tnd")
+  .map(buffering);
+
+print("elvTrends:", elvTrends.first(),
+  elvTrends.size())
+
+// Load the ATE segment unions.
+var ATEsegs = ee.FeatureCollection(wdNA + "Transect_Analysis/" +
+  "ATEsegmentUnion_perCenterLine")
+  .map(buffering);
+
+// Load a few examples of annual ATE segments.
+var seg1984 = ee.FeatureCollection(wdNA +
+  "Transect_Analysis/AnnualATEsegments_CenterLines_ATEIgtPt4329/" +
+  "AnnualATEsegments_1984")
+  .map(buffering);
+
+var seg1990 = ee.FeatureCollection(wdNA +
+  "Transect_Analysis/AnnualATEsegments_CenterLines_ATEIgtPt4329/" +
+  "AnnualATEsegments_1990")
+  .map(buffering);
+
+var seg2000 = ee.FeatureCollection(wdNA +
+  "Transect_Analysis/AnnualATEsegments_CenterLines_ATEIgtPt4329/" +
+  "AnnualATEsegments_2000")
+  .map(buffering);
+
+var seg2010 = ee.FeatureCollection(wdNA +
+  "Transect_Analysis/AnnualATEsegments_CenterLines_ATEIgtPt4329/" +
+  "AnnualATEsegments_2010")
+  .map(buffering);
+
+var seg2020 = ee.FeatureCollection(wdNA +
+  "Transect_Analysis/AnnualATEsegments_CenterLines_ATEIgtPt4329/" +
+  "AnnualATEsegments_2020")
+  .map(buffering);
+
+
+/* Visualize all types of elevation trends. */
+
+// Extract the center lines with each type of elevation trend.
+var ATEsegTnd = elvTrends.filter(ee.Filter.neq("ATEsegTnd", null));
+
+print("ATEsegTnd:", ATEsegTnd.first(),
+  ATEsegTnd.size())
+  
+var mskElvTnd = elvTrends.filter(ee.Filter.neq("mskElvTnd", null));
+
+print("mskElvTnd:", mskElvTnd.first(),
+  mskElvTnd.size())
+
+// Paint the center lines based on the elevation trends.
+var empty = ee.Image().double();
+
+var mskElv_Tnd = empty.paint({
+  featureCollection: mskElvTnd,
+  color: "mskElvTnd",
+  width: 3
+});
+
+var ATEseg_Tnd = empty.paint({
+  featureCollection: ATEsegTnd,
+  color: "ATEsegTnd",
+  width: 3
+});
+
+// Visualization.
+var tndVis = {min: -0.1, max: 0.1, palette: "0000FF, FFFFFF, FF0000"};
+
+var Banff = 
+    ee.Geometry.Polygon(
+        [[[-117.14589296115562, 51.64703157776777],
+          [-117.14589296115562, 50.19627709535742],
+          [-114.56410585178062, 50.19627709535742],
+          [-114.56410585178062, 51.64703157776777]]], null, false);
+
+Map.setOptions("HYBRID");
+// Map.setCenter(-113.6351, 48.9004, 13);
+Map.setCenter(-115.38029, 50.82515, 13);
+
+Map.addLayer(mskElv_Tnd, tndVis, "ATEI-masked elevation trend", false);
+Map.addLayer(ATEseg_Tnd, tndVis, "ATE segment elevation trend", false);
+
+Map.addLayer(Banff, {color: "FFFFFF"}, "Banff", true);
+Map.addLayer(elvTrends, {color: "FFFF00"}, "All transects", true);
+Map.addLayer(ATEsegs, {color: "FF0000"}, "ATE segment union");
+
+// Map.addLayer(seg1984, {color: '0000FF'}, "ATE segments in 1984");
+// Map.addLayer(seg1990, {color: '00FFFF'}, "ATE segments in 1990");
+// Map.addLayer(seg2000, {color: 'FFFFFF'}, "ATE segments in 2000");
+// Map.addLayer(seg2010, {color: 'FFFF00'}, "ATE segments in 2010");
+// Map.addLayer(seg2020, {color: 'FF0000'}, "ATE segments in 2020");
+

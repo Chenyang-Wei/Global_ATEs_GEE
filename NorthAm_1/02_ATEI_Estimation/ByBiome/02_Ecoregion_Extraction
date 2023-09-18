@@ -1,0 +1,115 @@
+/**
+ * Introduction:
+ * 1) Separate the multi-geometries of "RESOLVE Ecoregions 2017" into individual geometries.
+ * 2) Extract new ecoregions with the 300-m buffered new CATE.
+ * 
+ * Update: 3/17/2021.
+ * 
+ * Runtime: 
+ * 1) Ecoregion separation: 6m.
+ * 2) Ecoregion extraction: 2m.
+ */
+
+
+/* Load the required datasets. */
+
+// Set the 10-km buffered bounding box of the study domain.
+var AOI = ee.Geometry.Rectangle({
+  coords: [-180, 7.114761500193937, -52.095625030545534, 80.24342770493531],
+  geodesic: false
+});
+
+// Set the working directory.
+var wdNA = "users/treeline/NorthAmerica_GME/";
+
+if (false) {
+  // Load the original RESOLVE Ecoregions 2017 intersecting the AOI.
+  var ecoregions = ee.FeatureCollection("RESOLVE/ECOREGIONS/2017")
+    .filterBounds(AOI);
+  
+  // print("ecoregions:", ecoregions.first(), 
+  //   ecoregions.size());
+  
+  
+  /* Separate the multi-geometries of ecoregions into individual geometries. */
+  
+  var newEcoregions = ecoregions.map(function(ecoregion) {
+    // Extract the list of individual geometries of each ecoregion. 
+    var geomList = ecoregion.geometry().geometries();
+    
+    // Get the property names of each ecoregion.
+    var propertyNames = ecoregion.propertyNames();
+    
+    // Create a list of new ecoregions with individual geometries.
+    var newRegions = geomList.map(function(geom) {
+      // Construct a feature based on each individual geometry.
+      var newRegion = ee.Feature(ee.Geometry(geom));
+      
+      // Copy all the properties of each ecoregion.
+      return newRegion.copyProperties({
+        source: ecoregion, 
+        properties: propertyNames
+      });
+    });
+  
+    return ee.FeatureCollection(newRegions);
+  }).flatten();
+  
+  // print("newEcoregions:", newEcoregions.first(),
+  //   newEcoregions.size())
+  
+  // Export the result.
+  var fileName = "RESOLVEecoregions2017_individualGeometries_AOI";
+  
+  Export.table.toAsset({
+    collection: newEcoregions, 
+    description: fileName, 
+    assetId: wdNA + "ATEI_Estimation/" 
+      + fileName
+  });
+}
+
+
+if (true) {
+  // Load the 300m-buffered new CATE.
+  var bufNewCATE = ee.Image(wdNA + "Climate-Based_ATE/" +
+    "30mNewCATE_BufRawCATEclosedForests_300mBuffered_AOI");
+  
+  // print("bufNewCATE:", bufNewCATE.bandTypes(),
+  //   bufNewCATE.projection().crs(),
+  //   bufNewCATE.projection().nominalScale())
+  
+  // Load the generated individual geometries of ecoregions.
+  var newEcoregions = ee.FeatureCollection(wdNA + "ATEI_Estimation/" +
+    "RESOLVEecoregions2017_individualGeometries_AOI")
+    .filterBounds(AOI);
+  
+  // print("newEcoregions:", newEcoregions.first(),
+  //   newEcoregions.size())
+  
+  
+  /* Extract new ecoregions with the 300-m buffered new CATE. */
+  
+  // Extract the buffered new CATE within each new ecoregion.
+  var newEcoregions_bufNewCATE = bufNewCATE.reduceRegions({
+    collection: newEcoregions,
+    reducer: ee.Reducer.firstNonNull(), 
+    scale: 30,
+    crs: "EPSG:4326"
+  });
+  
+  // Select new ecoregions with the buffered new CATE.
+  var selectedNewEcoregions = newEcoregions_bufNewCATE
+    .filter(ee.Filter.notNull(["first"]));
+
+  // Export the result.
+  var fileName = "RESOLVEecoregions2017_individualGeometries_300mBufferedNewCATE_AOI";
+  
+  Export.table.toAsset({
+    collection: selectedNewEcoregions, 
+    description: fileName, 
+    assetId: wdNA + "ATEI_Estimation/" 
+      + fileName
+  });
+}
+

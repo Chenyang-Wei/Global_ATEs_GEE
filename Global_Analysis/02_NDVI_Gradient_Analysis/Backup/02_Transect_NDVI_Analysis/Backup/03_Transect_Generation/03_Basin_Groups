@@ -1,0 +1,38 @@
+/**
+ * Introduction:
+ *  Visualize the groups of the selected basins in North America and Asia. 
+ * 
+ * Update: 10/8/2021.
+ */
+
+
+/* Load module(s). */
+
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+
+
+// Determine the ID of the targeting Asian AOI (1 ~ 6).
+for (var AOI_ID = 1; AOI_ID <= 6; AOI_ID ++) {
+  
+  // Determine the group ID of the selected basins (1 ~ 5).
+  for (var basinGroupID = 1; basinGroupID <= 5; basinGroupID ++) {
+    
+    // Set the working directory of the AOI.
+    var wd_AOI = GATE.wd_Asia + "Elevational_Transect_Generation/"
+      + "AOI_Asia_" + AOI_ID + "/";
+    
+    // Determine the file path of the basin group.
+    var wd_BasinGroup = wd_AOI
+      + "Selected_Basin_Groups/"
+      + GATE.groupedBasins_fileName 
+      + basinGroupID;
+    
+    // Load the group of the selected basins.
+    var selectedBasins = ee.FeatureCollection(wd_BasinGroup);
+    
+    var emptyImg = ee.Image().int();
+    
+    Map.addLayer(emptyImg.paint(selectedBasins).randomVisualizer(), {}, "selectedBasins")
+    
+  }
+}

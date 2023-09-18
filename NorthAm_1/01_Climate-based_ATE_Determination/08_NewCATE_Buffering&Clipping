@@ -1,0 +1,122 @@
+/**
+ * Introduction: 
+ * 1) Create a 100-px/10-px buffer zone around the new CATE.
+ * 2) Clip the new CATE to the study domain.
+ * 
+ * Update: 3/2/2021.
+ * 
+ * Runtime: 
+ * 1) 3-km buffering: 1h.
+ * 2) 300-m buffering: 50m.
+ */
+
+
+/* Load the required datasets. */
+
+// Set the 10-km buffered bounding box of the study domain.
+var AOI = ee.Geometry.Rectangle({
+  coords: [-180, 7.114761500193937, -52.095625030545534, 80.24342770493531],
+  geodesic: false
+});
+
+// Set the working directory.
+var wdNA = "users/treeline/NorthAmerica_GME/";
+
+// Load the new CATE.
+var newCATE = ee.Image(wdNA + "Climate-Based_ATE/" +
+  "30mNewCATE_gteSmd10kmCForestElv_3kmCForestBuffer_BufRawCATEclosedForests_AOI");
+
+print("newCATE:", newCATE.bandTypes(),
+  newCATE.projection().crs(),
+  newCATE.projection().nominalScale())
+
+
+if (true) {
+  // /* Create a 100-px (3km) buffer zone around the new CATE. */
+  /* Create a 10-px (300m) buffer zone around the new CATE. */
+  
+  // Target projection.
+  var targetPrj = {
+    crs: "EPSG:4326",
+    scale: 30
+  };
+  
+  // Determine the size of neighborhood.
+  // var neighborhood = 200; // 100-px (3km) buffer.
+  var neighborhood = 20; // 10-px (300m) buffer.
+  
+  // Calculate the distance to the new CATE at each pixel in the neighborhood.
+  var CATEdist = newCATE.fastDistanceTransform({
+    neighborhood: neighborhood,
+    units: "pixels",
+    metric: "squared_euclidean"
+  }).sqrt() // Get the distance in the number of pixels (30 m).
+    .reproject(targetPrj);
+  
+  print("CATEdist:", 
+    CATEdist.bandTypes(),
+    CATEdist.projection().crs(), 
+    CATEdist.projection().nominalScale())
+  
+  // Generate a buffer of the new CATE.
+  // var distThres = 100; // 100-px (3km) buffer.
+  var distThres = 10; // 10-px (300m) buffer.
+  
+  var CATEbuffer = CATEdist.lte(distThres)
+    .selfMask()
+    // .rename("newCATE_3kmBuffered"); // 100-px (3km) buffer.
+    .rename("newCATE_300mBuffered"); // 10-px (300m) buffer.
+  
+  print("CATEbuffer:", 
+    CATEbuffer.bandTypes(),
+    CATEbuffer.projection().crs(), 
+    CATEbuffer.projection().nominalScale())
+  
+  // Export the result.
+  // var fileName = "30mNewCATE_BufRawCATEclosedForests_3kmBuffered_AOI"; // 100-px (3km) buffer.
+  var fileName = "30mNewCATE_BufRawCATEclosedForests_300mBuffered_AOI"; // 10-px (300m) buffer.
+  
+  Export.image.toAsset({
+    image: CATEbuffer,
+    description: fileName, 
+    assetId: wdNA + "Climate-Based_ATE/"
+      + fileName, 
+    crs: "EPSG:4326",
+    scale: 30,
+    region: AOI,
+    maxPixels: 1e13
+  }); 
+
+} else if (true) {
+  /* Clip the new CATE to the study domain. */
+  
+  // Load the identified study domain.
+  var NorthAmerica = ee.FeatureCollection("users/treeline/NorthAmerica_GME/" +
+    "Climate-Based_ATE/NorthAmerica_LSIB_SIMPLE")
+    .first().geometry();
+  
+  // print("NorthAmerica:", NorthAmerica)
+  
+  // Clip to the study domain.
+  var clipped = newCATE.clip(NorthAmerica);
+
+  print("clipped:", clipped.bandTypes(),
+    clipped.projection().crs(),
+    clipped.projection().nominalScale())
+  // Slow to print the information after the clipping operation.
+  
+  // Export the result.
+  var fileName = "30mNewCATE_BufRawCATEclosedForests_clippedToStudyDomain";
+  
+  Export.image.toAsset({
+    image: clipped,
+    description: fileName, 
+    assetId: wdNA + "Climate-Based_ATE/"
+      + fileName, 
+    crs: "EPSG:4326",
+    scale: 30,
+    region: AOI,
+    maxPixels: 1e13
+  }); 
+}
+

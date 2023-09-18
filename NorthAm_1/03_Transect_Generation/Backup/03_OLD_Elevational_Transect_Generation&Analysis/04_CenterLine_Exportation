@@ -1,0 +1,97 @@
+/**
+ * Introduction:
+ * 1) Export the transect center lines to the Drive.
+ * 
+ * Update: 4/5/2021.
+ * 
+ * Runtime: 17m.
+*/
+
+
+/* Data preparation. */
+
+// Set the working directory.
+var wdNA = "users/treeline/NorthAmerica_GME/";
+
+// Load the transect center lines without ID.
+var centerLines_FC = ee.FeatureCollection(wdNA + "Transect_Analysis/"
+  + "TransectCenterLines_LowerClosedForests_UpperNonForested_30mSegmentedNewCATE");
+
+// print("centerLines_FC:", centerLines_FC.first(), // No ID.
+//   centerLines_FC.size()) // 703172.
+
+
+/* Export the transect center lines to the Drive. */
+
+Export.table.toDrive({
+  collection: centerLines_FC, 
+  description: "TransectCL_noID_20210405", 
+  folder: "TransectCL_noID_20210405", 
+  fileFormat: "SHP"
+});
+
+
+
+// /* Generate an ID for each transect center line. */
+
+// // Extract the number of center lines.
+// var centerLineNumber = centerLines_FC.size();
+
+// print("centerLines_FC:", centerLines_FC.first(),
+//   centerLineNumber) // 703172.
+
+// // Convert the center lines from a feature collection to a list.
+// var centerLines_list = centerLines_FC.toList({
+//   count: centerLineNumber
+// });
+
+// // Get the largest ID.
+// var ID_end = ee.Number(centerLineNumber).subtract(1);
+
+// // print("ID_end:", ID_end)
+
+// // print("centerLines_list:", centerLines_list.get(0),
+// //   centerLines_list.get(ID_end),
+// //   centerLines_list.size())
+
+// // Construct a list of IDs.
+// var ID_list = ee.List.sequence(0, ID_end);
+
+// // print("ID_list:", ID_list)
+
+// // Add an ID to each center line feature.
+// var centerLinesList_withID = ID_list.map(function(ID) {
+//   var CL = centerLines_list.get(ID);
+  
+//   var CL_withID = ee.Feature(CL).set({
+//     ID: ID
+//   });
+  
+//   return CL_withID;
+// });
+
+// // print("centerLinesList_withID:", centerLinesList_withID.get(0),
+// //   centerLinesList_withID.get(ID_end),
+// //   centerLinesList_withID.size(),
+// //   centerLinesList_withID)
+
+// // Convert the center line list to a feature collection.
+// var centerLinesFC_withID = ee.FeatureCollection(centerLinesList_withID);
+
+// // print("centerLinesFC_withID:", centerLinesFC_withID.first(),
+// //   centerLinesFC_withID.size(),
+// //   centerLinesFC_withID)
+
+
+// // Export the result.
+// if (true) {
+//   var fileName = "TransectCenterLines_withID_LowerClosedForests_UpperNonForested_30mSegmentedNewCATE";
+  
+//   Export.table.toAsset({
+//     collection: centerLinesFC_withID, 
+//     description: fileName, 
+//     assetId: wdNA + "Transect_Analysis/" 
+//       + fileName
+//   });
+// }
+

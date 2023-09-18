@@ -1,0 +1,165 @@
+/**
+ * Introduction:
+ * 1) Visualize the annual maximum NDVI and elevational transects worldwide.
+ * 2) Perform the linear regression of NDVI against time.
+ * 
+ * Update: 8/6/2021.
+*/
+
+// Load the module for visualization.
+var VIS = require("users/ChenyangWei/Public:Modules/Visualization");
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+
+
+/* Data preparation. */
+
+function buffering(CL) {
+  return CL.buffer(45);
+}
+
+// Set the working directories.
+var wdEu = GATE.wd_Europe;
+var wdAs = GATE.wd_Asia;
+var wdAs_2 = GATE.wd_Asia_2;
+var wdNA = GATE.wd_NorthAmerica;
+var wdSA = GATE.wd_SouthAmerica;
+var wdAf = GATE.wd_Africa;
+var wdOc = GATE.wd_Oceania;
+
+
+/* Function to read the images of areas outside North America */
+
+var newCATEname = GATE.newCATE_fileName;
+var NDVIfolder = GATE.annualNDVI_folderName;
+var periods = GATE.periodList;
+
+var newCATE, NDVIpath, allImages;
+
+function read_NonNA_Images(wd_NewCATE, wd_NDVI){
+  // Load the new CATE.
+  newCATE = ee.Image(wd_NewCATE + "Climate-Based_ATE/" 
+    + newCATEname);
+  
+  // NDVI path.
+  NDVIpath = wd_NDVI
+    + "ATEI_Estimation/"
+    + NDVIfolder;
+  
+  // Define the first image.
+  allImages = newCATE;
+  
+  // Perform the analysis and output the result by period.
+  for (var i = 0; i < periods.length; i++) {
+    var firstYear = periods[i][0];
+    var lastYear = periods[i][1];
+    
+    var fileName = "smdNDVI_" + firstYear + "to" + lastYear;
+    
+    var periodNDVIs = ee.Image(NDVIpath + fileName);
+    
+    allImages = allImages.addBands(periodNDVIs);
+  }
+  
+  return allImages;
+}
+
+
+/* Images of North America. */
+
+// New CATE.
+var NA_newCATE = ee.Image(wdNA + "Climate-Based_ATE/" 
+  + newCATEname);
+
+// Smoothed annual maximum NDVIs in the buffered new CATE.
+var NA_NDVI = ee.Image(wdNA + "ATEI_Estimation/" +
+  "medianSmdAnnualMaxNDVI_1984to2020_cloudShadowMasked_300mBufNewCATE_AOI");
+
+var NA_Images = NA_newCATE.addBands(NA_NDVI);
+
+
+/* Read and mosaic all images. */
+
+var globalImages = ee.ImageCollection.fromImages([
+  NA_Images,
+  
+  read_NonNA_Images(wdEu, wdEu),
+  read_NonNA_Images(wdAs, wdAs_2),
+  read_NonNA_Images(wdSA, wdSA),
+  read_NonNA_Images(wdAf, wdAf),
+  read_NonNA_Images(wdOc, wdOc),
+])
+.mosaic();
+
+// print(globalImages)
+
+
+/* Global NDVI. */
+
+var globalNDVI_img = globalImages.select("smd.*");
+
+var yearList = ee.List.sequence(1984, 2020);
+
+var globalNDVI_imgCol = ee.ImageCollection(yearList.map(function(year) {
+  var yearInt = ee.Number(year).int();
+  
+  var bandName = ee.String("smdNDVI_").cat(yearInt);
+  
+  var NDVIband = globalNDVI_img.select(bandName).rename("smdNDVI");
+  var yearBand = ee.Image(ee.Number(year))
+    .float()
+    .rename("Year");
+  
+  return NDVIband.addBands(yearBand);
+}));
+
+// print(globalNDVI_imgCol)
+
+var linearFit = globalNDVI_imgCol.select(["Year", "smdNDVI"])
+  .reduce(ee.Reducer.linearFit());
+
+// print(linearFit)
+
+
+// /* Global transects. */
+
+// var CL_name = GATE.Centerlines_fileName;
+// var NA_folder = "Transect_Analysis/";
+// var nonNA_folder = "Transect_Generation/";
+
+// function readTransects(wd_Transects, folderName) {
+//   var Transects = ee.FeatureCollection(wd_Transects + folderName
+//     + CL_name);
+  
+//   return Transects;
+// }
+
+// var globalTransects = ee.FeatureCollection([
+//   readTransects(wdNA, NA_folder),
+  
+//   readTransects(wdEu, nonNA_folder),
+//   readTransects(wdSA, nonNA_folder),
+//   readTransects(wdAs, nonNA_folder),
+// ]).flatten()
+// .map(buffering);
+
+
+/* Visualization. */
+
+Map.setOptions("hybrid");
+// Map.setCenter(102.9008, 31.0494, 6);
+Map.setCenter(-113.627, 48.5939, 6);
+
+Map.addLayer(globalImages.select("smdNDVI_1984"), VIS.NDVI_vis, "smdNDVI_1984", false);
+Map.addLayer(globalImages.select("smdNDVI_1990"), VIS.NDVI_vis, "smdNDVI_1990", false);
+Map.addLayer(globalImages.select("smdNDVI_2000"), VIS.NDVI_vis, "smdNDVI_2000", false);
+Map.addLayer(globalImages.select("smdNDVI_2010"), VIS.NDVI_vis, "smdNDVI_2010", false);
+Map.addLayer(globalImages.select("smdNDVI_2020"), VIS.NDVI_vis, "smdNDVI_2020");
+
+Map.addLayer(linearFit.select("scale"), 
+  {min: -0.01, max: 0.01, palette: "0000FF, FFFFFF, FF0000"}, 
+  "NDVI trend");
+
+Map.addLayer(globalImages.select("newCATE"), {palette: "FF0000"}, "newCATE", false, 0.5);
+
+// Map.addLayer(globalTransects, {color: "0000FF"}, "globalTransects", false);
+

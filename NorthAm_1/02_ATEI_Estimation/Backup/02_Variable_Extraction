@@ -1,0 +1,590 @@
+/*
+  Introduction:
+  1) Extract the variables of interest at each sampled point.
+  
+  Date:
+  9/2/2020.
+*/
+
+
+/* Setup. */
+
+// North America.
+var northAmerica = ee.Geometry.Polygon({
+      coords: [[[-165.69002926658334, 72.44551256468144],
+            [-169.40248634956492, 65.69009098298687],
+            [-172.25893166206492, 63.826281515474996],
+            [171.35638590722195, 52.855285271231274],
+            [-159.1340353549648, 17.264443722753843],
+            [-122.14862062448367, 9.59539750905343],
+            [-79.06711256993691, 6.243890041056693],
+            [-77.03677448989225, 7.40316087095261],
+            [-76.78408894301725, 8.990725120234067],
+            [-75.7244458156751, 12.403191738791786],
+            [-71.5276684719251, 13.751533985801833],
+            [-62.8264965969251, 11.651035844929385],
+            [-62.005942990095036, 9.999896817210585],
+            [-60.791953732282536, 9.96743692413247],
+            [-55.5884807162513, 13.889226127218825],
+            [-47.99315852039507, 58.68729606716915],
+            [-66.52860968724042, 71.51769835770313],
+            [-77.86650031224042, 74.25356562488685],
+            [-89.90751593724042, 74.22969620284344],
+            [-106.04844453284761, 74.3012200035139],
+            [-114.63975312659761, 74.20581277506923],
+            [-120.18954789130242, 74.88484689543225],
+            [-136.27353226630242, 74.6772015427699]]],
+      geodesic: true
+  });
+
+// Asset path.
+var wdNorthA = "users/treeline/NorthAmerica_GME/";
+
+// Load the sampled points.
+var nonRandom = ee.FeatureCollection(wdNorthA + "Pixel_Sampling/" +
+  "Combined_RandomANDStratified_Sampling_noUC_centroids_westernUS_2009to2011");
+
+// print("nonRandom:", nonRandom.first(), nonRandom.size(), nonRandom.geometry().projection().crs())
+
+var random = ee.FeatureCollection(wdNorthA + "Pixel_Sampling/Random/" +
+  "randomlySampled_600Points_NorthAmerica");
+
+// print("random:", random.first(), random.size(), random.geometry().projection().crs())
+
+var samples = nonRandom.merge(random);
+
+print("samples:", samples.first(), samples.size(), samples.geometry().projection().crs())
+
+// Samples in Alaska.
+var alaska = ee.FeatureCollection(wdNorthA + "Pixel_Sampling/Random/" +
+  "randomlySampled_Alaska");
+
+// Raw annual NDVI.
+var ndviL5L7 = ee.Image(wdNorthA + "Annual_NDVI/" +
+  "RawMedianSmdAnlMaxNDVI_gradMagDir_L5L7_1984to2013").select("r.*");
+
+var ndviL8 = ee.Image(wdNorthA + "Annual_NDVI/" +
+  "RawMedianSmdAnlMaxNDVI_gradMagDir_L8_2014to2019").select("r.*");
+
+var rawNDVI = ndviL5L7.addBands(ndviL8);
+
+// ALOS elevation.
+var ALOSelv = ee.Image('JAXA/ALOS/AW3D30/V2_2').select('AVE_DSM')
+  .reproject({
+    crs: "EPSG:4326",
+    scale: 30
+  });
+
+// Temporal average NDVI.
+var avgNDVI = rawNDVI.reduce(ee.Reducer.mean()).rename("avgNDVI")
+  .reproject({
+    crs: "EPSG:4326",
+    scale: 30
+  });
+
+if (true) {
+  
+  /* Compute the gradient magnitude and direction of NDVI and elevation. */
+  
+  // Compute the image gradient in the X and Y directions.
+  var NDVIgrad = avgNDVI.gradient()
+    .reproject({
+      crs: "EPSG:4326",
+      scale: 30
+    });
+  
+  var elvGrad = ALOSelv.gradient()
+    .reproject({
+      crs: "EPSG:4326",
+      scale: 30
+    });
+  
+  // Compute the magnitude of the gradient: "hypot" calculates the magnitude of the 2D vector [x, y].
+  var NDVImag = NDVIgrad.select('y').hypot(NDVIgrad.select('x'))
+    .rename("NDVImag");
+  
+  var elvMag = elvGrad.select('y').hypot(elvGrad.select('x'))
+    .rename("elvMag");
+  
+  // Compute the direction of the gradient: "atan2" calculates the angle formed by the 2D vector [x, y].
+  var NDVIdir = NDVIgrad.select('y').atan2(NDVIgrad.select('x'))
+    .rename("NDVIdir");
+  
+  var elvDir = elvGrad.select('y').atan2(elvGrad.select('x'))
+    .rename("elvDir");
+  
+  // Calculate the orientation component of ATEI: (1-cos(x))^10/1024. 
+  var angle = NDVIdir.subtract(elvDir).abs()
+    .reproject({
+      crs: "EPSG:4326",
+      scale: 30
+    }).rename("NDVIelvAngle");
+  
+  var cos = angle.cos();
+  
+  var orientation = ee.Image(1).subtract(cos)
+                                .pow(10)
+                                .divide(1024)
+                                .rename("orientation");
+  
+  // Calculate the Gaussian component of ATEI: exp(-(NDVI-0.44)^2/0.0072).
+  var gaussian = avgNDVI.subtract(0.44).pow(2)
+                      .divide(-0.0072)
+                      .exp()
+                      .rename("gaussian");
+  
+  
+  // GEDI forest canopy height.
+  var height = ee.ImageCollection("users/potapovpeter/GEDI_V27")
+    .filterBounds(samples).first()
+    .reproject({
+      crs: "EPSG:4326",
+      scale: 30
+    })
+    .rename("Canopy_Height");
+  
+  
+  /* Variable Extraction. */
+  
+  // Combine the variables of interest.
+  var variables = avgNDVI.addBands(ALOSelv)
+    .addBands(NDVImag)
+    .addBands(elvMag)
+    .addBands(NDVIdir)
+    .addBands(elvDir)
+    .addBands(orientation)
+    .addBands(gaussian)
+    .addBands(angle)
+    .addBands(height)
+    // .float();
+    
+  if (false) {
+    // Generate a pixel at each sampled point.
+    var pixels = samples.reduceToImage({
+      properties: ["Type"], 
+      reducer: ee.Reducer.first()
+    }).reproject({
+      crs: "EPSG:4326",
+      scale: 30
+    }).rename("Type");
+    
+    // print("pixels:", pixels.bandTypes(),
+    //   pixels.projection().crs(), 
+    //   pixels.projection().nominalScale())
+    
+    // Extract the variables at each pixel.
+    var extracted = variables.addBands(pixels)
+      .updateMask(pixels.gt(0));
+    
+    print("extracted:", extracted.bandTypes(),
+      extracted.projection().crs(), 
+      extracted.projection().nominalScale())
+    
+    
+    /* Export the extracted variables. */
+    
+    // Get a dictionary with band names as keys, pixel lists as values.
+    var result = extracted.reduceRegion({
+      reducer: ee.Reducer.toList(), 
+      geometry: northAmerica, 
+      crs: "EPSG:4326",
+      scale: 30,
+      maxPixels: 1e13
+    });
+    
+    // Export the result.
+    var resultName = "testing_extractedVariables_631Pixels_NorthAmerica";
+      
+    Export.table.toAsset({
+      collection: ee.FeatureCollection([ee.Feature(northAmerica.centroid(), result)]),
+      description: resultName, 
+      assetId: wdNorthA + "Pixel_Sampling/Random/" + resultName
+    }); 
+    
+    Export.image.toAsset({
+      image: extracted, 
+      description: resultName, 
+      assetId: wdNorthA + "Pixel_Sampling/Random/" + resultName,
+      region: northAmerica, 
+      crs: "EPSG:4326",
+      scale: 30,
+      maxPixels: 1e13
+    });
+    
+  } else {
+    // Extract the variables at each sampled point.
+    var extracted = variables.reduceRegions({
+      // collection: samples, 
+      collection: alaska, // Samples in Alaska.
+      reducer: ee.Reducer.first(), 
+      crs: "EPSG:4326",
+      scale: 30
+    });
+    
+    // Remove the NA data.
+    var filtered = extracted.filter(ee.Filter.neq("orientation", null));
+    print("filtered:", filtered)
+    
+    // Export the result.
+    // var resultName = "testing_extractedVariables_900PointsFiltered_NorthAmerica";
+    var resultName = "extractedVariables_Alaska" // Alaska.
+      
+    Export.table.toAsset({
+      collection: filtered,
+      description: resultName, 
+      assetId: wdNorthA + "Pixel_Sampling/Random/" + resultName
+    }); 
+  }
+  
+} else {
+  // Read the previously extracted data.
+  var filtered = ee.FeatureCollection(wdNorthA + "Pixel_Sampling/Random/" +
+    "testing_extractedVariables_631PointsFiltered_NorthAmerica");
+
+  print("filtered:", filtered.first(), filtered.size())
+}
+
+// // Three classes.
+// var Above = filtered.filter(ee.Filter.eq("Class", "Above"));
+// var Within = filtered.filter(ee.Filter.eq("Class", "Within"));
+// var Below = filtered.filter(ee.Filter.eq("Class", "Below"));
+
+// // Temporal average NDVI.
+// var chartName = "Temporal average NDVI:";
+// var variable = "avgNDVI";
+// var variableRange = {min: 0, max: 1};
+// var variableAxis = {title: variable, viewWindow: variableRange};
+// var countAxis = {title: 'Count', viewWindow: {min: 0, max: 10}};
+
+// var aboveChart = ui.Chart.feature.histogram({
+//   features: Above, 
+//   property: variable})
+//   .setChartType('AreaChart')
+//   .setOptions({
+//     title: 'Above',
+//     hAxis: variableAxis,
+//     vAxis: countAxis,
+//     series: {0: {color: 'blue'}}
+//   });
+
+// var withinChart = ui.Chart.feature.histogram({
+//   features: Within, 
+//   property: variable})
+//   .setChartType('AreaChart')
+//   .setOptions({
+//     title: 'Within',
+//     hAxis: variableAxis,
+//     vAxis: countAxis,
+//     series: {0: {color: 'orange'}}
+//   });
+
+// var belowChart = ui.Chart.feature.histogram({
+//   features: Below, 
+//   property: variable})
+//   .setChartType('AreaChart')
+//   .setOptions({
+//     title: 'Below',
+//     hAxis: variableAxis,
+//     vAxis: countAxis,
+//     series: {0: {color: 'darkgreen'}}
+//   });
+
+// print(chartName, aboveChart, withinChart, belowChart)
+
+// // NDVI gradient magnitude.
+// var chartName = "NDVI gradient magnitude:";
+// var variable = "NDVImag";
+// var variableRange = {min: 0, max: 0.01};
+// var variableAxis = {title: variable, viewWindow: variableRange};
+// var countAxis = {title: 'Count', viewWindow: {min: 0, max: 15}};
+
+// var aboveChart = ui.Chart.feature.histogram({
+//   features: Above, 
+//   property: variable})
+//   .setChartType('AreaChart')
+//   .setOptions({
+//     title: 'Above',
+//     hAxis: variableAxis,
+//     vAxis: countAxis,
+//     series: {0: {color: 'blue'}}
+//   });
+
+// var withinChart = ui.Chart.feature.histogram({
+//   features: Within, 
+//   property: variable})
+//   .setChartType('AreaChart')
+//   .setOptions({
+//     title: 'Within',
+//     hAxis: variableAxis,
+//     vAxis: countAxis,
+//     series: {0: {color: 'orange'}}
+//   });
+
+// var belowChart = ui.Chart.feature.histogram({
+//   features: Below, 
+//   property: variable})
+//   .setChartType('AreaChart')
+//   .setOptions({
+//     title: 'Below',
+//     hAxis: variableAxis,
+//     vAxis: countAxis,
+//     series: {0: {color: 'darkgreen'}}
+//   });
+
+// print(chartName, aboveChart, withinChart, belowChart)
+
+// // Elevation.
+// var chartName = "Elevation:";
+// var variable = "AVE_DSM";
+// var variableRange = {min: 1000, max: 4500};
+// var variableAxis = {title: variable, viewWindow: variableRange};
+// var countAxis = {title: 'Count', viewWindow: {min: 0, max: 10}};
+
+// var aboveChart = ui.Chart.feature.histogram({
+//   features: Above, 
+//   property: variable})
+//   .setChartType('AreaChart')
+//   .setOptions({
+//     title: 'Above',
+//     hAxis: variableAxis,
+//     vAxis: countAxis,
+//     series: {0: {color: 'blue'}}
+//   });
+
+// var withinChart = ui.Chart.feature.histogram({
+//   features: Within, 
+//   property: variable})
+//   .setChartType('AreaChart')
+//   .setOptions({
+//     title: 'Within',
+//     hAxis: variableAxis,
+//     vAxis: countAxis,
+//     series: {0: {color: 'orange'}}
+//   });
+
+// var belowChart = ui.Chart.feature.histogram({
+//   features: Below, 
+//   property: variable})
+//   .setChartType('AreaChart')
+//   .setOptions({
+//     title: 'Below',
+//     hAxis: variableAxis,
+//     vAxis: countAxis,
+//     series: {0: {color: 'darkgreen'}}
+//   });
+
+// print(chartName, aboveChart, withinChart, belowChart)
+
+// // Elevation gradient magnitude.
+// var chartName = "Elevation gradient magnitude:";
+// var variable = "elvMag";
+// var variableRange = {min: 0, max: 1};
+// var variableAxis = {title: variable, viewWindow: variableRange};
+// var countAxis = {title: 'Count', viewWindow: {min: 0, max: 7.5}};
+
+// var aboveChart = ui.Chart.feature.histogram({
+//   features: Above, 
+//   property: variable})
+//   .setChartType('AreaChart')
+//   .setOptions({
+//     title: 'Above',
+//     hAxis: variableAxis,
+//     vAxis: countAxis,
+//     series: {0: {color: 'blue'}}
+//   });
+
+// var withinChart = ui.Chart.feature.histogram({
+//   features: Within, 
+//   property: variable})
+//   .setChartType('AreaChart')
+//   .setOptions({
+//     title: 'Within',
+//     hAxis: variableAxis,
+//     vAxis: countAxis,
+//     series: {0: {color: 'orange'}}
+//   });
+
+// var belowChart = ui.Chart.feature.histogram({
+//   features: Below, 
+//   property: variable})
+//   .setChartType('AreaChart')
+//   .setOptions({
+//     title: 'Below',
+//     hAxis: variableAxis,
+//     vAxis: countAxis,
+//     series: {0: {color: 'darkgreen'}}
+//   });
+
+// print(chartName, aboveChart, withinChart, belowChart)
+
+// // Gaussian component.
+// var chartName = "Gaussian component:";
+// var variable = "gaussian";
+// var variableRange = {min: 0, max: 1};
+// var variableAxis = {title: variable, viewWindow: variableRange};
+// var countAxis = {title: 'Count', viewWindow: {min: 0, max: 150}};
+
+// var aboveChart = ui.Chart.feature.histogram({
+//   features: Above, 
+//   property: variable})
+//   .setChartType('AreaChart')
+//   .setOptions({
+//     title: 'Above',
+//     hAxis: variableAxis,
+//     vAxis: countAxis,
+//     series: {0: {color: 'blue'}}
+//   });
+
+// var withinChart = ui.Chart.feature.histogram({
+//   features: Within, 
+//   property: variable})
+//   .setChartType('AreaChart')
+//   .setOptions({
+//     title: 'Within',
+//     hAxis: variableAxis,
+//     vAxis: countAxis,
+//     series: {0: {color: 'orange'}}
+//   });
+
+// var belowChart = ui.Chart.feature.histogram({
+//   features: Below, 
+//   property: variable})
+//   .setChartType('AreaChart')
+//   .setOptions({
+//     title: 'Below',
+//     hAxis: variableAxis,
+//     vAxis: countAxis,
+//     series: {0: {color: 'darkgreen'}}
+//   });
+
+// print(chartName, aboveChart, withinChart, belowChart)
+
+// // Orientation component.
+// var chartName = "Orientation component:";
+// var variable = "orientation";
+// var variableRange = {min: 0, max: 1};
+// var variableAxis = {title: variable, viewWindow: variableRange};
+// var countAxis = {title: 'Count', viewWindow: {min: 0, max: 150}};
+
+// var aboveChart = ui.Chart.feature.histogram({
+//   features: Above, 
+//   property: variable})
+//   .setChartType('AreaChart')
+//   .setOptions({
+//     title: 'Above',
+//     hAxis: variableAxis,
+//     vAxis: countAxis,
+//     series: {0: {color: 'blue'}}
+//   });
+
+// var withinChart = ui.Chart.feature.histogram({
+//   features: Within, 
+//   property: variable})
+//   .setChartType('AreaChart')
+//   .setOptions({
+//     title: 'Within',
+//     hAxis: variableAxis,
+//     vAxis: countAxis,
+//     series: {0: {color: 'orange'}}
+//   });
+
+// var belowChart = ui.Chart.feature.histogram({
+//   features: Below, 
+//   property: variable})
+//   .setChartType('AreaChart')
+//   .setOptions({
+//     title: 'Below',
+//     hAxis: variableAxis,
+//     vAxis: countAxis,
+//     series: {0: {color: 'darkgreen'}}
+//   });
+
+// print(chartName, aboveChart, withinChart, belowChart)
+
+
+// if (true) {
+//   /* Visualization. */
+  
+//   Map.setOptions("hybrid");
+//   Map.setCenter(-113.53904, 48.62589, 10);
+  
+//   var ndvi_palette =
+//       'FFFFFF, CE7E45, DF923D, F1B555, FCD163, 99B718, 74A901, 66A000, 529400,' +
+//       '3E8601, 207401, 056201, 004C00, 023B01, 012E01, 011D01, 011301';
+  
+//   Map.addLayer(avgNDVI, 
+//     {min: 0, max: 1, palette: ndvi_palette}, 
+//     "avgNDVI", true, 1);
+  
+//   // Map.addLayer(extracted.select("Type"), {min: 1, max: 3, palette: "0000FF, FFFF00, 00FF00"}, "pixels", true, 1);
+//   Map.addLayer(samples, {color: "FF0000"}, "samples", true, 1);
+// }
+
+
+
+/* Generating a histogram. */
+// // Extract the histogram of each pixel class.
+// var aboveHist = ee.Array(ee.Dictionary(fullHist.get(0)).get("histogram")).toList();
+// var belowHist = ee.Array(ee.Dictionary(fullHist.get(1)).get("histogram")).toList();
+// var withinHist = ee.Array(ee.Dictionary(fullHist.get(2)).get("histogram")).toList();
+
+// // Separate the value and count in each histogram.
+// aboveHist = ee.FeatureCollection(aboveHist.map(function(element) {
+//   var value = ee.List(element).get(0);
+//   var count = ee.List(element).get(1);
+  
+//   return ee.Feature(null).set({
+//     Pixel_Class: "Above",
+//     Value: value,
+//     Count: count
+//   });
+// }));
+
+// belowHist = ee.FeatureCollection(belowHist.map(function(element) {
+//   var value = ee.List(element).get(0);
+//   var count = ee.List(element).get(1);
+  
+//   return ee.Feature(null).set({
+//     Pixel_Class: "Below",
+//     Value: value,
+//     Count: count
+//   });
+// }));
+
+// withinHist = ee.FeatureCollection(withinHist.map(function(element) {
+//   var value = ee.List(element).get(0);
+//   var count = ee.List(element).get(1);
+  
+//   return ee.Feature(null).set({
+//     Pixel_Class: "Within",
+//     Value: value,
+//     Count: count
+//   });
+// }));
+
+// // Combine the new histograms.
+// var combinedHist = aboveHist.merge(belowHist).merge(withinHist);
+
+// print(combinedHist)
+
+// // Create a chart.
+// var chart = ui.Chart.feature.groups({
+//   features: combinedHist, 
+//   xProperty: "Value", 
+//   yProperty: "Count", 
+//   seriesProperty: "Pixel_Class"
+// }).setChartType('AreaChart')
+//   .setOptions({
+//     title: chartName,
+//     series: {
+//       0: {color: 'blue'},
+//       1: {color: 'darkgreen'},
+//       2: {color: 'orange'}
+//     }
+//   });
+
+// print(chart)
+// print(ee.List(ee.Array(ee.Dictionary(histogram.get(0)).get("histogram")).toList().get(0)).get(1))
+
+// var array = ee.Array(ee.Dictionary(histogram.get(0)).get("histogram"))
+// // print(ee.Array.cat(array, 1))

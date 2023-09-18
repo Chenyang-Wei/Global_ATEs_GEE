@@ -1,0 +1,155 @@
+/**
+ * Introduction:
+ * 1) For each annual NDVI Feature of transect segments,
+ *  generate a 6-year moving window consisting of the annual average NDVIs
+ *  of the current year and the following 5 (or >= 3) years.
+ * 2) Compute the maximum annual-NDVI standard deviation of all
+ *  6-year moving windows for each transect segment.
+ * 
+ * Update: 1/22/2022.
+ * 
+ * Runtime: 8h ~ 11h.
+ */
+
+
+/* Load module(s). */
+
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var TNA = require("users/ChenyangWei/Public:Modules/Transect_NDVI_Analysis");
+
+
+/* Data and function preparation. */
+
+// Set the major working directory.
+var wd_Main = GATE.wd_NorthAmerica;
+
+// Determine the universal file path of
+//  the lower transect segments.
+var wd_LowerSegments = wd_Main
+  + "Transect_NDVI_Analysis/"
+  + TNA.lowerSegmentsNDVItrends_fileName
+  + "/"
+  + TNA.lowerSegmentsNDVItrends_byBasinGroup_fileName;
+
+// Determine the universal file path of
+//  the upper transect segments.
+var wd_UpperSegments = wd_Main
+  + "Transect_NDVI_Analysis/"
+  + TNA.upperSegmentsNDVItrends_fileName
+  + "/"
+  + TNA.upperSegmentsNDVItrends_byBasinGroup_fileName;
+
+// Determine the universal file path of
+//  the annual NDVI Features of the lower segments.
+var wd_LowerAnnualFeatures = wd_Main
+  + "Transect_NDVI_Analysis/"
+  + TNA.lowerSegments_AnnualAvgNDVIs_fileName
+  + "/"
+  + TNA.lowerAnnualAvgNDVIs_byBasinGroup_fileName;
+
+// Determine the universal file path of
+//  the annual NDVI Features of the upper segments.
+var wd_UpperAnnualFeatures = wd_Main
+  + "Transect_NDVI_Analysis/"
+  + TNA.upperSegments_AnnualAvgNDVIs_fileName
+  + "/"
+  + TNA.upperAnnualAvgNDVIs_byBasinGroup_fileName;
+
+
+/* Operations by basin group (1 ~ 5). */
+
+// for (var basinGroupID = 1; basinGroupID <= 3; basinGroupID ++) { // First run.
+for (var basinGroupID = 4; basinGroupID <= 5; basinGroupID ++) { // Second run.
+  
+  // Load the lower and upper segments of transects
+  //  with the trend of annual average NDVIs.
+  var raw_LowerSegments = ee.FeatureCollection(wd_LowerSegments
+    + basinGroupID);
+  
+  var raw_UpperSegments = ee.FeatureCollection(wd_UpperSegments
+    + basinGroupID);
+
+  // Load the annual NDVI Features of the lower and upper segments.
+  var annualFeatures_LowerSegments = ee.FeatureCollection(wd_LowerAnnualFeatures
+    + basinGroupID);
+  
+  var annualFeatures_UpperSegments = ee.FeatureCollection(wd_UpperAnnualFeatures
+    + basinGroupID);
+
+
+  /* Select transect segments with at least 10 annual observations. */
+  
+  var lowerType = "lower";
+  
+  var upperType = "upper";
+  
+  var selected_LowerSegments = TNA.Filter_SegmentYearNum(raw_LowerSegments,
+    lowerType);
+  
+  var selected_UpperSegments = TNA.Filter_SegmentYearNum(raw_UpperSegments,
+    upperType);
+
+
+  /* Compute the maximum annual-NDVI standard deviation of all
+    6-year moving windows for each transect segment. */
+  
+  var centerlineID = "CL_newID";
+  
+  var lowerSegments_withMaxMovWinNDVIsds =
+    TNA.Calculate_Max_MovWin_NDVIstdDev_perSegment_byBasin(
+      selected_LowerSegments, annualFeatures_LowerSegments, 
+      lowerType, centerlineID
+    );
+  
+  var upperSegments_withMaxMovWinNDVIsds =
+    TNA.Calculate_Max_MovWin_NDVIstdDev_perSegment_byBasin(
+      selected_UpperSegments, annualFeatures_UpperSegments, 
+      upperType, centerlineID
+    );
+
+
+  if (false) { //// true OR false.
+  
+    print("selected_UpperSegments:", 
+      selected_UpperSegments.first(),
+      selected_UpperSegments.size());
+  
+    print("annualFeatures_UpperSegments:",
+      annualFeatures_UpperSegments.first(),
+      annualFeatures_UpperSegments.size());
+
+  } else { //// Export the result(s).
+    
+    var wd_Output_Lower = wd_Main
+      + "Transect_NDVI_Analysis/"
+      + TNA.lowerSegments_MaxNDVIsds_fileName
+      + "/";
+    
+    var wd_Output_Upper = wd_Main
+      + "Transect_NDVI_Analysis/"
+      + TNA.upperSegments_MaxNDVIsds_fileName
+      + "/";
+    
+    var fileName_Lower = TNA.lowerSegmentsMaxNDVIsds_byBasinGroup_fileName
+      + basinGroupID;
+    
+    var fileName_Upper = TNA.upperSegmentsMaxNDVIsds_byBasinGroup_fileName
+      + basinGroupID;
+    
+    Export.table.toAsset({
+      collection: lowerSegments_withMaxMovWinNDVIsds, 
+      description: fileName_Lower, 
+      assetId: wd_Output_Lower
+        + fileName_Lower
+    });
+    
+    Export.table.toAsset({
+      collection: upperSegments_withMaxMovWinNDVIsds, 
+      description: fileName_Upper, 
+      assetId: wd_Output_Upper
+        + fileName_Upper
+    });
+    
+  }
+}
+

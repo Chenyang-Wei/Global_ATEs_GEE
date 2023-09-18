@@ -1,0 +1,113 @@
+/*
+  Introduction:
+  1) To extract global forested areas from "Copernicus Global Land Cover Layers: CGLS-LC100 collection 2" dataset
+    within each GMBA mountain range.
+    
+  Date: 6/4/2020.
+  
+  Launch time: 44m.
+*/
+
+
+/**
+ * Loading datasets.
+ */
+
+var wdGlobal = "users/treeline/Global/";
+var wdNorthA = "users/treeline/North_America/";
+
+// Define the extent of North America. 
+var northAmerica = ee.Geometry.Polygon({
+    coords: [[[-165.69002926658334, 72.44551256468144],
+          [-169.40248634956492, 65.69009098298687],
+          [-172.25893166206492, 63.826281515474996],
+          [171.35638590722195, 52.855285271231274],
+          [-159.1340353549648, 17.264443722753843],
+          [-122.14862062448367, 9.59539750905343],
+          [-79.06711256993691, 6.243890041056693],
+          [-77.03677448989225, 7.40316087095261],
+          [-76.78408894301725, 8.990725120234067],
+          [-75.7244458156751, 12.403191738791786],
+          [-71.5276684719251, 13.751533985801833],
+          [-62.8264965969251, 11.651035844929385],
+          [-62.005942990095036, 9.999896817210585],
+          [-60.791953732282536, 9.96743692413247],
+          [-55.5884807162513, 13.889226127218825],
+          [-47.99315852039507, 58.68729606716915],
+          [-66.52860968724042, 71.51769835770313],
+          [-77.86650031224042, 74.25356562488685],
+          [-89.90751593724042, 74.22969620284344],
+          [-106.04844453284761, 74.3012200035139],
+          [-114.63975312659761, 74.20581277506923],
+          [-120.18954789130242, 74.88484689543225],
+          [-136.27353226630242, 74.6772015427699]]],
+    geodesic: true
+});
+
+// GMBA mountain inventory.  
+var gmba = ee.FeatureCollection(wdGlobal +
+  "GMBA/Mountain_Inventory_v1_2-World");
+
+// Select mountain ranges within the study domain.
+gmba = gmba.filterBounds(northAmerica);
+
+// Copernicus land cover product.
+var copernicus = ee.ImageCollection("COPERNICUS/Landcover/100m/Proba-V/Global")
+  .select('discrete_classification');
+
+// Original projection information.
+var oriPrj = copernicus.first().projection();
+var oriCRS = oriPrj.crs().getInfo();
+var oriScale = oriPrj.nominalScale().getInfo();
+
+print("Original dataset:", copernicus, oriCRS, oriScale);
+print("# of images:", copernicus.size());
+
+// Date range of the data set.
+var range = copernicus.reduceColumns(ee.Reducer.minMax(), ["system:time_start"]);
+print('Date range: ', ee.Date(range.get('min')), ee.Date(range.get('max')));
+
+
+/**
+ * Forest extraction.
+ */
+
+// Get the land cover image.
+copernicus = copernicus.first();
+
+// Extract land cover classes between 111 and 126 including:
+// both closed (Tree canopy > 70 %, 111 ~ 116) and open (Top layer-trees 15-70 %, 121 ~ 126) forests.
+var allForests = copernicus.gte(111).and(copernicus.lte(126));
+
+// Clip with the selected mountain range boundaries.
+allForests = allForests.selfMask()
+  .clipToCollection(gmba);
+
+if (true) {
+  /* Output the result. */
+  
+  var fileName = "CopernicusLandCover_100mAllForests_2015_GMBAv12";
+  
+  Export.image.toAsset({
+    image: allForests,
+    description: fileName,
+    assetId: wdNorthA + "CATE/" + 
+      fileName,
+    region: northAmerica,
+    scale: oriScale,
+    crs: oriCRS,
+    maxPixels: 1e13
+  });
+
+} else if (true) {
+  /* Visualization. */
+  
+  Map.setOptions("hybrid");
+  Map.centerObject(northAmerica, 4);
+  
+  Map.addLayer(gmba, {color: "FFFFFF"}, "GMBA mountain ranges");
+  
+  Map.addLayer(allForests, {min: 0, max: 1, palette: "FFFFFF, FF0000"}, 
+    'Copernicus -- All forests', true);
+}
+

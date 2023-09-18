@@ -1,0 +1,47 @@
+/**
+ * Introduction:
+ * 1) Union the buffers of the mid-quarter segments by basin group.
+ * 
+ * Update: 10/12/2021.
+ * 
+ * Runtime:
+ */
+
+
+/* Load module(s). */
+
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var VIS = require("users/ChenyangWei/Public:Modules/Visualization");
+
+
+/* Union the buffers of the mid-quarter segments */
+
+// Read the unioned buffers of all basin groups of North America.
+var unionedBuffers = VIS.readUnionedBuffers_AllBasinGroups_NorthAmerica();
+
+var bufferUnion_AllBasinGroups = unionedBuffers.union();
+
+
+if (false) { // true OR false.
+  print("unionedBuffers:",
+    unionedBuffers.size());
+  
+  print("bufferUnion_AllBasinGroups:", 
+    bufferUnion_AllBasinGroups.size());
+
+} else {
+  //// Export the result(s) by basin group.
+  var wd_Output = GATE.wd_NorthAmerica
+    + "Elevational_Transect_Generation/"
+    + GATE.multiPolygon_BufferUnion_fileName
+    + "/";
+
+  var fileName = GATE.multiPolygon_BufferUnion_AllBasinGroups_fileName;
+  
+  Export.table.toAsset({
+    collection: bufferUnion_AllBasinGroups, 
+    description: fileName, 
+    assetId: wd_Output + fileName
+  });
+}
+

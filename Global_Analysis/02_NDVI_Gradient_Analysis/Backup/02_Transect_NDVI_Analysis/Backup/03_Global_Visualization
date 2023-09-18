@@ -1,0 +1,369 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var geometry = 
+    /* color: #d63000 */
+    /* displayProperties: [
+      {
+        "type": "rectangle"
+      }
+    ] */
+    ee.Geometry.Polygon(
+        [[[-122.12115968446561, 52.04901965127051],
+          [-122.12115968446561, 47.805674840915955],
+          [-116.34235109071561, 47.805674840915955],
+          [-116.34235109071561, 52.04901965127051]]], null, false);
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+/**
+ * Introduction:
+ * 1) Display the global transects (TLUs, no Asia) with information on the corresponding
+ *  lower and upper segments.
+ * 2) Display the NDVI gradient trends of transects in Asia.
+ * 
+ * Update: 12/10/2021.
+ */
+
+
+/* Load module(s). */
+
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var TNA = require("users/ChenyangWei/Public:Modules/Transect_NDVI_Analysis");
+var VIS = require("users/ChenyangWei/Public:Modules/Visualization");
+var FC_AP = require("users/ChenyangWei/Public:Modules/FeatureCollection_Analysis&Processing");
+
+
+/* Get the major working directories. */
+
+var wd_As = GATE.wd_Asia;
+var wd_NA = GATE.wd_NorthAmerica;
+var wd_SA = GATE.wd_SouthAmerica;
+var wd_Eu = GATE.wd_Europe;
+var wd_Af = GATE.wd_Africa;
+var wd_Oc = GATE.wd_Oceania;
+
+
+/* Read the global raw TLUs without Asia. */
+
+// Continents except North America.
+var readRawTLUs = function(wd) {
+  var rawTLUs = ee.FeatureCollection(wd
+    + "Transect_NDVI_Analysis/"
+    + TNA.transects_LowerUpperSegments_fileName);
+
+  return rawTLUs;
+};
+
+var rawTLUs_SA = readRawTLUs(wd_SA);
+var rawTLUs_Eu = readRawTLUs(wd_Eu);
+var rawTLUs_Af = readRawTLUs(wd_Af);
+var rawTLUs_Oc = readRawTLUs(wd_Oc);
+
+// North America.
+var readRawTLUs_NA = function(basinGroupID) {
+  
+  var wd = wd_NA
+    + "Transect_NDVI_Analysis/"
+    + TNA.transects_LowerUpperSegments_fileName
+    + "/";
+  
+  var fileName = TNA.TLUs_byBasinGroup_fileName
+    + basinGroupID;
+  
+  return ee.FeatureCollection(wd + fileName);
+};
+
+var rawTLUs_NA = ee.FeatureCollection([
+  readRawTLUs_NA(1),
+  readRawTLUs_NA(2),
+  readRawTLUs_NA(3),
+  readRawTLUs_NA(4),
+  readRawTLUs_NA(5)
+]).flatten();
+
+var rawTLUs_Global = rawTLUs_SA
+  .merge(rawTLUs_Eu)
+  .merge(rawTLUs_Af)
+  .merge(rawTLUs_Oc)
+  .merge(rawTLUs_NA);
+
+print(rawTLUs_Global.reduceColumns({
+  reducer: ee.Reducer.mean().repeat(2), 
+  selectors: ["lower_SD", "upper_SD"]
+}));
+
+print(rawTLUs_Global.reduceColumns({
+  reducer: ee.Reducer.stdDev().repeat(2), 
+  selectors: ["lower_SD", "upper_SD"]
+}));
+
+
+/* Read the globally selected TLUs without Asia. */
+
+// Continents except North America.
+var readSelectedTLUs = function(wd) {
+  var selectedTLUs = ee.FeatureCollection(wd
+    + "Transect_NDVI_Analysis/"
+    + TNA.selectedTLUs_fileName);
+
+  return selectedTLUs;
+};
+
+var selectedTLUs_SA = readSelectedTLUs(wd_SA);
+var selectedTLUs_Eu = readSelectedTLUs(wd_Eu);
+var selectedTLUs_Af = readSelectedTLUs(wd_Af);
+var selectedTLUs_Oc = readSelectedTLUs(wd_Oc);
+
+// North America.
+var readSelectedTLUs_NA = function(basinGroupID) {
+  
+  var wd = wd_NA
+    + "Transect_NDVI_Analysis/"
+    + TNA.selectedTLUs_fileName
+    + "/";
+  
+  var fileName = TNA.selectedTLUs_byBasinGroup_fileName
+    + basinGroupID;
+  
+  return ee.FeatureCollection(wd + fileName);
+};
+
+var selectedTLUs_NA = ee.FeatureCollection([
+  readSelectedTLUs_NA(1),
+  readSelectedTLUs_NA(2),
+  readSelectedTLUs_NA(3),
+  readSelectedTLUs_NA(4),
+  readSelectedTLUs_NA(5)
+]).flatten();
+
+var selectedTLUs_Global = selectedTLUs_SA
+  .merge(selectedTLUs_Eu)
+  .merge(selectedTLUs_Af)
+  .merge(selectedTLUs_Oc)
+  .merge(selectedTLUs_NA);
+
+
+/* Gradient trends of transects in Asia. */
+
+// Asia.
+var rawTransects_Asia = VIS.readSteepestCLs_Asia().map(function(CL) {
+  return CL.buffer(45);
+});
+
+var readGradTrends_Asia = function() {
+  
+  var allTransects = ee.List([]);
+  
+  // Asian AOI: 1 ~ 6.
+  for (var AOI_ID = 1; AOI_ID <= 6; AOI_ID ++) {
+    
+    // Set the working directory of the AOI.
+    var wd_AOI = GATE.wd_Asia
+      + "Transect_NDVI_Analysis/"
+      + "AOI_Asia_" + AOI_ID + "/";
+    
+    var wd_Transects = wd_AOI 
+      + TNA.elvNDVIgradientTrends_Lte10km_fileName + "/"
+      + TNA.gradientTrends_byBasinGroup_fileName;
+      
+    // Basin group: 1 ~ 5.
+    for (var basinGroupID = 1; basinGroupID <= 5; basinGroupID ++) {
+      
+      // Load the steepest centerlines of each basin group.
+      var transects = ee.FeatureCollection(wd_Transects
+        + basinGroupID);
+      
+      allTransects = allTransects.add(transects);
+    }
+  }
+  
+  var allTransects_Flattened = ee.FeatureCollection(allTransects).flatten();
+  
+  return allTransects_Flattened;
+};
+
+var gradTrends_Asia = readGradTrends_Asia();
+
+
+/* Read the aggregated NDVI-gradient trends of basins (except for Asia). */
+
+var readBasinGradTrends = function(wd) {
+  var fileName = TNA.basinGradientTrends_fileName;
+  
+  return ee.FeatureCollection(wd
+    + "Transect_NDVI_Analysis/"
+    + fileName);
+};
+
+var BasinGradTrends_SA = readBasinGradTrends(wd_SA);
+var BasinGradTrends_Eu = readBasinGradTrends(wd_Eu);
+var BasinGradTrends_Af = readBasinGradTrends(wd_Af);
+var BasinGradTrends_Oc = readBasinGradTrends(wd_Oc);
+
+// North America.
+var readBasinGradTrends_NAm = function(basinGroupID) {
+  
+  var wd_Output = GATE.wd_NorthAmerica
+    + "Transect_NDVI_Analysis/"
+    + TNA.basinGradientTrends_fileName
+    + "/";
+  
+  var fileName = TNA.basinGradientTrends_byBasinGroup_fileName
+    + basinGroupID;
+  
+  return ee.FeatureCollection(wd_Output + fileName);
+};
+
+var BasinGradTrends_NAm = ee.FeatureCollection([
+  readBasinGradTrends_NAm(1),
+  readBasinGradTrends_NAm(2),
+  readBasinGradTrends_NAm(3),
+  readBasinGradTrends_NAm(4),
+  readBasinGradTrends_NAm(5)
+]).flatten();
+
+var BasinGradTrends_Global = BasinGradTrends_SA.merge(BasinGradTrends_Eu)
+  .merge(BasinGradTrends_Af)
+  .merge(BasinGradTrends_Oc)
+  .merge(BasinGradTrends_NAm);
+
+// Filter basins based on the number of transects.
+// var filteredBasins = BasinGradTrends_Global.filter(ee.Filter.gte("Transect_Number", 5));
+// var filteredBasins = BasinGradTrends_Global.filter(ee.Filter.lte("gradTrend_stdDev", 1e-5));
+
+// print("BasinGradTrends_Global:",
+//   BasinGradTrends_Global.reduceColumns(ee.Reducer.mean(), ["Transect_Number"]),
+//   BasinGradTrends_Global.reduceColumns(ee.Reducer.percentile(ee.List.sequence(0, 100, 10)), ["Transect_Number"]),
+//   BasinGradTrends_Global.reduceColumns(ee.Reducer.percentile(ee.List.sequence(0, 100, 10)), ["gradTrend_stdDev"]))
+
+// print("BasinGradTrends_Global:",
+//   BasinGradTrends_Global.size(), // 30,543.
+//   filteredBasins.size(),
+//   BasinGradTrends_Global.first(),
+//   filteredBasins.first())
+
+
+/* Transect segments. */
+
+// North America.
+var read_LowerSegments_NAm = function(basinGroupID) {
+  
+  var wd_Output = GATE.wd_NorthAmerica
+    + "Transect_NDVI_Analysis/"
+    + TNA.lowerSegments_NDVItVars_fileName
+    + "/";
+  
+  var fileName = TNA.lowerNDVItVars_byBasinGroup_fileName
+    + basinGroupID;
+  
+  return ee.FeatureCollection(wd_Output + fileName);
+};
+
+var read_UpperSegments_NAm = function(basinGroupID) {
+  
+  var wd_Output = GATE.wd_NorthAmerica
+    + "Transect_NDVI_Analysis/"
+    + TNA.upperSegments_NDVItVars_fileName
+    + "/";
+  
+  var fileName = TNA.upperNDVItVars_byBasinGroup_fileName
+    + basinGroupID;
+  
+  return ee.FeatureCollection(wd_Output + fileName);
+};
+
+var lowerSeg_NAm = ee.FeatureCollection([
+  read_LowerSegments_NAm(1),
+  read_LowerSegments_NAm(2),
+  read_LowerSegments_NAm(3),
+  read_LowerSegments_NAm(4),
+  read_LowerSegments_NAm(5)
+]).flatten();
+
+var upperSeg_NAm = ee.FeatureCollection([
+  read_UpperSegments_NAm(1),
+  read_UpperSegments_NAm(2),
+  read_UpperSegments_NAm(3),
+  read_UpperSegments_NAm(4),
+  read_UpperSegments_NAm(5)
+]).flatten();
+
+
+var lowerSeg_Output = lowerSeg_NAm.filterBounds(geometry);
+var upperSeg_Output = upperSeg_NAm.filterBounds(geometry);
+
+print("lowerSeg_Output", lowerSeg_Output.first())
+print(upperSeg_Output.first())
+
+var fileName_Lower = "Testing_lowerSeg_NAm";
+
+Export.table.toAsset({
+  collection: lowerSeg_Output, 
+  description: fileName_Lower, 
+  assetId: wd_Oc
+    + "Transect_NDVI_Analysis/"
+    + fileName_Lower
+});
+
+var fileName_Upper = "Testing_upperSeg_NAm";
+
+Export.table.toAsset({
+  collection: upperSeg_Output, 
+  description: fileName_Upper, 
+  assetId: wd_Oc
+    + "Transect_NDVI_Analysis/"
+    + fileName_Upper
+});
+
+
+if (false) { // true OR false.
+  
+  VIS.centerNorthAmerica(11);
+  // VIS.centerEurope(10);
+  // VIS.centerOceania(10);
+  
+  var absMax = 100;
+  
+  Map.addLayer(VIS.paintFtrCol_FillANDEdge(BasinGradTrends_Global, "Transect_Number", 2), 
+    {min: 1, max: absMax, palette: VIS.BWR_palette}, 
+    "Aggregated gradient trend (observations)", false);
+  
+  
+  var absMax = 1e-5;
+  
+  Map.addLayer(VIS.paintFtrCol_FillANDEdge(BasinGradTrends_Global, "gradTrend_stdDev", 2), 
+    {min: 0, max: absMax, palette: VIS.BWR_palette}, 
+    "Aggregated gradient trend (SD)", true);
+  
+  
+  var absMax = 1e-5;
+  
+  Map.addLayer(VIS.paintFtrCol_FillANDEdge(BasinGradTrends_Global, "gradTrend_mean", 2), 
+    {min: absMax * -1, max: absMax, palette: VIS.BWR_palette}, 
+    "Aggregated gradient trend (mean)", true);
+  
+  
+  // VIS.centerAsia(11);
+  
+  // Map.addLayer(VIS.paintFtrCol_FillANDEdge(rawTLUs_Global, "yearCount", 2), 
+  //   {min: 10, max: 37, palette: VIS.BWR_palette}, 
+  //   "raw TLUs", false);
+  
+  Map.addLayer(rawTLUs_Global, {color: "0000FF"}, "raw TLUs");
+  Map.addLayer(selectedTLUs_Global, {color: "FFFF00"}, "selected TLUs");
+  Map.addLayer(rawTransects_Asia, {color: "FF0000"}, "raw transects (Asia)");
+  Map.addLayer(gradTrends_Asia, {color: "00FFFF"}, "NDVI gradient trends (Asia)");
+}
+
+
+var rawTLUs_Output = rawTLUs_Global.filterBounds(geometry);
+
+print(rawTLUs_Output.first())
+
+// var fileName = "Testing_rawTLUs_NAm";
+
+// Export.table.toAsset({
+//   collection: rawTLUs_Output, 
+//   description: fileName, 
+//   assetId: wd_Oc
+//     + "Transect_NDVI_Analysis/"
+//     + fileName
+// });
+

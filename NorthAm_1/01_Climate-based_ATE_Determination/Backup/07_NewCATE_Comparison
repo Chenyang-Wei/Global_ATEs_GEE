@@ -1,0 +1,135 @@
+/**
+ * Introduction: 
+ * 1) Compare different types of newly extracted CATEs. 
+ * 
+ * Date: 6/14/2020.
+ */
+
+
+/* Setup. */
+
+// Asset paths.
+var wdNorthA = "users/treeline/North_America/CATE/";
+
+// New CATEs - 500 m.
+var newCATEs_500m = ee.Image(wdNorthA + "new500mCATEs_3kmForests_wtdAvgElv_10kmGrid_10pxCircleFocalPctDiff");
+
+// New CATEs - 1 km.
+var newCATEs_1km = ee.Image(wdNorthA + "new1kmCATEs_3kmForests_wtdAvgElv_10kmGrid_10pxCircleFocalPctDiff");
+
+print("New CATEs - 500 m:", newCATEs_500m.bandNames(), newCATEs_500m.projection().nominalScale());
+print("New CATEs - 1 km:", newCATEs_1km.bandNames(), newCATEs_1km.projection().nominalScale());
+
+// Load the average climatic treeline elevation.
+var avgTLH = ee.Image(wdNorthA +
+  "avgTLH_1979to2013_1arcsec_mtRgLand_CHELSAv12_ALOSv22_GMBAv12_HansenV17");
+
+// Study domain.
+var studyDomain = avgTLH.gte(-1e18);
+
+// Copernicus land cover product.
+var copernicus = ee.ImageCollection("COPERNICUS/Landcover/100m/Proba-V/Global")
+  .select('discrete_classification').first();
+
+// Forested areas.
+var closedForests = copernicus.gte(111).and(copernicus.lte(116)).selfMask().updateMask(studyDomain); // Closed forests.
+var allForests = copernicus.gte(111).and(copernicus.lte(126)).selfMask().updateMask(studyDomain); // All forests.
+
+
+/* Select extracted CATEs. */
+
+function selectCATEs(CATEimage, forType, forPct) {
+  var TLHpct = 100 - forPct;
+  var bandName = forType + "ForElv_p" + forPct + "_TLHdistElv_p" + TLHpct;
+  var CATEband = CATEimage.select(bandName);
+  
+  return CATEband;
+}
+
+function extractBandNames(CATEtype, forType, forPct) {
+  var TLHpct = 100 - forPct;
+  var bandName = forType + "p" + forPct + "_TLHp" + TLHpct + "_" + CATEtype;
+  
+  return bandName;
+}
+
+if (true) {
+  /* Visualization. */
+  
+  var diffPalette = ['0000ff', '00ffff', 'ffffff', 'ffff00', 'ff0000'];
+  var diffVis = {min: -0.5e3, max: 0.5e3, palette: diffPalette};
+  
+  var elvPalette = ['006600', '002200', 'fff700', 'ab7634', 'c4d0ff', 'ffffff'];
+  var elvVis = {min: 1000, max: 3500, palette: elvPalette};
+  
+  Map.setOptions("hybrid");
+  Map.setCenter(-113.655, 48.734, 10);
+  
+  
+  if (false) {
+    /* 500-m CATE. */
+    
+    var show;
+    
+    // All forests.
+    show = false;
+    
+    Map.addLayer(selectCATEs(newCATEs_500m, "all", 50), {palette: "FF0000"}, extractBandNames("500m", "all", 50), show);
+    Map.addLayer(selectCATEs(newCATEs_500m, "all", 75), {palette: "00FFFF"}, extractBandNames("500m", "all", 75), show);
+    Map.addLayer(selectCATEs(newCATEs_500m, "all", 90), {palette: "FF00FF"}, extractBandNames("500m", "all", 90), show);
+    Map.addLayer(selectCATEs(newCATEs_500m, "all", 95), {palette: "00FF00"}, extractBandNames("500m", "all", 95), show);
+    Map.addLayer(selectCATEs(newCATEs_500m, "all", 100), {palette: "FFFF00"}, extractBandNames("500m", "all", 100), show);
+    
+    // Closed forests.
+    show = false;
+    
+    Map.addLayer(selectCATEs(newCATEs_500m, "cld", 50), {palette: "FFFF00"}, extractBandNames("500m", "cld", 50), show);
+    Map.addLayer(selectCATEs(newCATEs_500m, "cld", 75), {palette: "FF0000"}, extractBandNames("500m", "cld", 75), show);
+    Map.addLayer(selectCATEs(newCATEs_500m, "cld", 90), {palette: "00FFFF"}, extractBandNames("500m", "cld", 90), show);
+    Map.addLayer(selectCATEs(newCATEs_500m, "cld", 95), {palette: "FF00FF"}, extractBandNames("500m", "cld", 95), show);
+    Map.addLayer(selectCATEs(newCATEs_500m, "cld", 100), {palette: "00FF00"}, extractBandNames("500m", "cld", 100), show);
+    
+    Map.addLayer(newCATEs_500m.select("originalCATE"), {palette: "0000FF"}, "originalCATE_500m", false);
+  }
+  
+  if (false) {
+    /* 1-km CATE. */
+    
+    // All forests.
+    show = false;
+    
+    Map.addLayer(selectCATEs(newCATEs_1km, "all", 50), {palette: "FFFF00"}, extractBandNames("1km", "all", 50), show);
+    Map.addLayer(selectCATEs(newCATEs_1km, "all", 75), {palette: "FF0000"}, extractBandNames("1km", "all", 75), show);
+    Map.addLayer(selectCATEs(newCATEs_1km, "all", 90), {palette: "00FFFF"}, extractBandNames("1km", "all", 90), show);
+    Map.addLayer(selectCATEs(newCATEs_1km, "all", 95), {palette: "FF00FF"}, extractBandNames("1km", "all", 95), show);
+    Map.addLayer(selectCATEs(newCATEs_1km, "all", 100), {palette: "00FF00"}, extractBandNames("1km", "all", 100), show);
+    
+    // Closed forests.
+    show = true;
+    
+    Map.addLayer(selectCATEs(newCATEs_1km, "cld", 50), {palette: "FF0000"}, extractBandNames("1km", "cld", 50), show);
+    Map.addLayer(selectCATEs(newCATEs_1km, "cld", 75), {palette: "00FFFF"}, extractBandNames("1km", "cld", 75), show);
+    Map.addLayer(selectCATEs(newCATEs_1km, "cld", 90), {palette: "FF00FF"}, extractBandNames("1km", "cld", 90), show);
+    Map.addLayer(selectCATEs(newCATEs_1km, "cld", 95), {palette: "00FF00"}, extractBandNames("1km", "cld", 95), show);
+    Map.addLayer(selectCATEs(newCATEs_1km, "cld", 100), {palette: "FFFF00"}, extractBandNames("1km", "cld", 100), show);
+    
+    Map.addLayer(newCATEs_1km.select("originalCATE"), {palette: "000088"}, "originalCATE_1km", true);
+  }
+  
+  
+  /* Compare several critical CATEs. */
+  
+  var show = true;
+  
+  // Map.addLayer(selectCATEs(newCATEs_1km, "all", 75), {palette: "FF00FF"}, extractBandNames("1km", "all", 75), show);
+  // Map.addLayer(selectCATEs(newCATEs_1km, "all", 90), {palette: "00FF00"}, extractBandNames("1km", "all", 90), show);
+  
+  // Map.addLayer(selectCATEs(newCATEs_1km, "cld", 75), {palette: "FFFF00"}, extractBandNames("1km", "cld", 75), show);
+  Map.addLayer(selectCATEs(newCATEs_1km, "cld", 90), {palette: "0000FF"}, extractBandNames("1km", "cld", 90), show);
+  
+  // Map.addLayer(selectCATEs(newCATEs_500m, "all", 75), {palette: "00FFFF"}, extractBandNames("500m", "all", 75), show);
+  Map.addLayer(selectCATEs(newCATEs_500m, "cld", 75), {palette: "FF0000"}, extractBandNames("500m", "cld", 75), show);
+  
+  Map.addLayer(allForests, {palette: "228B22"}, "All forests", true);
+  Map.addLayer(closedForests, {palette: "FF6400"}, "Closed forests", true);
+}

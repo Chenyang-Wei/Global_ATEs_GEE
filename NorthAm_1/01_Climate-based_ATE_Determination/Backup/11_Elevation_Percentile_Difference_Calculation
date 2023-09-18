@@ -1,0 +1,153 @@
+/**
+ * Introduction:
+ * 1) Calculate the elevational difference between the climatic treeline and forested areas.
+ * 
+ * Date: 6/8/2020.
+ * 
+ * Launch time: 1m.
+ */
+
+
+/* Setup. */
+
+// Asset paths.
+var wdNorthA = "users/treeline/North_America/CATE/";
+
+// Forested areas.
+var forests = ee.Image(wdNorthA + "CopernicusLandCover_100mAllForests_2015_GMBAv12");
+
+// Load the average climatic treeline elevation.
+var avgTLH = ee.Image(wdNorthA +
+  "avgTLH_1979to2013_1arcsec_mtRgLand_CHELSAv12_ALOSv22_GMBAv12_HansenV17");
+
+// Elevation percentiles of the average climatic treeline and the forested areas. 
+var elvPcts = ee.FeatureCollection(wdNorthA + "avgTLH_absElvDistLte500m_allForests_ALOSv22ElvPcts_GMBAv12");
+print("elvPcts:", elvPcts.first(), elvPcts.size());
+
+// ALOS elevation.
+var ALOSelv = ee.Image('JAXA/ALOS/AW3D30/V2_2').select('AVE_DSM');
+
+// Copernicus land cover product.
+var copernicus = ee.ImageCollection("COPERNICUS/Landcover/100m/Proba-V/Global")
+  .select('discrete_classification').first();
+var closedForests = copernicus.gte(111).and(copernicus.lte(116)).clipToCollection(elvPcts);
+
+
+/* Extract areas within a vertical distance to the average climatic treeline. */ 
+
+// Calculate the absolute vertical distance.
+var elvDist = avgTLH.subtract(ALOSelv);
+var absElvDist = elvDist.abs(); 
+
+// Extract areas within a vertical distance.
+var elvDistThres = 0.5e3; // In meters.
+
+var elvDistMask = absElvDist.lte(elvDistThres);
+
+
+/* Calculate the elevational difference between the climatic treeline and forested areas. */
+
+function elvDiffCalculation(feature) {
+  var TLHrange_p50 = ee.Number(feature.get("TLHrange_p50"));
+  var TLHrange_p10 = ee.Number(feature.get("TLHrange_p10"));
+  var TLHrange_p5 = ee.Number(feature.get("TLHrange_p5"));
+  var TLHrange_p0 = ee.Number(feature.get("TLHrange_p0"));
+  
+  var allForests_p50 = ee.Number(feature.get("allForests_p50"));
+  var allForests_p90 = ee.Number(feature.get("allForests_p90"));
+  var allForests_p95 = ee.Number(feature.get("allForests_p95"));
+  var allForests_p100 = ee.Number(feature.get("allForests_p100"));
+  
+  var TLHp50_FORp50 = TLHrange_p50.subtract(allForests_p50);
+  var TLHp10_FORp90 = TLHrange_p10.subtract(allForests_p90);
+  var TLHp5_FORp95 = TLHrange_p5.subtract(allForests_p95);
+  var TLHp0_FORp100 = TLHrange_p0.subtract(allForests_p100);
+  
+  return feature.set({
+    TLHp50_FORp50: TLHp50_FORp50,
+    TLHp10_FORp90: TLHp10_FORp90,
+    TLHp5_FORp95: TLHp5_FORp95,
+    TLHp0_FORp100: TLHp0_FORp100
+  });
+}
+
+var elvPctDiff = elvPcts.map(elvDiffCalculation);
+print("elvPctDiff", elvPctDiff.first(), elvPctDiff.size());
+
+
+/* Extract areas within an elevation range within each mountain range. */
+
+function extractElvRange(elvPcts, upperThres, lowerThres) {
+  // Extract the qualified area within each mountain range.
+  var mergedElvRange = ee.ImageCollection(elvPcts.map(function(mtRg) {
+    // Determine the upper and lower limits of the elevation threshold of each mountain range.
+    var upperPct = ee.Image(ee.Number(mtRg.get(upperThres)));
+    var lowerPct = ee.Image(ee.Number(mtRg.get(lowerThres)));
+    
+    // Clip the elevation dataset to the corresponding mountain range.
+    var geom = mtRg.geometry();
+    var mtRgElv = ALOSelv.clip(geom);
+    
+    // Select the range between the upper and lower limits.
+    var elvRange = mtRgElv.gte(lowerPct).and(mtRgElv.lte(upperPct));
+    
+    return elvRange.selfMask();
+  })).mosaic(); // Mosaic the qualified areas of all mountain ranges into one image.
+  
+  return mergedElvRange;
+}
+
+
+if (true) {
+  /* Visualization. */
+  
+  Map.setOptions("hybrid");
+  
+  // Map.setCenter(-128.395, 65.0635, 4);
+  Map.setCenter(-123.4657, 47.853, 6);
+  // Create a custom elevation palette from hex strings.
+  var elvPalette = ['006600', '002200', 'fff700', 'ab7634', 'c4d0ff', 'ffffff'];
+  var elvVis = {min: 500, max: 3500, palette: elvPalette};
+  
+  // Extract an elevation range.
+  var extractedRange = extractElvRange(elvPcts, 'TLHrange_p100', 'TLHrange_p50');
+
+  var tlhField = 'TLHrange_p50';
+  var forestField = 'allForests_p50';
+  
+  var tlhElv = ee.Image().float().paint({
+    featureCollection: elvPcts,
+    color: tlhField,
+  });
+  
+  var forestElv = ee.Image().float().paint({
+    featureCollection: elvPcts,
+    color: forestField,
+  });
+
+  Map.addLayer(elvPcts, {color: "FFFFFF"}, "Mountain ranges", false);
+  Map.addLayer(tlhElv, elvVis, tlhField);
+  Map.addLayer(forestElv, elvVis, forestField);
+  
+  Map.addLayer(forests, {palette: "00FF00"}, "Forested areas", false);
+  Map.addLayer(closedForests.selfMask(), {palette: "228B22"}, "Closed forests", false);
+  
+  Map.addLayer(extractedRange, {palette: "FFFF00"}, "Extracted elevation range", false);
+  Map.addLayer(elvDist.updateMask(forests), 
+    {min: -500, max: 500, palette: "0000FF, FFFFFF, FF0000"}, "Elevation distance", false);
+  Map.addLayer(elvDistMask.selfMask(), {palette: "FF0000"}, "Climatic treeline", false);
+}
+
+else {
+  /* Output the result. */
+  
+  var fileName = "avgTLH_absElvDistLte500m_allForests_elvPctDiff";
+
+  Export.table.toAsset({
+    collection: elvPctDiff, 
+    description: fileName, 
+    assetId: wdNorthA + 
+      fileName
+  });
+}
+

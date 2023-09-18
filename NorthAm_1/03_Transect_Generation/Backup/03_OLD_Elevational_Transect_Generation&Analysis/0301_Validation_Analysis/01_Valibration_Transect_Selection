@@ -1,0 +1,109 @@
+/**
+ * Introduction:
+ * 1) Select the transect center lines within a buffer of the samples
+ *  in the meta-analysis data published by Lu et al. (2020).
+ * 2) Generate an ID for each selected center line.
+ * 
+ * Update: 3/25/2021.
+ * 
+ * Runtime: 
+ * 1) To Asset: 3m.
+ * 2) To Drive: 3m.
+*/
+
+
+/* Data preparation. */
+
+// Set the working directory.
+var wdNA = "users/treeline/NorthAmerica_GME/";
+
+// Load the transect center lines.
+var centerLines = ee.FeatureCollection(wdNA + "Transect_Analysis/"
+  + "TransectCenterLines_LowerClosedForests_UpperNonForested_30mSegmentedNewCATE");
+
+// Load the meta-analysis samples.
+var samples = ee.FeatureCollection("users/treeline/Global/Validation/"
+  + "2020Lu_Meta_Analysis_Northern_Hemisphere");
+
+
+/* Select the transect center lines within a buffer of the samples. */
+
+// Buffer the meta-analysis samples.
+var bufferedSamples = samples.map(function(feature) {
+  return feature.buffer(5e3);
+});
+
+// print("bufferedSamples:", bufferedSamples.first())
+
+// Select the transect center lines.
+var selectedCL = centerLines.filterBounds(bufferedSamples);
+
+
+/* Generate an ID for each selected center line. */
+
+// Extract the number of center lines.
+var centerLineNumber = selectedCL.size();
+
+// print("selectedCL:", centerLineNumber)
+
+// Convert the center lines from a feature collection to a list.
+var centerLines_list = selectedCL.toList({
+  count: centerLineNumber
+});
+
+// Get the largest ID.
+var ID_end = ee.Number(centerLineNumber).subtract(1);
+
+// Construct a list of IDs.
+var ID_list = ee.List.sequence(0, ID_end);
+
+// Add an ID to each center line feature.
+var centerLinesList_withID = ID_list.map(function(ID) {
+  var CL = centerLines_list.get(ID);
+  
+  var CL_withID = ee.Feature(CL).set({
+    ID: ID
+  });
+  
+  return CL_withID;
+});
+
+// Convert the center line list to a feature collection.
+var centerLinesFC_withID = ee.FeatureCollection(centerLinesList_withID);
+
+// print("centerLinesFC_withID:", centerLinesFC_withID.size(),
+//   centerLinesFC_withID.first())
+
+
+if (true) {
+  // Visualization.
+  Map.setOptions("HYBRID");
+  Map.setCenter(-110.50015, 40.84262, 12);
+  
+  Map.addLayer(bufferedSamples, {color: "FFFF00"}, "bufferedSamples");
+  Map.addLayer(samples, {color: "0000FF"}, "samples");
+  Map.addLayer(selectedCL, {color: "FF0000"}, "selectedCL");
+  
+} else if (false) {
+  // Export the result to Asset.
+  var fileName = "TransectCenterLines_with5km_2020LuMetaAnalysis";
+  
+  Export.table.toAsset({
+    collection: centerLinesFC_withID, 
+    description: fileName, 
+    assetId: wdNA + "Transect_Analysis/Validation/" 
+      + fileName
+  });
+  
+} else if (true) {
+  // Export the result to Drive.
+  var fileName = "TransectCenterLines_with5km_2020LuMetaAnalysis";
+  
+  Export.table.toDrive({
+    collection: centerLinesFC_withID, 
+    description: "TransectCenterLines", 
+    folder: fileName, 
+    fileFormat: "SHP"
+  });
+}
+

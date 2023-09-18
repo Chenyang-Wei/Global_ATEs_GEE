@@ -1,0 +1,178 @@
+/**
+ * Introduction:
+ * 
+ *  1) Calculate the absolute difference between 
+ *    the smoothed open-forest and non-forested NDVIs.
+ * 
+ *  2) Calculate the absolute difference between 
+ *    the smoothed closed-forest and open-forest NDVIs.
+ * 
+ *  3) Determine the smaller NDVI difference 
+ *    at each 3-km pixel.
+ * 
+ * Runtime: .
+ * 
+ * Update: 3/6/2023.
+*/
+
+
+/* Load module(s). */
+
+var ATEI_EA = require("users/ChenyangWei/Public:Modules/Treeline/ATEI_Estimation&Analysis.js");
+var IMG = require("users/ChenyangWei/Public:Modules/General/Image_Analysis&Processing.js");
+
+
+/* Object definition. */
+
+// Create a list of the working directories.
+var WDs_List = ATEI_EA.WDs_AllContinents_List;
+
+// Define a list of the AOIs.
+var AOIs_List = ATEI_EA.AOIs_AllContinents_List;
+
+// Determine the 3-km projection.
+var prj_3km = IMG.WGS84_3km;
+
+
+/* Function definition. */
+
+// Define a function to load the 3-km smoothed
+//  non-forested NDVI of each continent.
+var Read_SmdNonfNDVI_3km = function(wd_Cont) {
+  var smdNonfNDVI_Cont = ee.Image(wd_Cont
+    + "ATEI_Estimation/NonForestedNDVI/" 
+    + "3kmSmoothed_NonForestedNDVI_NewCATE")
+    .reproject(prj_3km);
+  
+  return smdNonfNDVI_Cont;
+};
+
+// Define a function to load the 3-km smoothed
+//  open-forest NDVI of each continent.
+var Read_SmdOpenfNDVI_3km = function(wd_Cont) {
+  var smdOpenfNDVI_Cont = ee.Image(wd_Cont
+    + "ATEI_Estimation/OpenForestNDVI/" 
+    + "3kmSmoothed_OpenForestNDVI_NewCATE")
+    .reproject(prj_3km);
+  
+  return smdOpenfNDVI_Cont;
+};
+
+// Define a function to load the 3-km smoothed
+//  closed-forest NDVI of each continent.
+var Read_SmdClsdfNDVI_3km = function(wd_Cont) {
+  var smdClsdfNDVI_Cont = ee.Image(wd_Cont
+    + "ATEI_Estimation/ClosedForestNDVI/" 
+    + "3kmSmoothed_ClosedForestNDVI_NewCATE")
+    .reproject(prj_3km);
+  
+  return smdClsdfNDVI_Cont;
+};
+
+
+/* Acquire the information of the continent. */
+
+// Whether or not export the result.
+var output = true;
+
+// Determine the continent ID (0 ~ 5).
+var contID = 5;
+
+// Determine the working directory of the continent.
+var contWD = WDs_List[contID];
+
+// Determine the AOI of the continent.
+var contAOI = AOIs_List[contID];
+
+
+/* Read the 3-km smoothed NDVIs worldwide. */
+
+var smdNonfNDVI_3km = Read_SmdNonfNDVI_3km(contWD);
+
+var smdOpenfNDVI_3km = Read_SmdOpenfNDVI_3km(contWD);
+
+var smdClsdfNDVI_3km = Read_SmdClsdfNDVI_3km(contWD);
+
+
+/* Determine the smaller NDVI difference at each pixel. */
+
+var Open_Non_Diff = smdOpenfNDVI_3km
+  .subtract(smdNonfNDVI_3km)
+  .abs();
+
+var Clsd_Open_Diff = smdClsdfNDVI_3km
+  .subtract(smdOpenfNDVI_3km)
+  .abs();
+
+var smaller_LcNDVI_Diff = Clsd_Open_Diff.where(
+  Open_Non_Diff.lt(Clsd_Open_Diff), 
+  Open_Non_Diff)
+  .reproject(prj_3km)
+  .float()
+  .rename("smaller_LcNDVI_Diff");
+
+
+if (!output) {
+  
+  // Check the working directory.
+  print("contWD:", contWD);
+  
+  // Check the result.
+  IMG.printImgInfo("smaller_LcNDVI_Diff:", 
+    smaller_LcNDVI_Diff);
+  
+  // Visualize the datasets.
+  Map.setOptions("satellite");
+  Map.centerObject(contAOI, 6);
+  
+  Map.addLayer(contAOI, 
+    {color: "FFFFFF"}, 
+    "contAOI", 
+    true);
+  
+  Map.addLayer(Open_Non_Diff, 
+    {
+      min: 0, 
+      max: 0.2, 
+      palette: "0000FF, FFFFFF"
+    }, 
+    "Open_Non_Diff", 
+    true);
+  
+  Map.addLayer(Clsd_Open_Diff, 
+    {
+      min: 0, 
+      max: 0.2, 
+      palette: "228B22, FFFFFF"
+    }, 
+    "Clsd_Open_Diff", 
+    true);
+  
+  Map.addLayer(smaller_LcNDVI_Diff, 
+    {
+      min: 0, 
+      max: 0.2, 
+      palette: "FF0000, FFFFFF"
+    }, 
+    "smaller_LcNDVI_Diff", 
+    true);
+  
+} else {
+  
+  // Determine the output directory.
+  var outputWD = contWD + "ATEI_Estimation/";
+
+  // Export the result.
+  var fileName = "3kmSmoothedLcNDVIs_SmallerDiff";
+  
+  Export.image.toAsset({
+    image: smaller_LcNDVI_Diff,
+    description: fileName, 
+    assetId: outputWD + fileName, 
+    crs: prj_3km.crs,
+    scale: prj_3km.scale,
+    region: contAOI,
+    maxPixels: IMG.maxPxNum
+  }); 
+}
+

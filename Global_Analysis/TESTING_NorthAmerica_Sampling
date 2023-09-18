@@ -1,0 +1,262 @@
+/**
+ * Introduction:
+ * 
+ *  1) Smooth the ALOS elevation within the 300m-buffered 
+ *    climatic ATE by calculating its focal "median" 
+ *    within a 10-pixel circular kernel.
+ * 
+ *  2) Extract the smoothed annual maximum NDVI at 
+ *    each sample point in the year of the corresponding 
+ *    Google Earth image collection date.
+ * 
+ *  3) Generate the ATEI variables based on: 
+ *    a) the value and gradient of the extracted annual NDVI, 
+ *    b) the gradient of the smoothed elevation, and
+ *    c) the 3-km smoothed NDVI values of the following 
+ *      land-cover types:
+ *        i) non-forested areas, 
+ *        ii) open forests, 
+ *        iii) closed forests.
+ * 
+ *  4) Collect the ATEI variables at each sample point.
+ * 
+ * Runtime: < 1m.
+ * 
+ * Update: 1/19/2023.
+*/
+
+
+/* Module loading. */
+
+var IMG = require("users/ChenyangWei/Public:Modules/General/Image_Analysis&Processing.js");
+
+var GATE = require("users/ChenyangWei/Public:Modules/Treeline/Global_ATE.js");
+
+var TNA = require("users/ChenyangWei/Public:Modules/Treeline/Transect_NDVI_Analysis.js");
+
+
+/* Object definition. */
+
+// Determine the 30-m projection.
+var prj_30m = IMG.WGS84_30m;
+
+// Set the area of interest.
+var AOI = GATE.AOI_NorthAmerica;
+
+// Set the major working directory.
+var wd_Main = GATE.wd_NorthAmerica;
+
+
+/* Dataset loading. */
+
+// Load and reproject the ALOS elevation in the AOI.
+var rawElv = GATE.load_ALOSelevation(AOI, prj_30m);
+
+// Load the buffered new CATE.
+var bufNewCATE = ee.Image(wd_Main
+  + "Climate-Based_ATE/"
+  + "300mBuffered_30mNewCATE_AOI")
+  .reproject(prj_30m);
+
+// Load the combined North America samples within the new CATE.
+var samples = ee.FeatureCollection(wd_Main
+  + "ATEI_Estimation/"
+  + "ManualRandomStratified_CombinedSamples_In30mNewCATE");
+
+// Read the smoothed annual maximum NDVIs 
+//  from 1984 to 2020 in the buffered new CATE.
+var annualNDVIs = ee.Image(wd_Main 
+  + "ATEI_Estimation/" 
+  + TNA.annualMaxNDVI_300mBufNewCATE_NorthAmerica_fileName)
+  .reproject(prj_30m);
+
+// Load and reproject the 3-km smoothed non-forested NDVI.
+var nonForestedNDVI = ee.Image(wd_Main 
+  + "ATEI_Estimation/NonForestedNDVI/" 
+  + "3kmSmoothed_NonForestedNDVI_NewCATE")
+  .reproject(prj_30m)
+  .rename("nonF_NDVI");
+
+// Load and reproject the 3-km smoothed open-forest NDVI.
+var openForestNDVI = ee.Image(wd_Main 
+  + "ATEI_Estimation/OpenForestNDVI/" 
+  + "3kmSmoothed_OpenForestNDVI_NewCATE")
+  .reproject(prj_30m)
+  .rename("openF_NDVI");
+
+// Load and reproject the 3-km smoothed closed-forest NDVI.
+var closedForestNDVI = ee.Image(wd_Main 
+  + "ATEI_Estimation/ClosedForestNDVI/" 
+  + "3kmSmoothed_ClosedForestNDVI_NewCATE")
+  .reproject(prj_30m)
+  .rename("clsdF_NDVI");
+
+
+/* Smooth the ALOS elevation in the buffered new CATE. */
+
+// Extract the raw elevation in the buffered new CATE.
+var rawElv_BufNewCATE = rawElv.updateMask(bufNewCATE);
+
+// Define a circular kernel of 10 pixels.
+var Kn_10pxCir = ee.Kernel.circle({
+  radius: 10,
+  units: "pixels"
+}); 
+
+// Calculate the focal "median" within the kernel
+//  (same as the NDVI smoothing metric).
+var median_Reducer = ee.Reducer.median();
+
+var medSmd_Elv = rawElv_BufNewCATE.reduceNeighborhood({
+  reducer: median_Reducer,
+  kernel: Kn_10pxCir,
+  skipMasked: true
+  // Mask output pixels if 
+  //  the corresponding input pixels are masked.
+}).reproject(prj_30m);
+
+
+/* Determine the gradient direction of the smoothed elevation. */
+
+// Compute the elevation gradient.
+var medElv_Grad = medSmd_Elv.gradient()
+  .reproject(prj_30m);
+
+// Derive the direction of the elevation gradient.
+var medElv_Dir = medElv_Grad.select("y")
+  .atan2(medElv_Grad.select("x"))
+  .reproject(prj_30m)
+  .rename("medElv_Dir");
+
+
+/* Collect the ATEI variables at each sample point. */
+
+// Obtain the image collection year of each sample point.
+var years_List = samples.aggregate_array("Year")
+  .distinct().sort();
+
+// Sample the ATEI variables by year.
+var sampledVars_List = years_List.map(function(year) {
+  
+  
+  /* Determine the corresponding annual NDVI. */
+  
+  // Convert the "year" from a Number to a String 
+  //  (without a ".").
+  var year_Int = ee.Number(year).int();
+  var year_Str = ee.String(year_Int);
+  
+  // Derive the band name of each year.
+  var bandName_Str = ee.String("smdNDVI_").cat(year_Str);
+  
+  // Extract the annual NDVI value.
+  var NDVI_val = annualNDVIs.select(bandName_Str)
+    .reproject(prj_30m)
+    .rename("NDVI_val");
+  
+  
+  /* Create the variables based on the NDVI gradient. */
+  
+  // Compute the NDVI gradient.
+  var NDVI_grad = NDVI_val.gradient()
+    .reproject(prj_30m);
+  
+  // Determine the direction of the NDVI gradient.
+  var NDVI_dir = NDVI_grad.select("y")
+    .atan2(NDVI_grad.select("x"))
+    .reproject(prj_30m)
+    .rename("NDVI_dir");
+
+  // Derive the magnitude of the NDVI gradient.
+  var NDVI_mag = NDVI_grad.select("y")
+    .hypot(NDVI_grad.select("x"))
+    .reproject(prj_30m)
+    .rename("NDVI_mag");
+  
+  
+  /* Sample the ATEI variables. */
+  
+  // Combine all the three types of variables.
+  var NDVIgradVars = NDVI_val
+    .addBands(NDVI_dir)
+    .addBands(NDVI_mag)
+    .reproject(prj_30m);
+  
+  var landCoverVars = nonForestedNDVI
+    .addBands(openForestNDVI)
+    .addBands(closedForestNDVI)
+    .reproject(prj_30m);
+  
+  var combinedVars = NDVIgradVars
+    .addBands(medElv_Dir)
+    .addBands(landCoverVars)
+    .reproject(prj_30m);
+  
+  // Select the sample points of the same year.
+  var selectedSamples = samples.filter(
+    ee.Filter.eq("Year", year));
+  
+  // Get the combined variables at each selected sample.
+  var sampledVars = combinedVars.reduceRegions({
+    collection: selectedSamples, 
+    reducer: ee.Reducer.first(), 
+    scale: prj_30m.scale, 
+    crs: prj_30m.crs
+  });
+  
+  return sampledVars;
+});
+
+// Convert the List of the sampled variables to 
+//  a FeatureCollection.
+var sampledVars_FC = ee.FeatureCollection(sampledVars_List)
+  .flatten();
+
+
+if (false) {
+  
+  // Check the loaded datasets.
+  IMG.printImgInfo("rawElv", rawElv);
+  
+  IMG.printImgInfo("bufNewCATE", bufNewCATE);
+  
+  print("samples:", 
+    samples.sort("withinATE").first(), 
+    samples.size(), // 1259.
+    samples.geometry().projection().crs());
+
+  IMG.printImgInfo("annualNDVIs", annualNDVIs);
+  
+  IMG.printImgInfo("nonForestedNDVI", nonForestedNDVI);
+  IMG.printImgInfo("openForestNDVI", openForestNDVI);
+  IMG.printImgInfo("closedForestNDVI", closedForestNDVI);
+  
+} else if (false) {
+  
+  // Check the processed datasets.
+  IMG.printImgInfo("medSmd_Elv", medSmd_Elv);
+  
+  IMG.printImgInfo("medElv_Dir", medElv_Dir);
+  
+  print("years_List:", years_List);
+
+  print ("sampledVars_FC:", 
+    sampledVars_FC.first().propertyNames(),
+    sampledVars_FC.size());
+
+} else {
+  
+  // Export the result to Drive.
+  var fileName = "NorthAm_" 
+    + "RawSamples_" 
+    + "ATEIvars_" 
+    + "LcNDVIs";
+  
+  Export.table.toDrive({
+    collection: sampledVars_FC,
+    description: fileName, 
+    folder: fileName,
+    fileFormat: "SHP"
+  });
+}
+

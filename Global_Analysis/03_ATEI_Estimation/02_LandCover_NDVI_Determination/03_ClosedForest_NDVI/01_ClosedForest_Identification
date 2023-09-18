@@ -1,0 +1,115 @@
+/**
+ * Introduction:
+ * 
+ *  1) Identify the areas classified as closed forests in all the five years
+ *    during 2015-2019 (i.e., the period of the Copernicus Land Cover data) 
+ *    in the climatic ATE.
+ * 
+ * Runtime: 50m ~ 2h.
+ * 
+ * Update: 1/15/2023.
+*/
+
+
+/* Load module(s). */
+var IMG = require("users/ChenyangWei/Public:Modules/General/Image_Analysis&Processing.js");
+var ATEI_EA = require("users/ChenyangWei/Public:Modules/Treeline/ATEI_Estimation&Analysis.js");
+var GATE = require("users/ChenyangWei/Public:Modules/Treeline/Global_ATE.js");
+
+
+/* Object definition. */
+
+// Determine the target projection.
+var targetPrj = IMG.WGS84_30m;
+
+// Create a list of the working directories.
+var WDs_List = ATEI_EA.WDs_AllContinents_List;
+
+// Define a list of the AOIs.
+var AOIs_List = ATEI_EA.AOIs_AllContinents_List;
+
+
+/* Function definition. */
+
+// Define a function to load and reproject the new CATE of each continent.
+var Read_NewCATE = function(wd_Cont) {
+  var newCATE_Cont = ee.Image(wd_Cont
+    + "Climate-Based_ATE/" 
+    + GATE.newCATE_fileName)
+    .reproject(targetPrj);
+  
+  return newCATE_Cont;
+};
+
+
+/* Acquire the information of the continent. */
+
+// Determine the continent ID (0 ~ 5).
+var contID = 5;
+
+// Determine the working directory of the continent.
+var contWD = WDs_List[contID];
+
+// Determine the AOI of the continent.
+var contAOI = AOIs_List[contID];
+
+
+/* Read the new CATE. */
+
+var newCATE = Read_NewCATE(contWD);
+
+
+/* Identify the areas classified as closed forests in all the five years
+  during 2015-2019 in the new CATE. */
+
+// Read the Copernicus Global Land Cover datasets.
+var landCover = GATE.readCoperLandCover15to19();
+
+// Extract and reproject closed forests 
+//  worldwide in 2015-2019.
+var global_ClosedForests = GATE.extractClosedForests_inAllYears(landCover, targetPrj);
+
+// Identify closed forests within the new CATE.
+var closedForests_NewCATE = global_ClosedForests.updateMask(newCATE)
+  .selfMask()
+  .reproject(targetPrj)
+  .rename("closedForests_NewCATE");
+
+
+if (false) {
+  
+  // Check the working directory.
+  print("contWD:", contWD);
+  
+  // Check the result.
+  IMG.printImgInfo("closedForests_NewCATE:", 
+    closedForests_NewCATE);
+  
+  // Visualize the datasets.
+  Map.setOptions("satellite");
+  Map.centerObject(contAOI, 6);
+  
+  Map.addLayer(contAOI, {color: "FFFFFF"}, "contAOI", true);
+  
+  Map.addLayer(closedForests_NewCATE, {palette: "0000FF"}, 
+    "closedForests_NewCATE", true);
+  
+} else {
+  
+  // Determine the output directory.
+  var outputWD = contWD + "ATEI_Estimation/ClosedForestNDVI/";
+
+  // Export the result.
+  var fileName = "30mClosedForests_NewCATE_2015to2019";
+  
+  Export.image.toAsset({
+    image: closedForests_NewCATE,
+    description: fileName, 
+    assetId: outputWD + fileName, 
+    crs: targetPrj.crs,
+    scale: targetPrj.scale,
+    region: contAOI,
+    maxPixels: IMG.maxPxNum
+  }); 
+}
+

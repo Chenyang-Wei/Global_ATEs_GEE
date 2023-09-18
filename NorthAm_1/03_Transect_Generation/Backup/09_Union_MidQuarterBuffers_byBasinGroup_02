@@ -1,0 +1,58 @@
+/**
+ * Introduction:
+ * 1) Union the buffers of the mid-quarter segments by basin group
+ *  (basin on the previously unioned results).
+ * 
+ * Update: 10/12/2021.
+ * 
+ * Runtime: 41m ~ 2h.
+ */
+
+
+/* Load module(s). */
+
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+
+// Determine the working directory of the previously unioned buffers.
+var wd_UnionedBuffers = GATE.wd_NorthAmerica
+  + "Elevational_Transect_Generation/"
+  + GATE.multiPolygon_BufferUnion_fileName
+  + "/";
+
+
+/* Operations by basin group (1 ~ 5). */
+
+for (var basinGroupID = 1; basinGroupID <= 5; basinGroupID ++) {
+  
+  // Load the buffers of the mid-quarter segments.
+  var unionedBuffers_1 = ee.FeatureCollection(wd_UnionedBuffers
+    + GATE.multiPolygon_BufferUnion_byBasinGroup_fileName
+    + basinGroupID);
+
+
+  /* Union the previously unioned results. */
+  
+  var unionedBuffers_2 = unionedBuffers_1.union();
+  
+  
+  if (false) { // true OR false.
+    print("unionedBuffers_1:",
+      unionedBuffers_1.size());
+    
+    print("unionedBuffers_2:", 
+      unionedBuffers_2.size());
+  
+  } else {
+    //// Export the result(s) by basin group.
+    var fileName = GATE.multiPolygon_BufferUnion_byBasinGroup_fileName
+      + basinGroupID
+      + "_2";
+    
+    Export.table.toAsset({
+      collection: unionedBuffers_2, 
+      description: fileName, 
+      assetId: wd_UnionedBuffers + fileName
+    });
+  }
+}
+

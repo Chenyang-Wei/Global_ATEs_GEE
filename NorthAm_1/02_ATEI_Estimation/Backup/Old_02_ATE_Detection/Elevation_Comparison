@@ -1,0 +1,61 @@
+/**
+ * Introduction:
+ * 1) Visualize the elevation data.
+ * 
+ * Date: 7/28/2020.
+ */
+
+
+/* Setup. */
+
+// Asset path.
+var wdNorthA = "users/treeline/NorthAmerica_GME/";
+
+// ALOS elevation.
+var ALOSelv = ee.Image('JAXA/ALOS/AW3D30/V2_2').select('AVE_DSM')
+  .reproject({
+    crs: "EPSG:4326",
+    scale: 30
+  });
+
+// Smoothed elevations.
+var median_SmoothingFirst = ee.Image(wdNorthA + "ATE_Detection/" +
+  "medianSmdElv_Gradient_ALOSv22_30mReprj");
+
+var median_MaskingFirst = ee.Image(wdNorthA + "ATE_Detection/" +
+  "medianSmdElv_Gradient_ALOSv22_30mReprjCATE");
+
+var mean_SmoothingFirst = ee.Image(wdNorthA + "ATE_Detection/" +
+  "meanSmdElv_gradMagDir_ALOSv22");
+
+/* Visualization. */
+  
+var elvPalette = ['006600', '002200', 'fff700', 'ab7634', 'c4d0ff', 'ffffff'];
+var elvVis = {min: 1000, max: 3500, palette: elvPalette};
+
+Map.setCenter(-113.7571, 48.829, 14);
+Map.setOptions("hybrid");
+
+Map.addLayer(ALOSelv, elvVis, 
+  "Raw elevation", true);
+
+Map.addLayer(median_MaskingFirst.select("AVE_DSM_median"), elvVis, 
+  "Median Elevation (masking first)", true);
+
+Map.addLayer(median_SmoothingFirst.select("AVE_DSM_median"), elvVis, 
+  "Median Elevation (smoothing first)", true);
+
+Map.addLayer(mean_SmoothingFirst.select("AVE_DSM_mean"), elvVis, 
+  "Mean Elevation (smoothing first)", true);
+
+Map.addLayer(median_SmoothingFirst.select("magnitude"), {min: 0, max: 2, palette: "FFFFFF, FF0000"}, 
+  "Gradient Magnitude (Median Elevation)", true);
+
+Map.addLayer(mean_SmoothingFirst.select("magnitude"), {min: 0, max: 2, palette: "FFFFFF, FF0000"}, 
+  "Gradient Magnitude (Mean Elevation)", true);
+
+Map.addLayer(median_SmoothingFirst.select("direction"), {min: -Math.PI, max: Math.PI}, 
+  "Gradient Direction (Median Elevation)", true);
+
+Map.addLayer(mean_SmoothingFirst.select("direction"), {min: -Math.PI, max: Math.PI}, 
+  "Gradient Direction (Mean Elevation)", true);

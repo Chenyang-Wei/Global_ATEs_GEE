@@ -1,0 +1,149 @@
+/**
+ * Introduction:
+ * 
+ *  1) Identify Lu's validation points within 
+ *    the new CATEs worldwide.
+ * 
+ *  2) Extract and filter the end year of 
+ *    each study period.
+ * 
+ *  3) Buffer the filtered sample points 
+ *    by 5 km.
+ * 
+ * Update: 6/8/2023.
+ * 
+ * Runtime: < 1m.
+*/
+
+
+/* Load module(s). */
+
+var IMG = require("users/ChenyangWei/Public:Modules/General/Image_Analysis&Processing.js");
+var GATE = require("users/ChenyangWei/Public:Modules/Treeline/Global_ATE.js");
+var FC_AP = require("users/ChenyangWei/Public:Modules/General/FeatureCollection_Analysis&Processing.js");
+
+
+/* Setup. */
+
+// Determine the target projection.
+var targetPrj = IMG.WGS84_30m;
+
+// Load Lu's validation points.
+var samples = ee.FeatureCollection(GATE.wd_Global
+  + "ATEI_Validation/2020Lu_MetaAnalysis/"
+  + "DataPoints_byContinent");
+
+// Define a function to load and reproject 
+//  the new CATEs in each continent.
+var Read_ContCATE = function(wd_Cont) {
+  var CATE = ee.Image(wd_Cont
+    + "Climate-Based_ATE/" 
+    + GATE.newCATE_fileName)
+    .reproject(targetPrj);
+
+  return CATE;
+};
+
+// Read and combine the new CATEs of all continents.
+var global_CATEs = ee.ImageCollection.fromImages([
+    Read_ContCATE(GATE.wd_Africa),
+    // Read_ContCATE(GATE.wd_Oceania),
+    Read_ContCATE(GATE.wd_Europe),
+    // Read_ContCATE(GATE.wd_SouthAmerica),
+    Read_ContCATE(GATE.wd_NorthAmerica),
+    Read_ContCATE(GATE.wd_Asia),
+  ]).mosaic()
+  .reproject(targetPrj);
+
+
+/* Identify the samples within the combined new CATEs. */
+
+var propertyName = "InNewCATE";
+
+var samples_Identified = global_CATEs.reduceRegions({
+  collection: samples, 
+  reducer: ee.Reducer.first().setOutputs([propertyName]), 
+  scale: targetPrj.scale, 
+  crs: targetPrj.crs
+});
+
+
+/* Extract the end year of each study period. */
+
+var samples_withEndYear = samples_Identified.map(
+  function(sample_Ftr) {
+    
+    var studyPeriod = sample_Ftr.get("Period");
+    
+    var endYear = ee.String(studyPeriod)
+      .slice({
+        start: -4
+      });
+    
+    return sample_Ftr.set({
+      End_Year: ee.Number.parse(endYear)
+    });
+  }
+);
+
+
+/* Filter the sample points. */
+
+var combined_Filters = ee.Filter.and(
+  ee.Filter.notNull([propertyName]), 
+  ee.Filter.gte("End_Year", 1985)
+);
+
+var filtered_Samples = samples_withEndYear
+  .filter(combined_Filters);
+
+
+/* Buffer the filtered sample points by 5 km. */
+
+var buffered_Samples = filtered_Samples
+  .map(function(point_Ftr) {
+    
+    return point_Ftr.buffer(5e3);
+  });
+
+
+if (false) {
+  
+  // Check the result.
+  FC_AP.Print_FtrColInfo(
+    "buffered_Samples:", 
+    buffered_Samples); // Size: 109.
+  
+  print(buffered_Samples
+    .aggregate_array("Continent")
+    .distinct());
+
+  print(buffered_Samples
+    .aggregate_array("End_Year")
+    .distinct().sort());
+
+} else {
+  
+  // Export the datasets.
+  
+  var fileName_Filtered = "DataPoints_Filtered";
+  
+  Export.table.toAsset({
+    collection: filtered_Samples, 
+    description: fileName_Filtered, 
+    assetId: GATE.wd_Global
+      + "ATEI_Validation/2020Lu_MetaAnalysis/"
+      + fileName_Filtered
+  });
+  
+  var fileName_Buffered = "DataPoints_5kmBuffered";
+  
+  Export.table.toAsset({
+    collection: buffered_Samples, 
+    description: fileName_Buffered, 
+    assetId: GATE.wd_Global
+      + "ATEI_Validation/2020Lu_MetaAnalysis/"
+      + fileName_Buffered
+  });
+}
+

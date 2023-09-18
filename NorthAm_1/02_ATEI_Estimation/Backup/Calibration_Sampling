@@ -1,0 +1,172 @@
+/*
+  Introduction:
+  1) Remove a buffer area around the previously sampled points.
+  2) Stratified sampling of points in each sub-set of NDVI values.
+  3) Extract a 30-m pixel at each sampled point.
+  4) Generate a 300-m buffer at each sampled polygon.
+  
+  Date:
+  7/20/2020.
+*/
+
+
+/* Setup. */
+
+// Asset path.
+var wdNorthA = "users/treeline/NorthAmerica_GME/";
+
+// Load the extracted new ATE.
+var studyDomain = ee.Image(wdNorthA + "CATE/" +
+  "500mCATE_3kmSurrounding_gte10kmClsdFrstElvFocalMean_10kmClsdFrstBuffer");
+
+// Load the stratified study domain.
+// var studyDomain = ee.Image(wd + "Stratified_temporalMean_annualATEIcomponentSum_L5_westernUS_2009to2011");
+
+// Load the previous sampling results with no un-certain pixel.
+var previous1 = ee.FeatureCollection(wdNorthA + "Pixel_Sampling/Calibration/" +
+  "Combined_Random_Sampling_noUC_centroids_anlMaxNDVI_L5_westernUS_2009to2011");
+
+print("Calibration:", previous1.size(), previous1.first());
+
+var previous2 = ee.FeatureCollection(wdNorthA + "Pixel_Sampling/Validation/" +
+  "Combined_Stratified_Sampling_noUC_centroids_6subs_anlATEIcomponents_L5_westernUS_2009to2011");
+
+print("Validation:", previous2.size(), previous2.first());
+
+var previous = previous1.merge(previous2);
+
+// print("Previously sampled", previous.geometry().projection().crs())
+
+
+/* Remove a buffer area around the previous stratified sampling points. */
+
+// Generate a buffer zone around each sampled point.
+var buffer = ee.FeatureCollection(previous.map(function(feature) {
+  return feature.buffer(5e3);
+}));
+
+// Create a mask based on the buffer region.
+var mask = studyDomain.clipToCollection(buffer).unmask().eq(0); 
+// In the "unmasked" image, the value of each pixel outside the buffer zone equals to 0.
+
+// Remove the buffer area from the study domain.
+var maskedStudyDomain = studyDomain.updateMask(mask);
+
+// Check the projection information.
+// print("Study domain projection:", maskedStudyDomain.projection().crs(), 
+//   maskedStudyDomain.projection().nominalScale())
+
+
+/* Stratified sampling of points in each sub-region. */
+
+// // Define the required number of additional samples in each sub-region.
+// var num = 20;
+
+// var sampling = maskedStudyDomain.stratifiedSample({
+//   numPoints: num,
+//   classBand: "Stratification",
+//   region: westernUS,
+//   scale: 30,
+//   projection: "EPSG:4326",
+//   geometries: true // If true, adds the center of the sampled pixel as the geometry property of the output feature.
+// });
+
+// print("Additionally selected samples:", sampling);
+// print("Additional samples in each sub-region:", sampling.reduceColumns(ee.Reducer.frequencyHistogram(), ["Stratification"]));
+
+
+/* Extract a 30-m pixel at each sampled point. */
+
+// // Convert each point to a pixel.
+// var pixels = sampling.reduceToImage({
+//     properties: ["Stratification"],
+//     reducer: ee.Reducer.first()
+// });
+
+// // Convert each pixel to a polygon.
+// var polygons = pixels.reduceToVectors({
+//   geometry: westernUS,
+//   crs: "EPSG:4326",
+//   scale: 30,
+//   geometryType: "polygon",
+//   eightConnected: false,
+//   maxPixels: 1e13
+// });
+
+
+/* Generate a 300-m buffer at each sampled polygon. */
+
+// // Define a buffer radius.
+// var radius = 300; // In meters.
+
+// // Buffer the polygons.
+// var bufferedPolygons = polygons.map(function(p) {
+//   return p.buffer(radius); 
+// });
+
+
+/*
+  Visualize or export the result.
+*/ 
+
+if (true) {
+  // Visualization.
+  Map.setOptions("hybrid");
+  Map.setCenter(-113.53904, 48.62589, 10);
+  
+  
+  // Map.addLayer(maskedStudyDomain.select("Stratification"), 
+  //   {min: 1, max: 6, palette: "FFF, 0F0, F00, 0FF, F0F, FF0", opacity: 0.7}, 
+  //   "Stratified Study Domain", true);
+  
+  Map.addLayer(studyDomain, {palette: "FFFF00"}, "Original study domain", true);
+  
+  Map.addLayer(maskedStudyDomain, {palette: "FF0000"}, "Masked study domain", true);
+  
+  Map.addLayer(buffer, {color: "FFFFFF"}, "Buffer region around the previously sampled points", true);
+  
+  Map.addLayer(previous, {color: "0000FF"}, "Previous sampling result", true);
+  
+  // Additional sampling results.
+  // Map.addLayer(ee.Image().byte().paint(bufferedPolygons), {palette: "FFFF00"}, "Buffers of new sampled polygons");
+  
+  // Map.addLayer(ee.Image().byte().paint(polygons), {palette: "FF6400"}, "Polygons of new sampled pixels");
+  
+  // Map.addLayer(sampling, {color: "FF00FF"}, "New stratified sampling result");
+  
+} else {
+  // Output to Google Drive.
+  var subs = 6; // Number of sub-regions.
+  var total = num * subs; // Total amount of sampled pixels.
+  
+  // Name output files.
+  var samplingName = "Additional_stratifiedSampling_" + 
+    subs + "subs_" + total + "pts_westernUS_2009to2011";
+  var polygonName = "Additional_stratifiedSampling_" + 
+    subs + "subs_" + total + "pixels_As_Polygons_westernUS_2009to2011";
+  var bufferedName = "Additional_stratifiedSampling_" + 
+    subs + "subs_" + total + "pixels_" + 
+    radius + "mBufferedPolygons_westernUS_2009to2011";
+
+  Export.table.toDrive({
+    collection: sampling,
+    description: samplingName, 
+    folder: samplingName,
+    fileFormat: "SHP"
+  }); 
+  
+  Export.table.toDrive({
+    collection: polygons,
+    description: polygonName, 
+    folder: polygonName,
+    fileFormat: "SHP"
+  }); 
+  
+  Export.table.toDrive({
+    collection: bufferedPolygons,
+    description: bufferedName, 
+    folder: bufferedName,
+    fileFormat: "SHP"
+  }); 
+}
+

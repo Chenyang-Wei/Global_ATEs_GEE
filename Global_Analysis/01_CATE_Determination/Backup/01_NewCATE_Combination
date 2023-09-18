@@ -1,0 +1,116 @@
+/**
+ * Introduction:
+ * 1) Combine the climate-based ATEs (CATEs) in all continents.
+ * 
+ * Update: 6/4/2021.
+*/
+
+
+/* File paths. */
+
+var wdSA = "users/ATE/South_America_ATE/";
+var wdEuro = "users/ChenyangWei/Europe_ATE/";
+var wdAsia = "users/RealEarth/Asia_ATE/";
+var wdAsia_2 = "users/treeline/Asia_ATE_2/";
+var wdNA = "users/treeline/NorthAmerica_GME/";
+var wdAfrica = "users/Mountains/Africa_ATE/";
+var wdOceania = "users/YushanFu/Oceania_ATE/";
+
+
+/*  New CATEs. */
+
+var fileName = "30mNewCATE_gteSmd10kmCForestElv_3kmCForestBuffer_AOI";
+var fnNA = "30mNewCATE_gteSmd10kmCForestElv_3kmCForestBuffer_BufRawCATEclosedForests_AOI"; 
+
+function readNewCATE(wd, fn) {
+  return ee.Image(wd + "Climate-Based_ATE/" + fn);
+}
+
+var newCATE = ee.ImageCollection.fromImages([
+    readNewCATE(wdSA, fileName),
+    readNewCATE(wdEuro, fileName),
+    readNewCATE(wdAsia, fileName),
+    readNewCATE(wdNA, fnNA),
+    // readNewCATE(wdAfrica, fileName),
+    // readNewCATE(wdOceania, fileName),
+  ])
+  .mosaic();
+
+var newCATE_Asia = readNewCATE(wdAsia, fileName);
+var newCATE_Euro = readNewCATE(wdEuro, fileName);
+
+
+/*  Segmented CATEs. */
+
+var segName = "30mSegmentedNewCATE_distToRidgesNoCliff_NAstripesRemoved_ridgesRemoved"; 
+
+var folderNA = "Transect_Analysis/";
+var folderOther = "Transect_Generation/";
+
+function readSegCATE(wd, folder) {
+  return ee.Image(wd + folder + segName);
+}
+
+var segCATE = ee.ImageCollection.fromImages([
+    readSegCATE(wdSA, folderOther),
+    readSegCATE(wdEuro, folderOther),
+    readSegCATE(wdAsia, folderOther),
+    readSegCATE(wdNA, folderNA),
+  ])
+  .mosaic();
+
+
+// /*  HydroBASINS. */
+
+// var basinName = "Hybas12Basins_LowerClosedForests_UpperNonForested_30mSegmentedNewCATE";
+
+// var folderNA = "Transect_Analysis/";
+// var folderOther = "Transect_Generation/";
+
+// var basinSA = ee.FeatureCollection(wdSA + folderOther + basinName);
+// var basinEuro = ee.FeatureCollection(wdEuro + folderOther + basinName);
+// var basinAsia = ee.FeatureCollection(wdAsia + folderOther + basinName);
+// var basinNA = ee.FeatureCollection(wdNA + folderNA + basinName);
+
+/*  Transects. */
+
+var TranName = "TransectCenterLines_LowerClosedForests_UpperNonForested_30mSegmentedNewCATE";
+
+var folderNA = "Transect_Analysis/";
+var folderOther = "Transect_Generation/";
+
+function buffering(CL) {
+  return CL.buffer(45);
+}
+
+var TranSA = ee.FeatureCollection(wdSA + folderOther + TranName).map(buffering);
+var TranEuro = ee.FeatureCollection(wdEuro + folderOther + TranName).map(buffering);
+var TranAsia = ee.FeatureCollection(wdAsia + folderOther + TranName).map(buffering);
+var TranNA = ee.FeatureCollection(wdNA + folderNA + TranName).map(buffering);
+
+print("# of transects in North America:", TranNA.size())
+print("# of transects in South America:", TranSA.size())
+print("# of transects in Europe:", TranEuro.size())
+print("# of transects in Asia:", TranAsia.size())
+
+if (true) {
+  /* Visualization. */
+  
+  Map.setOptions("hybrid");
+  // Map.setCenter(-69.161, -15.319, 7); // South America.
+  // Map.setCenter(7.98534, 45.99375, 12); // Alps.
+  // Map.setCenter(-113.4804, 48.588, 12); // GNP.
+  Map.setCenter(90.522, 27.8541, 12); // Bhutan.
+  
+  Map.addLayer(newCATE, {palette: "00FF00"}, "Climate-based ATEs", true, 0.5);
+  
+  Map.addLayer(TranSA, {color: "FF0000"}, "Transects (South America)");
+  Map.addLayer(TranNA, {color: "00FFFF"}, "Transects (North America)");
+  
+  Map.addLayer(TranAsia, {color: "0000FF"}, "Transects (Asia)");
+  Map.addLayer(TranEuro, {color: "FFFF00"}, "Transects (Europe)");
+  // Map.addLayer(segCATE, {palette: "00FFFF"}, "Segmented CATEs", true, 1);
+  
+  // Map.addLayer(newCATE_Asia, {palette: "FF0000"}, "newCATE_Asia", true, 1);
+  // Map.addLayer(newCATE_Euro, {palette: "00FFFF"}, "newCATE_Euro", true, 1);
+}

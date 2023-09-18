@@ -1,0 +1,101 @@
+/**
+ * Introduction: 
+ * 1) Smooth the 10-km forest elevation by calculating its focal average. 
+ * 
+ * Date: 7/11/2020.
+ * 
+ * Launch time: 56s.
+ */
+
+
+/* Setup. */
+
+// Define the extent of North America. 
+var northAmerica = ee.Geometry.Polygon({
+    coords: [[[-165.69002926658334, 72.44551256468144],
+          [-169.40248634956492, 65.69009098298687],
+          [-172.25893166206492, 63.826281515474996],
+          [171.35638590722195, 52.855285271231274],
+          [-159.1340353549648, 17.264443722753843],
+          [-122.14862062448367, 9.59539750905343],
+          [-79.06711256993691, 6.243890041056693],
+          [-77.03677448989225, 7.40316087095261],
+          [-76.78408894301725, 8.990725120234067],
+          [-75.7244458156751, 12.403191738791786],
+          [-71.5276684719251, 13.751533985801833],
+          [-62.8264965969251, 11.651035844929385],
+          [-62.005942990095036, 9.999896817210585],
+          [-60.791953732282536, 9.96743692413247],
+          [-55.5884807162513, 13.889226127218825],
+          [-47.99315852039507, 58.68729606716915],
+          [-66.52860968724042, 71.51769835770313],
+          [-77.86650031224042, 74.25356562488685],
+          [-89.90751593724042, 74.22969620284344],
+          [-106.04844453284761, 74.3012200035139],
+          [-114.63975312659761, 74.20581277506923],
+          [-120.18954789130242, 74.88484689543225],
+          [-136.27353226630242, 74.6772015427699]]],
+    geodesic: true
+});
+
+// Asset path.
+var wdNorthA = "users/treeline/NorthAmerica_GME/CATE/";
+
+// Load the elevation dataset at the 10-km level.
+var rawElv = ee.Image(wdNorthA + "500mCATE_3kmSurroundingCopernicusClsdFrstElv_10kmMean");
+
+// print("Raw elevation:", rawElv.bandTypes(), 
+//   rawElv.projection().crs(), 
+//   rawElv.projection().nominalScale())
+
+
+/* Calculate the focal average elevation. */
+
+// Generate a mean reducer.
+var meanRd = ee.Reducer.mean();
+
+// Smooth the raw elevations.
+var focalElv = rawElv.reduceNeighborhood({
+  reducer: meanRd,
+  kernel: ee.Kernel.circle(10), // Default unit: "pixels".
+  skipMasked: false
+}).reproject({ 
+  crs: "EPSG:4326",
+  scale: 1e4
+});
+
+print("Smoothed elevation:", focalElv.bandTypes(), 
+  focalElv.projection().crs(), 
+  focalElv.projection().nominalScale());
+
+
+if (false) {
+  /* Visualization. */
+  
+  var elvPalette = ['006600', '002200', 'fff700', 'ab7634', 'c4d0ff', 'ffffff'];
+  var elvVis = {min: 1000, max: 3500, palette: elvPalette};
+  
+  Map.setOptions("hybrid");
+  
+  Map.setCenter(-113.655, 48.734, 10);
+  
+  Map.addLayer(focalElv, elvVis, "Smoothed - closed forests", true);
+  Map.addLayer(rawElv, elvVis, "10km - closed forests", true);
+}
+
+else {
+  /* Output the result. */
+  
+  var fileName = "500mCATE_3kmSurroundingCopernicusClsdFrstElv_10kmMean_10pxCircleMean";
+  
+  Export.image.toAsset({
+    image: focalElv, 
+    description: fileName, 
+    assetId: wdNorthA + fileName,
+    region: northAmerica, 
+    crs: "EPSG:4326",
+    scale: 1e4,
+    maxPixels: 1e13
+  });
+}
+

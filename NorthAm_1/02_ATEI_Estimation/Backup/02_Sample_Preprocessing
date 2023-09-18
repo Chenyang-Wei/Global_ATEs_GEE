@@ -1,0 +1,88 @@
+/*
+  Introduction:
+  1) Combine the previously sampled points in the western U.S. (random and stratified samplings) and 
+    the new samples manually collected in North America.
+  2) Extract the samples within the climatic ATE.
+  
+  Update:
+  11/17/2020.
+*/
+
+
+/* Setup. */
+
+// Asset path.
+var wdNorthA = "users/treeline/NorthAmerica_GME/";
+
+// Load the sample points.
+var nonManual = ee.FeatureCollection(wdNorthA + "Pixel_Sampling/" +
+  "Combined_RandomANDStratified_Sampling_noUC_centroids_westernUS_2009to2011");
+
+// print("nonManual:", nonManual.first(), nonManual.size(), nonManual.geometry().projection().crs())
+
+var manual = ee.FeatureCollection(wdNorthA + "Pixel_Sampling/" +
+  "manuallySampled_1000points_NorthAmerica");
+
+// print("manual:", manual.first(), manual.size(), manual.geometry().projection().crs())
+
+// Load the climatic ATE.
+var CATE = ee.Image(wdNorthA + "CATE/" + 
+  "3kmBuffered_30mReprj_500mCATE3kmBuffer_gteAvgClsdFrstElv_10kmRes10pxFocalMean_10kmClsdFrstBuffer")
+  .select("gteFocalMean_30mReprj")
+  .reproject({
+    crs: "EPSG:4326",
+    scale: 30
+  });
+
+// print("CATE", CATE.projection().crs(), CATE.projection().nominalScale())
+
+
+/* Combine the previously sampled points in the western U.S. (random and stratified samplings) and 
+    the new samples manually collected in North America. */
+
+var combined = manual.merge(nonManual);
+
+print("Combined samples:", combined.first(), combined.size(), combined.geometry().projection().crs())
+
+
+/* Add a new property "InOut" to the combined samples. */
+
+var within = combined.filter(ee.Filter.eq("Class", "Within")).map(function(feature) {
+  return feature.set({
+    InOut: 1
+  });
+});
+
+var outside = combined.filter(ee.Filter.neq("Class", "Within")).map(function(feature) {
+  return feature.set({
+    InOut: 0
+  });
+});
+
+var newSamples = within.merge(outside);
+
+
+/* Extract the samples within the climatic ATE. */
+
+var samplesAndCATE = CATE.reduceRegions({
+  collection: newSamples, 
+  reducer: ee.Reducer.first().setOutputs(["InCATE"]), 
+  scale: 30, 
+  crs: "EPSG:4326"
+});
+
+var samplesInCATE = samplesAndCATE.filter(ee.Filter.notNull(["InCATE"]));
+
+print("samplesInCATE:", samplesInCATE.first(), samplesInCATE.size())
+
+
+/* Output the final samples. */
+
+var samplesName = "ManualRandomStratified_CombinedSamples_InCATE_NorthAmerica";
+
+Export.table.toAsset({
+  collection: samplesInCATE,
+  description: samplesName,
+  assetId: wdNorthA + "Pixel_Sampling/" + samplesName
+});
+

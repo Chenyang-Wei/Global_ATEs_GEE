@@ -1,0 +1,165 @@
+/**
+ * Introduction:
+ * 
+ *  1) Combine the manually collected sample points 
+ *    within continents other than North America or 
+ *    Africa.
+ * 
+ *  2) Extract a 30-m pixel at each sample point.
+ * 
+ * Runtime: 1 ~ 5m.
+ * 
+ * Updated: 5/25/2023.
+*/
+
+
+/* Load module(s). */
+
+var ATEI_EA = require("users/ChenyangWei/Public:Modules/Treeline/ATEI_Estimation&Analysis.js");
+var GATE = require("users/ChenyangWei/Public:Modules/Treeline/Global_ATE.js");
+var IMG = require("users/ChenyangWei/Public:Modules/General/Image_Analysis&Processing.js");
+
+
+/* Object definition. */
+
+// Create a list of the working directories.
+var WDs_List = ATEI_EA.WDs_AllContinents_List;
+
+// Set the major working directory.
+var wd_Main = GATE.wd_Global;
+
+// Determine the target projection.
+var targetPrj = IMG.WGS84_30m;
+
+
+/* Function definition. */
+
+// Create a function to load the samples of 
+//  each continent.
+var Load_ContinentSamples = function(contID) {
+  
+  // Determine the working directory of the continent.
+  var contWD = WDs_List[contID];
+  
+  // Load the collected samples.
+  var samples = ee.FeatureCollection(
+    contWD + "ATEI_Estimation/" + 
+      "manuallySampledPoints"
+  );
+  
+  return samples;
+};
+
+var combineSamples = false;
+
+if (combineSamples) {
+  
+  /* Load and combine the samples of 
+    each continent. */
+  
+  var allSamples = ee.FeatureCollection([
+    Load_ContinentSamples(1),
+    Load_ContinentSamples(3),
+    Load_ContinentSamples(4),
+    Load_ContinentSamples(5)
+  ]).flatten();
+  
+  var output = true;
+  
+  if (!output) {
+    
+    // Check the combined samples.
+    print("allSamples:", 
+      allSamples.size(), // 720.
+      allSamples.first());
+  
+  } else {
+    
+    /* Output the combined samples to Google Drive 
+      and GEE Asset. */
+    
+    var fileName = 
+      "ManuallySampledPoints_No_NorthAmerica_Africa";
+    
+    Export.table.toDrive({
+      collection: allSamples, 
+      description: fileName, 
+      folder: fileName, 
+      fileFormat: "SHP"
+    });
+    
+    Export.table.toAsset({
+      collection: allSamples, 
+      description: fileName, 
+      assetId: wd_Main
+        + "ATEI_Estimation/Manual_Sampling/"
+        + fileName
+    });
+  }
+  
+} else {
+  
+  /* Extract a 30-m pixel at each sample point. */
+  
+  var allSamples = ee.FeatureCollection(
+    wd_Main + "ATEI_Estimation/Manual_Sampling/" + 
+    "ManuallySampledPoints_No_NorthAmerica_Africa"
+  );
+  
+  // Determine a buffered bounding box of samples.
+  var bbox = allSamples.geometry()
+    .bounds().buffer(3000);
+  
+  // Create a pixel for each sample point.
+  var samplePixels = ee.Image(1).byte()
+    .clipToCollection(allSamples)
+    .reproject(targetPrj)
+    .rename("samplePixels");
+
+  // Transform each pixel to a polygon.
+  var samplePlgs = samplePixels.reduceToVectors({
+    geometry: bbox, 
+    crs: "EPSG:4326", 
+    scale: 30, 
+    geometryType: "polygon", 
+    eightConnected: false, 
+    maxPixels: 1e13
+  });
+  
+  if (false) {
+    
+    // Check the combined samples.
+    print("allSamples:", 
+      allSamples.size(), // 720.
+      allSamples.first());
+  
+    Map.setOptions("Satellite");
+    
+    Map.addLayer(
+      bbox, 
+      {color: "00ffff"},
+      "bbox"
+    );
+    
+    Map.addLayer(
+      allSamples, 
+      {color: "ff0000"},
+      "allSamples"
+    );
+    
+  } else {
+    
+    // Output the polygons of samples.
+    var fileName = 
+      "ManuallySampled_30mPolygons_No_NorthAmerica_Africa";
+    
+    Export.table.toDrive({
+      collection: samplePlgs, 
+      description: fileName, 
+      folder: fileName, 
+      fileFormat: "SHP"
+    });
+    
+  }
+}
+

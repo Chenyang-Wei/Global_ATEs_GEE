@@ -1,0 +1,107 @@
+/**
+ * Introduction:
+ * 1) Calculate the distance to the nearest non-forest pixel.
+ * 
+ * Date: 6/7/2020.
+ * 
+ * Launch time: 1h.
+ */
+
+
+/* Setup. */
+
+// Asset paths.
+var wdNorthA = "users/treeline/North_America/CATE/";
+var wdGlobal = "users/treeline/Global/";
+
+// Selected non-forested areas.
+var nonForest = ee.Image(wdNorthA + "CopernicusLC_nonForest_absElvDistLte500m");
+
+// Projection information.
+var nonPrj = nonForest.projection();
+var nonCRS = nonPrj.crs().getInfo();
+var nonScale = nonPrj.nominalScale().getInfo();
+
+print("Non-forested land cover:", 
+  nonCRS,
+  nonScale);
+
+// Define the extent of North America. 
+var northAmerica = ee.Geometry.Polygon({
+    coords: [[[-165.69002926658334, 72.44551256468144],
+          [-169.40248634956492, 65.69009098298687],
+          [-172.25893166206492, 63.826281515474996],
+          [171.35638590722195, 52.855285271231274],
+          [-159.1340353549648, 17.264443722753843],
+          [-122.14862062448367, 9.59539750905343],
+          [-79.06711256993691, 6.243890041056693],
+          [-77.03677448989225, 7.40316087095261],
+          [-76.78408894301725, 8.990725120234067],
+          [-75.7244458156751, 12.403191738791786],
+          [-71.5276684719251, 13.751533985801833],
+          [-62.8264965969251, 11.651035844929385],
+          [-62.005942990095036, 9.999896817210585],
+          [-60.791953732282536, 9.96743692413247],
+          [-55.5884807162513, 13.889226127218825],
+          [-47.99315852039507, 58.68729606716915],
+          [-66.52860968724042, 71.51769835770313],
+          [-77.86650031224042, 74.25356562488685],
+          [-89.90751593724042, 74.22969620284344],
+          [-106.04844453284761, 74.3012200035139],
+          [-114.63975312659761, 74.20581277506923],
+          [-120.18954789130242, 74.88484689543225],
+          [-136.27353226630242, 74.6772015427699]]],
+    geodesic: true
+});
+
+// GMBA mountain inventory.  
+var gmba = ee.FeatureCollection(wdGlobal +
+  "GMBA/Mountain_Inventory_v1_2-World");
+  
+// Select mountain ranges within the study domain.
+gmba = gmba.filterBounds(northAmerica);
+
+
+/* Calculate the distance to the nearest non-forest pixel. */
+
+var neighborhood = 1e3; // Number of 100-m pixels.
+
+var nonForestDist = nonForest.fastDistanceTransform({
+  neighborhood: neighborhood,
+  units: "pixels",
+  metric: "squared_euclidean"
+}).sqrt() // Get the distance in pixels.
+  .clipToCollection(gmba)
+  .float(); // Reduce the size of the data set.
+
+print("Non-forested distance:", nonForestDist.bandTypes());
+
+
+/* Visualization. */
+
+if (true) {
+  Map.setOptions("hybrid");
+  
+  Map.setCenter(-128.395, 65.0635, 6);
+  
+  Map.addLayer(gmba, {color: "FFFFFF"}, "GMBA");
+  // Map.addLayer(nonForestDist.lte(100).selfMask(), {palette: "FF0000"}, "Buffered non-forested areas");
+  Map.addLayer(nonForest, {palette: "0000FF"}, "Non-forested areas");
+}
+
+else {
+  /* Output the result. */
+  
+  var fileName = "CopernicusLC_nonForest_absElvDistLte500m_" + neighborhood + "pxDist";
+  
+  Export.image.toAsset({
+    image: nonForestDist,
+    description: fileName,
+    assetId: wdNorthA + 
+      fileName,
+    region: northAmerica,
+    scale: nonScale,
+    crs: nonCRS,
+    maxPixels: 1e13
+  });
+}

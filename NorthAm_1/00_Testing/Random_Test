@@ -1,0 +1,93 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var newCATE = ee.Image("users/treeline/NorthAmerica_GME/Climate-Based_ATE/30mNewCATE_gteSmd10kmCForestElv_3kmCForestBuffer_BufRawCATEclosedForests_AOI"),
+    buf3km = ee.Image("users/treeline/NorthAmerica_GME/Climate-Based_ATE/30mNewCATE_BufRawCATEclosedForests_3kmBuffered_AOI"),
+    bufCATE = ee.Image("users/treeline/NorthAmerica_GME/Climate-Based_ATE/30mRawCATE_500mToAvgTLH_3kmBuf_NorthAmerica_10kmBufBBoxTo-180"),
+    buf300m = ee.Image("users/treeline/NorthAmerica_GME/Climate-Based_ATE/30mNewCATE_BufRawCATEclosedForests_300mBuffered_AOI"),
+    NA = ee.FeatureCollection("users/treeline/NorthAmerica_GME/Climate-Based_ATE/NorthAmerica_LSIB_SIMPLE"),
+    hybas12 = ee.FeatureCollection("WWF/HydroSHEDS/v1/Basins/hybas_12");
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+// var CATEdist = newCATE.fastDistanceTransform({
+//   neighborhood: 20,
+//   units: "pixels",
+//   metric: "squared_euclidean"
+// }).sqrt() // Get the distance in the number of pixels (30 m).
+//   .reproject(ee.Projection("EPSG:4326").atScale(30));
+
+// // print("CATEdist:", 
+// //   CATEdist.bandTypes(),
+// //   CATEdist.projection().crs(), 
+// //   CATEdist.projection().nominalScale())
+
+// // Generate a buffer of the new CATE.
+// var distThres = 10; // Number of 30-m pixels.
+
+// var CATEbuffer = CATEdist.lte(distThres)
+//   .selfMask()
+//   .rename("newCATE_3kmBuffered");
+var AOI = ee.Geometry.Rectangle({
+  coords: [-180, 7.114761500193937, -52.095625030545534, 80.24342770493531],
+  geodesic: false
+});
+// Define a circular smoothing kernel of 10 pixels.
+var Kn = ee.Kernel.circle({
+  radius: 10,
+  units: "pixels"
+}); 
+
+// Image smoothing.
+var smoothed = newCATE.reduceNeighborhood({
+  // The median reducer is less smooth than the mean reducer, 
+  // but the former one makes the spatial variation of NDVI more abrupt (i.e., less gradual),
+  // which then provides a sharper gradient (i.e., with a larger magnitude).
+  reducer: ee.Reducer.median(),
+  kernel: Kn,
+  skipMasked: false // Do NOT mask output pixels if the corresponding input pixels are masked.
+}).reproject({
+  crs: "EPSG:4326", 
+  scale: 30
+});
+
+// var simple = ee.Feature(NA.first()).simplify({
+//   maxError: 1e3, 
+//   proj: "EPSG:4326"
+// })
+
+
+// var naNew = ee.FeatureCollection(ee.Feature(NA.first()).set("LandMask", 1))
+
+// print(naNew.first(), naNew.size())
+// var naImg = naNew.reduceToImage(["LandMask"], ee.Reducer.first())
+  // .reproject({
+  //   crs: "EPSG:4326", 
+  //   scale: 30000
+  // });
+
+// print(naImg)
+
+var NAfeature = ee.Feature(NA.first());
+// hybas12 = hybas12.filterBounds(AOI)
+// var masked = newCATE.updateMask(naImg);
+// var hybas = hybas12.map(function(feature) {
+//   var intersect = feature.intersects(NAfeature, 30, "EPSG:4326");
+//   return feature.set("intersect", intersect)
+// })
+// print(hybas.size())
+// var hybas_NA = hybas.filter(ee.Filter.eq("intersect", true));
+var hybas_NA = hybas12.filterBounds(NAfeature.geometry());
+
+print(hybas_NA.size())
+print(ee.Feature(NA.first()).geometry().projection().crs())
+print(ee.Feature(hybas12.first()).geometry().projection().crs())
+Map.setOptions("hybrid")
+// Map.addLayer(ee.Feature(NA.first()).simplify(1000), {color: "FF0000"}, "simple")
+Map.addLayer(NA, {color: "00FF00"}, "NA")
+// Map.addLayer(simple, {color: "0000FF"}, "simple")
+// Map.addLayer(CATEbuffer, {palette: "00FF00"}, "CATEbuffer");
+// Map.addLayer(buf3km, {palette: "FF00FF"}, "buf3km");
+
+// Map.addLayer(bufCATE, {palette: "FF0000"}, "bufCATE");
+// Map.addLayer(smoothed, {palette: "FF0000"}, "smoothed");
+Map.addLayer(buf300m, {palette: "FFFF00"}, "buf300m");
+Map.addLayer(newCATE, {palette: "0000FF"}, "newCATE");
+Map.addLayer(hybas12, {color: "FF0000"}, "hybas12")
+// Map.addLayer(naImg, {palette: "FF00"}, "naImg");

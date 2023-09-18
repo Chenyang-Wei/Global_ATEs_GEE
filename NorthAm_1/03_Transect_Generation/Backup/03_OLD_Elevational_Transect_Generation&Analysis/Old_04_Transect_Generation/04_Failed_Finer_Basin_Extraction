@@ -1,0 +1,134 @@
+/**
+ * Introduction:
+ * 1) Extract the failed basins ("Basin_23") at a finer level ("hybas_5").
+ * 
+ * Date: 7/12/2020.
+ * 
+ * Launch time: 6h.
+ */
+
+
+/* Identify the failed basin. */
+
+// Asset path.
+var wdNorthA = "users/treeline/NorthAmerica_GME/";
+
+// Old HydroSHEDS basins at a coarser level ("hybas_4").
+// var oldBasins = ee.FeatureCollection(wdNorthA + "Transects/" + 
+//   "90mSegmentedCATE_selectedBasins_Hybas4");
+var oldBasins = ee.FeatureCollection(wdNorthA + "Transects/" + 
+  "90mSegmentedCATE_selectedBasins_Hybas4_withLandCover"); // With land cover information.
+
+// Convert the old HydroSHEDS basins to a list.
+var oldBasinNum = oldBasins.size();
+
+var oldBasinList = oldBasins.toList({
+  count: oldBasinNum
+});
+
+// Mark the failed task ("Basin_23").
+// var failedBasin = ee.Feature(oldBasinList.get(23));
+var failedBasin = ee.Feature(oldBasinList.get(9)); // With land cover information.
+print("failedBasin:", failedBasin);
+
+// Copernicus land cover product.
+var copernicus = ee.ImageCollection("COPERNICUS/Landcover/100m/Proba-V/Global")
+  .select('discrete_classification').first();
+
+// Closed forests in the Copernicus dataset.
+var closedForests = copernicus.gte(111).and(copernicus.lte(116))
+  .selfMask()
+  .rename("closedForests");
+
+// Non-forested areas in the Copernicus dataset.
+// From "Shrubs" to "Moss and lichen".
+var nonForested = copernicus.gte(20).and(copernicus.lte(100))
+  .selfMask()
+  .rename("nonForested");
+
+
+/* Extract the failed basins at a finer level ("hybas_5"). */
+
+// HydroSHEDS basins at a finer level overlapped with the failed basin.
+var rawFinerBasins = ee.FeatureCollection("WWF/HydroSHEDS/v1/Basins/hybas_5")
+  .filterBounds(failedBasin.geometry());
+
+// var testing = ee.FeatureCollection("WWF/HydroSHEDS/v1/Basins/hybas_4")
+// Map.addLayer(ee.FeatureCollection("WWF/HydroSHEDS/v1/Basins/hybas_5"), 
+//   {color: "FFFF00"}, "rawFinerBasins")
+// Map.addLayer(testing, {color: "0000FF"}, "testing")
+
+// Identify the finer basins within the failed task.
+var finerBasins = rawFinerBasins.map(function(feature) {
+  var boolean = feature.containedIn(failedBasin);
+  
+  return feature.set("Failed_Task", boolean);
+});
+
+// Segmented CATE.
+var segCATE = ee.Image(wdNorthA + "Transects/" + 
+  "90mSegmentedCATE_distToRidgesNoCliff_NAlandformsRemoved_ridgesRemoved");
+
+// Segmented CATE projection.
+var segPrj = segCATE.projection();
+var segCRS = segPrj.crs();
+var segScale = segPrj.nominalScale();
+
+// print("Segmented CATE:", 
+//   segCATE.bandTypes(),
+//   segCRS, segScale)
+
+
+/* Select the finer failed basins overlapped with the segmented CATE. */
+
+// Extract the first segmented CATE pixel within each finer basin.
+var finerBasinsCATE = segCATE.reduceRegions({
+  collection: finerBasins,
+  reducer: ee.Reducer.firstNonNull(), 
+  scale: segScale,
+  crs: segCRS
+});
+
+// print("Raw basins:", finerBasinsCATE.size()) // 23.
+
+// Select finer basins within the failed task and with non-null segmented CATE pixels.
+var combinedFilter = ee.Filter.and(
+  ee.Filter.eq("Failed_Task", true),
+  ee.Filter.neq("first", null));
+
+var selectedFinerBasins = finerBasinsCATE.filter({
+  filter: combinedFilter
+});
+
+print("Selected basins:", selectedFinerBasins.size(), selectedFinerBasins.first()) // 8.
+
+
+if (true) {
+  /* Visualization. */
+
+  Map.centerObject(failedBasin, 6);
+  Map.setOptions("hybrid");
+  
+  Map.addLayer(rawFinerBasins, {color: "FF0000"}, "rawFinerBasins", false);
+  
+  Map.addLayer(selectedFinerBasins, {color: "FFFF00"}, "selectedFinerBasins", false);
+  
+  Map.addLayer(failedBasin, {color: "FFFFFF"}, "failedBasin");
+  
+  Map.addLayer(segCATE, {palette: "0000FF"}, "segCATE", true);
+  Map.addLayer(closedForests.updateMask(segCATE), {palette: "FF0000"}, "closedForests", true);
+  Map.addLayer(nonForested.updateMask(segCATE), {palette: "FFFF00"}, "nonForested", true);
+}
+
+else {
+  /* Output the result.*/
+  
+  var fileName = "90mSegmentedCATE_failedFinerBasins_Hybas5";
+  
+  Export.table.toAsset({
+    collection: selectedFinerBasins, 
+    description: fileName, 
+    assetId: wdNorthA + "Transects/" + fileName
+  });
+}
+

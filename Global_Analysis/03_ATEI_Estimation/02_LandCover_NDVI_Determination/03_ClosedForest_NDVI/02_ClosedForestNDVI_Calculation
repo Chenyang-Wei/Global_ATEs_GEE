@@ -1,0 +1,159 @@
+/**
+ * Introduction:
+ * 
+ *  1) Calculate the 30-m temporal median of the smoothed annual maximum NDVIs
+ *    of the closed forests in the climatic ATE during 2015-2019 
+ *    (i.e., the period of the Copernicus Land Cover data).
+ * 
+ * Runtime: 40m ~ 53m (shared).
+ * 
+ * Update: 1/16/2023.
+*/
+
+
+/* Load module(s). */
+
+var IMG = require("users/ChenyangWei/Public:Modules/General/Image_Analysis&Processing.js");
+var ATEI_EA = require("users/ChenyangWei/Public:Modules/Treeline/ATEI_Estimation&Analysis.js");
+var GATE = require("users/ChenyangWei/Public:Modules/Treeline/Global_ATE.js");
+var TNA = require("users/ChenyangWei/Public:Modules/Treeline/Transect_NDVI_Analysis.js");
+var VIS = require("users/ChenyangWei/Public:Modules/General/Visualization.js");
+
+
+/* Object definition. */
+
+// Determine the target projection.
+var targetPrj = IMG.WGS84_30m;
+
+// Create a list of the working directories.
+var WDs_List = ATEI_EA.WDs_AllContinents_List;
+
+// Define a list of the AOIs.
+var AOIs_List = ATEI_EA.AOIs_AllContinents_List;
+
+// Generate a median reducer.
+var medianReducer = ee.Reducer.median();
+
+// Create a list of the NDVI band names for 2015-2019.
+var landCoverYears_List = ee.List.sequence(2015, 2019);
+
+var bandNames_List = landCoverYears_List.map(function(yearNum) {
+  
+  // When directly convert a "floating point" to a "string", 
+  //  the result contains a ".", which isn't allowed in band names.
+  var yearInt = ee.Number(yearNum).int();
+  var yearString = ee.String(yearInt);
+  
+  // Define the band name of each year.
+  var bandName = ee.String("smdNDVI_").cat(yearString);
+  
+  return bandName;
+});
+
+
+/* Function definition. */
+
+// Define a function to load and reproject the closed forests 
+//  in the new CATE of each continent.
+var Read_ClosedForests = function(wd_Cont) {
+  var closedForests_Cont = ee.Image(wd_Cont
+    + "ATEI_Estimation/ClosedForestNDVI/" 
+    + "30mClosedForests_NewCATE_2015to2019")
+    .reproject(targetPrj);
+  
+  return closedForests_Cont;
+};
+
+// Define a function to calculate the temporal median NDVIs of 
+//  the closed forests in continents other than North America.
+var Calculate_ClosedForestNDVI = function(wd_Cont, closedForests_Cont) {
+  var closedForestNDVI_Cont = TNA.loadAnnualNDVIs_nonNorthAmerica(wd_Cont)
+    .select(bandNames_List)
+    .updateMask(closedForests_Cont)
+    .reduce(medianReducer)
+    .reproject(targetPrj)
+    .rename("closedForestNDVI");
+  
+  return closedForestNDVI_Cont;
+};
+
+
+/* Acquire the information of the continent. */
+
+// Determine the continent ID (0 ~ 5).
+var contID = 5;   /* Need to update. */
+
+// Determine the working directory of the continent.
+var contWD = WDs_List[contID];
+
+// Determine the AOI of the continent.
+var contAOI = AOIs_List[contID];
+
+
+/* Read the closed forests in the new CATE. */
+
+var closedForests = Read_ClosedForests(contWD);
+
+
+/* Calculate the temporal median NDVI of 
+  the closed forests during 2015-2019 . */
+
+if (contID === 0) {
+  // Calculate the closed-forest NDVI in North America.
+  var closedForestNDVI = ee.Image(GATE.wd_NorthAmerica
+    + "ATEI_Estimation/"
+    + TNA.annualMaxNDVI_300mBufNewCATE_NorthAmerica_fileName)
+    .select(bandNames_List)
+    .updateMask(closedForests)
+    .reduce(medianReducer)
+    .reproject(targetPrj)
+    .rename("closedForestNDVI");
+
+} else if (contID === 5) {
+  // Calculate the open forest NDVI in Asia 
+  //  (using a different working directory).
+  var closedForestNDVI = Calculate_ClosedForestNDVI(GATE.wd_Asia_2, closedForests);
+  
+} else {
+  // Calculate the open forest NDVI in other continents.
+  var closedForestNDVI = Calculate_ClosedForestNDVI(contWD, closedForests);
+}
+
+
+if (false) {
+  
+  // Check the working directory.
+  print("contWD:", contWD);
+  
+  // Check the result.
+  IMG.printImgInfo("closedForestNDVI:", 
+    closedForestNDVI);
+  
+  // Visualize the datasets.
+  Map.setOptions("satellite");
+  Map.centerObject(contAOI, 6);
+  
+  Map.addLayer(contAOI, {color: "FFFFFF"}, "contAOI", true);
+  
+  Map.addLayer(closedForestNDVI, VIS.NDVI_vis, 
+    "closedForestNDVI", true);
+  
+} else {
+  
+  // Determine the output directory.
+  var outputWD = contWD + "ATEI_Estimation/ClosedForestNDVI/";
+
+  // Export the result.
+  var fileName = "30mTemporalMedianNDVI_ClosedForests_NewCATE";
+  
+  Export.image.toAsset({
+    image: closedForestNDVI,
+    description: fileName, 
+    assetId: outputWD + fileName, 
+    crs: targetPrj.crs,
+    scale: targetPrj.scale,
+    region: contAOI,
+    maxPixels: IMG.maxPxNum
+  }); 
+}
+

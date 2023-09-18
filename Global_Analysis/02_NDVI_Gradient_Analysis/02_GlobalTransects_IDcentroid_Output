@@ -1,0 +1,95 @@
+/**
+ * Introduction:
+ * 
+ * 1) Assign a new ID to each transect.
+ * 
+ * 2) Identify the centroid of each transect.
+ * 
+ * 3) Output the global transects and centroids to Google Drive and GEE Asset.
+ * 
+ * 
+ * Update: 5/2/2022.
+ * 
+ * Runtime: 4-5h (SHP) & 2h (GEE Asset, shared).
+ */
+
+
+/* Load module(s). */
+
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var NGA = require("users/ChenyangWei/Public:Modules/NDVI_Gradient_Analysis.js");
+var FC_AP = require("users/ChenyangWei/Public:Modules/FeatureCollection_Analysis&Processing");
+
+
+/* Data loading. */
+
+// Set the major working directory.
+var wd_Main = GATE.wd_Global;
+
+// Load the raw global transects.
+var rawTransects = ee.FeatureCollection(wd_Main
+  + "NDVI_Gradient_Analysis/"
+  + NGA.globalTransects_FileName);
+
+
+/* Transect-level operations. */
+
+// 1) Assign a new ID to each transect.
+var transects_withID = rawTransects.randomColumn("transectID");
+
+// 2) Identify the centroid of each transect.
+var transectCentroids_withID = transects_withID.map(function(transect) {
+  var centroid = transect.centroid();
+  
+  return centroid;
+});
+
+
+// Whether to output the result.
+var output = true; // true OR false.
+
+
+if (!output) {
+  // Data examination.
+
+  FC_AP.Print_FtrColInfo("transectCentroids_withID:", 
+    transectCentroids_withID); // 2,294,222.
+
+} else {
+  // 3) Output the global transects and centroids to Google Drive and GEE Asset.
+  
+  // Transects.
+  var transectName = "globalTransects_withID";
+  
+  Export.table.toDrive({
+    collection: transects_withID, 
+    description: transectName + "_SHP", 
+    folder: transectName + "_SHP", 
+    fileFormat: "SHP"
+  });
+  
+  // Transect centroids.
+  var centroidName = "globalTransectCentroids_withID";
+  
+  Export.table.toDrive({
+    collection: transectCentroids_withID, 
+    description: centroidName + "_SHP", 
+    folder: centroidName + "_SHP", 
+    fileFormat: "SHP"
+  });
+  
+  // GEE Asset.
+  
+  var wd_Output = wd_Main
+    + "NDVI_Gradient_Analysis/";
+  
+  var fileName = NGA.globalTransectsWithID_FileName;
+  
+  Export.table.toAsset({
+    collection: transects_withID, 
+    description: fileName, 
+    assetId: wd_Output
+      + fileName
+  });
+}
+

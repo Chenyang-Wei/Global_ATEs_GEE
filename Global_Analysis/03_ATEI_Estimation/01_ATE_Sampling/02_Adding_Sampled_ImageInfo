@@ -1,0 +1,168 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var selection = 
+    /* color: #98ff00 */
+    /* shown: false */
+    ee.Geometry.Polygon(
+        [[[-72.37026289397086, -46.99026994204762],
+          [-72.30503157072867, -46.98394648682776],
+          [-72.23739698820914, -46.98160427653907],
+          [-72.22675398283805, -46.94575566314475],
+          [-72.24117353850211, -46.92025836363758],
+          [-72.28065565520133, -46.90853234153015],
+          [-72.31704786711539, -46.91439567330838],
+          [-72.35275343352164, -46.93385733490168],
+          [-72.37575605803336, -46.95799872288698],
+          [-72.39086225920524, -46.97767878522454],
+          [-72.38433912688102, -46.987516101141395]]]);
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+/**
+ * Introduction:
+ * 
+ *  1) Add the image information to the sample points 
+ *    collected in continents other than North America 
+ *    or Africa.
+ * 
+ * Runtime: 1m.
+ * 
+ * Updated: 5/26/2023.
+*/
+
+
+/* Load module(s). */
+
+var GATE = require("users/ChenyangWei/Public:Modules/Treeline/Global_ATE.js");
+
+
+/* Object definition. */
+
+// Set the major working directory.
+var wd_Main = GATE.wd_Global;
+
+// Determine the new group ID.
+var new_GroupID = 39; // Final: 39.
+
+// Determine the image info.
+var imgSource = "Maxar Technologies";
+
+var imgYear = 2009;
+
+// Whether export the result (true OR false).
+var output = false;
+
+
+/* Function definition. */
+
+// Define a function for adding the image info.
+var Add_ImgInfo = function(sample_Ftr) {
+  var sample_InfoAdded_Ftr = sample_Ftr
+    .set({
+      Image: imgSource,
+      Year: imgYear
+    });
+    
+  return sample_InfoAdded_Ftr;
+};
+
+
+/* Add the image info to each sample point. */
+
+// Load the raw sample points.
+var rawSamples = ee.FeatureCollection(
+  wd_Main + 
+  "ATEI_Estimation/Manual_Sampling/" + 
+  "ManuallySampledPoints_No_NorthAmerica_Africa"
+);
+
+// Load sample points with the image info.
+var old_GroupID = new_GroupID - 1;
+
+var old_SampleGroup = ee.FeatureCollection(
+  wd_Main + 
+  "ATEI_Estimation/Manual_Sampling/" + 
+  "SampleGroups_InfoAdded/" + 
+  "samples_InfoAdded_" + 
+  old_GroupID
+);
+
+// Select the samples for editing.
+var selectedSamples = rawSamples.filterBounds(selection);
+
+// Choose non-within samples 
+//  (Only for a few samples in South America).
+selectedSamples = selectedSamples
+  .filter(ee.Filter.neq("Class", "Within"));
+
+// Set the image source and year.
+var samples_InfoAdded = selectedSamples.map(Add_ImgInfo);
+
+var new_SampleGroup = old_SampleGroup
+  .merge(samples_InfoAdded);
+
+if (!output) {
+  
+  /* Check the results. */
+  
+  print("samples_InfoAdded:", 
+    samples_InfoAdded.size(), 
+    samples_InfoAdded.first()
+  );
+
+  print("old_SampleGroup:", 
+    old_SampleGroup.size()
+  );
+
+  print("new_SampleGroup:", 
+    new_SampleGroup.size() // Final: 711.
+  );
+
+  Map.setOptions("Satellite");
+  Map.centerObject(selection, 13);
+  
+  Map.addLayer(
+    selection, 
+    {color: "ffffff"},
+    "selection", 
+    true, 
+    0.3
+  );
+  
+  Map.addLayer(
+    rawSamples, 
+    {color: "ff0000"},
+    "rawSamples"
+  );
+  
+  Map.addLayer(
+    new_SampleGroup, 
+    {color: "0000ff"},
+    "new_SampleGroup"
+  );
+  
+  Map.addLayer(
+    old_SampleGroup, 
+    {color: "ffff00"},
+    "old_SampleGroup"
+  );
+  
+  Map.addLayer(
+    samples_InfoAdded, 
+    {color: "00ffff"},
+    "samples_InfoAdded"
+  );
+  
+} else {
+  
+  /* Output the samples with image info. */
+  
+  var fileName = "samples_InfoAdded_" + new_GroupID;
+  
+  Export.table.toAsset({
+    collection: new_SampleGroup, 
+    description: fileName, 
+    assetId: wd_Main + 
+      "ATEI_Estimation/Manual_Sampling/" + 
+      "SampleGroups_InfoAdded/" + 
+      fileName
+  });
+}
+

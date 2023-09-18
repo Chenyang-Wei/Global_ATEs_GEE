@@ -1,0 +1,379 @@
+/**
+ * Introduction:
+ * 
+ *  1) Visualize the elements of the climate-based ATE identification
+ *    in Olympic Mountains.
+ * 
+ *  
+ * Update: 7/21/2022.
+ * 
+ * Runtime: 4m ~ 14m.
+ */
+
+
+/* Setups. */
+
+// Load module(s).
+var IMG = require("users/ChenyangWei/Public:Modules/Image_Analysis&Processing");
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+
+// Target projection.
+var targetPrj = IMG.WGS84_30m;
+
+// Set the working directories.
+var wdGlobal = GATE.wd_Global;
+var wdGME = wdGlobal + "Global_Mountain_Explorer/";
+var wdNA = GATE.wd_NorthAmerica;
+
+// Global Mountain Explorer K3 Binary dataset.  
+// var raw_k3Binary = ee.Image(wdGME +
+//   "k3binary");
+
+var k3Binary = ee.Image(wdGME +
+  "k3binary")
+  .reproject(targetPrj);
+
+// Olympic Mountains.
+var OlyMt = ee.FeatureCollection(wdGlobal +
+  "GMBA/V2_0/OlympicMt_GMBAv2");
+
+// Load the 30-arcsec Chelsa climatically estimated treeline elevation dataset.
+var chelsa_tlh = ee.Image(wdGlobal + "Global_CHELSA_TLH_V1_2/" +
+  "Stacked_CHELSA_v12_TLH_1979to2013_10000pixels_NAinterpolated_Predictor2_Zlevel9_DeflateCompressed")
+  .reproject(targetPrj)
+  .updateMask(k3Binary);
+
+// var chelsa_CRS = chelsa_tlh.projection().crs();
+
+// var chelsa_CRS = targetPrj.crs;
+// var chelsa_Scale = chelsa_tlh.projection().nominalScale();
+
+// Read the 30-arcsec GMTED (Global Multi-resolution Terrain Elevation Data) dataset.
+var gmted = ee.Image(wdGlobal + "GMTED/GMTED2010_30arcsec")
+  // .reproject({
+  //   crs: chelsa_CRS,
+  //   scale: chelsa_Scale
+  // })
+  .reproject(targetPrj)
+  .updateMask(k3Binary);
+
+
+/* CHELSA example. */
+
+// print(chelsa_tlh);
+
+var bandName = "b35";
+
+var chelsa_OneYear = chelsa_tlh.select([bandName])
+  .updateMask(k3Binary);
+
+// Calculate the absolute treeline height at 30 arcsec.
+var height_OneYear = chelsa_OneYear.add(gmted)
+  .updateMask(k3Binary);
+
+// Downscale the absolute treeline height 
+//  from 30 arcsec to 30 m
+//  by using the "bilinear" resampling algorithm.
+var heightReprj_OneYear = height_OneYear.resample("bilinear")
+  .reproject(targetPrj)
+  .updateMask(k3Binary);
+
+
+/* Temporal average the climatic treeline elevation. */
+  
+// Reproject the CHELSA treeline elevation to 1-arcsecond level.
+var TLHreprj = ee.ImageCollection.fromImages(
+  chelsa_tlh.bandNames().map(function(b){
+    // Select the CHELSA treeline elevation in each year.
+    var tlh = chelsa_tlh.select([b]);
+    
+    // Calculate the absolute treeline height at 30 arcsec.
+    var height = tlh.add(gmted);
+    // add(): Only the intersection of unmasked pixels between the two inputs of the operation 
+    //  are considered and returned as unmasked, all else are masked.
+    
+    // Downscale the absolute treeline height 
+    //  from 30 arcsec to 30 m
+    //  by using the "bilinear" resampling algorithm.
+    var heightReprj = height.resample("bilinear")
+      .reproject(targetPrj);
+    
+    // Rename the reprojected treeline elevation.
+    return heightReprj.rename("TLH");
+  })
+);
+
+// Calculate the temporal average treeline elevation from 1979 to 2013
+// at the 30-m level.
+var avgTLH = TLHreprj.mean()
+  .reproject(targetPrj);
+
+// Extract the average treeline elevation within the GME K3 mountain ranges.
+avgTLH = avgTLH.updateMask(k3Binary);
+
+
+/* Determine an area of interest (AOI). */
+
+// var buffer = ee.Feature(OlyMt.first()).buffer(1e4);
+
+// var AOI = buffer.bounds();
+
+// print(AOI);
+
+var AOI = ee.Geometry.Rectangle({
+  coords: [-124.95733407018274,46.888984033161485, 
+    -122.54939566075853,48.528591259260935],
+  geodesic: false
+});
+
+
+/* Extract the raw CATE within an absolute vertical distance to the average TLH. */ 
+
+// ALOS elevation (Version 3.2, released in January 2021) in the AOI.
+var ALOSelv = ee.ImageCollection('JAXA/ALOS/AW3D30/V3_2').select('DSM')
+  .filterBounds(AOI)
+  .mosaic()
+  .reproject(targetPrj)
+  .updateMask(k3Binary);
+
+// Calculate the absolute vertical distance to the average TLH.
+var abs_V_dist = avgTLH.subtract(ALOSelv).abs(); 
+
+// Extract the raw CATE within a certain distance.
+var V_thres = 500; // In meters.
+
+var V_buffered = abs_V_dist.lte(V_thres)
+  .selfMask();
+
+
+/* Determine a surrounding region of the extracted CATE. */
+
+// Determine the size of neighborhood.
+var neighborhood = 200; // Number of 30-m pixels.
+
+// Calculate the distance to the raw CATE at each pixel in the neighborhood.
+var H_pxDist = V_buffered.fastDistanceTransform({
+  neighborhood: neighborhood,
+  units: "pixels",
+  metric: "squared_euclidean"
+}).sqrt() // Get the distance in the number of pixels (30 m).
+  .reproject(targetPrj);
+  // .updateMask(k3Binary);
+
+var H_dist = H_pxDist.multiply(30)
+  .updateMask(k3Binary);
+
+// // Threshold of the horizontal distance for the surrounding region.
+// var H_pxThres = 100; // Number of 30-m pixels.
+
+// // Identify the surrounding area.
+// var HV_buffered = H_pxDist.lte(H_pxThres)
+//   .selfMask();
+
+// Load the buffered result.
+var HV_buffered = ee.Image(wdNA + "Climate-Based_ATE/" +
+  "30mRawCATE_500mToAvgTLH_3kmBuf_NorthAmerica_10kmBufBBoxTo-180");
+
+
+var show = true;
+var tif = true;
+
+if (show) {
+  
+  // print(raw_k3Binary.projection().crs(),
+  //   raw_k3Binary.projection().nominalScale());
+
+  print(k3Binary.projection().crs(),
+    k3Binary.projection().nominalScale());
+
+  // print(chelsa_CRS, chelsa_Scale);
+  
+  /* Visualization. */
+  
+  Map.setOptions("satellite");
+  Map.setCenter(-123.6159, 47.801, 9);
+  
+  Map.addLayer(AOI, {color: "0000FF"}, "AOI", false);
+  
+  Map.addLayer(OlyMt, {color: "FFFF00"}, "Olympic Mountains", false);
+  
+  Map.addLayer(k3Binary, {palette: "FF0000"}, "k3Binary", false, 0.5);
+  
+  Map.addLayer(gmted, {min: 0, max: 2e3, 
+    palette: "0000FF, FFFFFF, FF0000"}, "gmted", true, 1);
+  
+  Map.addLayer(chelsa_OneYear, {min: -1e3, max: 1e3, 
+    palette: "0000FF, FFFFFF, FF0000"}, "chelsa_OneYear", true, 1);
+  
+  Map.addLayer(height_OneYear, {min: 1e3, max: 2e3, 
+    palette: "0000FF, FFFFFF, FF0000"}, "height_OneYear", true, 1);
+  
+  Map.addLayer(heightReprj_OneYear, {min: 1e3, max: 2e3, 
+    palette: "0000FF, FFFFFF, FF0000"}, "heightReprj_OneYear", true, 1);
+  
+  // Map.addLayer(avgTLH, {min: 1e3, max: 2e3, 
+  //   palette: "0000FF, FFFFFF, FF0000"}, "avgTLH", true, 1);
+  
+  // Map.addLayer(ALOSelv, {min: 0, max: 2e3, 
+  //   palette: "0000FF, FFFFFF, FF0000"}, "ALOSelv", true, 1);
+  
+  // Map.addLayer(abs_V_dist, {min: 0, max: 1e3, 
+  //   palette: "FF0000, FFFFFF"}, "abs_V_dist", true, 1);
+  
+  // Map.addLayer(V_buffered, {palette: "00FFFF"}, "V_buffered", true, 1);
+  
+  // Map.addLayer(H_dist, {min: 0, max: 5e3, 
+  //   palette: "0000FF, FFFFFF"}, "H_dist", true, 1);
+  
+  // Map.addLayer(HV_buffered, {palette: "00FF00"}, "HV_buffered", true, 1);
+
+} else if (tif) {
+  
+  /* Output the TIF datasets in the AOI. */
+  
+  // Export.image.toDrive({
+  //   image: k3Binary, 
+  //   description: "k3Binary", 
+  //   folder: "OlympicMt_Total_TIF", 
+  //   region: AOI, 
+  //   // scale: raw_k3Binary.projection().nominalScale(), 
+  //   // crs: targetPrj.crs, 
+  //   scale: targetPrj.scale, 
+  //   crs: targetPrj.crs, 
+  //   maxPixels: 1e13, 
+  //   fileFormat: "GeoTIFF"
+  // });
+  
+  // Export.image.toDrive({
+  //   image: gmted, 
+  //   description: "gmted", 
+  //   folder: "OlympicMt_Total_TIF", 
+  //   region: AOI, 
+  //   // scale: chelsa_Scale, 
+  //   // crs: chelsa_CRS,
+  //   scale: targetPrj.scale, 
+  //   crs: targetPrj.crs, 
+  //   maxPixels: 1e13, 
+  //   fileFormat: "GeoTIFF"
+  // });
+  
+  // Export.image.toDrive({
+  //   image: chelsa_OneYear, 
+  //   description: "chelsa_OneYear_" + bandName, 
+  //   folder: "OlympicMt_Total_TIF", 
+  //   region: AOI, 
+  //   // scale: chelsa_Scale, 
+  //   // crs: chelsa_CRS,
+  //   scale: targetPrj.scale, 
+  //   crs: targetPrj.crs, 
+  //   maxPixels: 1e13, 
+  //   fileFormat: "GeoTIFF"
+  // });
+  
+  // Export.image.toDrive({
+  //   image: height_OneYear, 
+  //   description: "height_OneYear_" + bandName, 
+  //   folder: "OlympicMt_Total_TIF", 
+  //   region: AOI, 
+  //   // scale: chelsa_Scale, 
+  //   // crs: chelsa_CRS,
+  //   scale: targetPrj.scale, 
+  //   crs: targetPrj.crs, 
+  //   maxPixels: 1e13, 
+  //   fileFormat: "GeoTIFF"
+  // });
+  
+  // Export.image.toDrive({
+  //   image: heightReprj_OneYear, 
+  //   description: "heightReprj_OneYear_" + bandName, 
+  //   folder: "OlympicMt_Total_TIF", 
+  //   region: AOI, 
+  //   scale: targetPrj.scale, 
+  //   crs: targetPrj.crs, 
+  //   maxPixels: 1e13, 
+  //   fileFormat: "GeoTIFF"
+  // });
+  
+  // Export.image.toDrive({
+  //   image: avgTLH, 
+  //   description: "avgTLH", 
+  //   folder: "OlympicMt_Total_TIF", 
+  //   region: AOI, 
+  //   scale: targetPrj.scale, 
+  //   crs: targetPrj.crs, 
+  //   maxPixels: 1e13, 
+  //   fileFormat: "GeoTIFF"
+  // });
+  
+  // Export.image.toDrive({
+  //   image: ALOSelv, 
+  //   description: "ALOSelv", 
+  //   folder: "OlympicMt_Total_TIF", 
+  //   region: AOI, 
+  //   scale: targetPrj.scale, 
+  //   crs: targetPrj.crs, 
+  //   maxPixels: 1e13, 
+  //   fileFormat: "GeoTIFF"
+  // });
+  
+  // Export.image.toDrive({
+  //   image: abs_V_dist, 
+  //   description: "abs_V_dist", 
+  //   folder: "OlympicMt_Total_TIF", 
+  //   region: AOI, 
+  //   scale: targetPrj.scale, 
+  //   crs: targetPrj.crs, 
+  //   maxPixels: 1e13, 
+  //   fileFormat: "GeoTIFF"
+  // });
+  
+  // Export.image.toDrive({
+  //   image: V_buffered, 
+  //   description: "V_buffered", 
+  //   folder: "OlympicMt_Total_TIF", 
+  //   region: AOI, 
+  //   scale: targetPrj.scale, 
+  //   crs: targetPrj.crs, 
+  //   maxPixels: 1e13, 
+  //   fileFormat: "GeoTIFF"
+  // });
+  
+  // Export.image.toDrive({
+  //   image: H_dist, 
+  //   description: "H_dist", 
+  //   folder: "OlympicMt_Total_TIF", 
+  //   region: AOI, 
+  //   scale: targetPrj.scale, 
+  //   crs: targetPrj.crs, 
+  //   maxPixels: 1e13, 
+  //   fileFormat: "GeoTIFF"
+  // });
+  
+  Export.image.toDrive({
+    image: HV_buffered, 
+    description: "HV_buffered", 
+    folder: "OlympicMt_Total_TIF", 
+    region: AOI, 
+    scale: targetPrj.scale, 
+    crs: targetPrj.crs, 
+    maxPixels: 1e13, 
+    fileFormat: "GeoTIFF"
+  });
+  
+} else {
+  
+  /* Output the AOI. */
+  
+  var AOI_FC = ee.FeatureCollection(
+    ee.Feature(AOI));
+  
+  // print(AOI_FC);
+
+  Export.table.toDrive({
+    collection: AOI_FC, 
+    description: "OlympicMt_4_AOI", 
+    folder: "OlympicMt_4_AOI", 
+    fileFormat: "SHP"
+  });
+}
+

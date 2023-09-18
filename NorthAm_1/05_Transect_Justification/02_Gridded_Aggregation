@@ -1,0 +1,176 @@
+/**
+ * Introduction:
+ * 1) For a mountain range example, aggregate the values of slope aspect 
+ *  to a coarser gridded level.
+ * 
+ * Update: 8/6/2021.
+ * 
+ * Runtime: 2m ~ 7m.
+ */
+
+
+/* Load module(s). */
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+
+var IMG = require("users/ChenyangWei/Public:Modules/Image_Analysis&Processing");
+
+var VIS = require("users/ChenyangWei/Public:Modules/Visualization");
+
+
+/* Data preparation. */
+
+// Work directory.
+var wdGlobal = GATE.wd_Global;
+
+var wdNA = GATE.wd_NorthAmerica;
+
+// Target projection.
+var targetPrj = IMG.WGS84_30m;
+
+// Select a GMBA mountain range.
+var POI = ee.Geometry.Point([-113.71184487342835, 48.75823169971462]);
+
+var MtRg = ee.FeatureCollection(wdGlobal + "GMBA/"
+  + "Mountain_Inventory_v1_2-World")
+  .filterBounds(POI);
+
+MtRg = ee.Feature(MtRg.first()).geometry();
+// print(MtRg)
+
+// ALOS elevation (Version 3.2, released in January 2021) in the AOI.
+var ALOSelv = ee.ImageCollection('JAXA/ALOS/AW3D30/V3_2').select('DSM')
+  .filterBounds(MtRg)
+  .mosaic()
+  .reproject(targetPrj);
+
+var imgInfo = IMG.printImageInformation;
+
+
+/* Calculate and aggregate the slope aspect. */
+
+// Get the aspect (in degrees) within the mountain range.
+var aspect = ee.Terrain.aspect(ALOSelv)
+  .clip(MtRg);
+
+var aspect_1km = IMG.Image_Aggregation(aspect, 30, ee.Reducer.mean(), 1e3, "EPSG:4326");
+
+var aspect_5km = IMG.Image_Aggregation(aspect, 30, ee.Reducer.mean(), 5e3, "EPSG:4326");
+
+var aspect_10km = IMG.Image_Aggregation(aspect_5km, 5e3, ee.Reducer.mean(), 10e3, "EPSG:4326");
+// Use 5-km for the aggregation to avoid the "maxPixels" over 65536 (256^2).
+
+
+// Load the transect center lines without ID.
+var centerLines = ee.FeatureCollection(wdNA + "Transect_Analysis/"
+  + "TransectCenterLines_LowerClosedForests_UpperNonForested_30mSegmentedNewCATE")
+  .filterBounds(MtRg);
+
+function bufferCL(CL) {
+  return CL.buffer({
+    distance: 45
+  });
+}
+
+// Generate transects.
+var transects = centerLines.map(bufferCL);
+
+// Aggregate the transect level;
+var transectAspect = aspect.reduceRegions({
+  collection: transects, 
+  reducer: ee.Reducer.mean().setOutputs(["avgAspect"]), 
+  scale: 30, 
+  crs: "EPSG:4326"
+});
+
+// print(transectAspect.first())
+
+var empty = ee.Image().float();
+var fills = empty.paint({
+  featureCollection: transectAspect,
+  color: 'avgAspect',
+});
+
+// imgInfo("aspect:", aspect);
+
+// imgInfo("aspect_1km:", aspect_1km);
+
+// imgInfo("aspect_5km:", aspect_5km);
+
+// imgInfo("aspect_10km:", aspect_10km);
+
+Map.setOptions("satellite");
+Map.centerObject(POI, 8);
+
+Map.addLayer(ALOSelv, 
+  {min: 1500, max: 3000, palette: VIS.Elevation_palette},
+  "Elevation", false);
+
+Map.addLayer(aspect, 
+  {min: 0, max: 360, palette: "0000FF, FFFFFF, FF0000"},
+  "Aspect - 30m");
+
+Map.addLayer(aspect_1km, 
+  {min: 0, max: 360, palette: "0000FF, FFFFFF, FF0000"},
+  "Aspect - 1km");
+
+Map.addLayer(aspect_5km, 
+  {min: 0, max: 360, palette: "0000FF, FFFFFF, FF0000"},
+  "Aspect - 5km");
+
+Map.addLayer(aspect_10km, 
+  {min: 0, max: 360, palette: "0000FF, FFFFFF, FF0000"},
+  "Aspect - 10km");
+
+Map.addLayer(MtRg, {color: "FFFFFF"},
+  "Mountain Range");
+
+Map.addLayer(fills, {min: 0, max: 360, palette: "0000FF, FFFFFF, FF0000"}, 'transect aspect');
+
+// /* Export the result. */
+
+// var ROI = MtRg.bounds().buffer(10e3);
+
+// Export.image.toDrive({
+//   image: aspect, 
+//   description: "aspect_30m", 
+//   folder: "Transect_Justification",
+//   region: ROI, 
+//   scale: 30, 
+//   crs: "EPSG:4326", 
+//   maxPixels: 1e13, 
+//   fileFormat: "GeoTIFF"
+// });
+
+// Export.image.toDrive({
+//   image: aspect_1km, 
+//   description: "aspect_1km", 
+//   folder: "Transect_Justification",
+//   region: ROI, 
+//   scale: 1e3, 
+//   crs: "EPSG:4326", 
+//   maxPixels: 1e13, 
+//   fileFormat: "GeoTIFF"
+// });
+
+// Export.image.toDrive({
+//   image: aspect_5km, 
+//   description: "aspect_5km", 
+//   folder: "Transect_Justification",
+//   region: ROI, 
+//   scale: 5e3, 
+//   crs: "EPSG:4326", 
+//   maxPixels: 1e13, 
+//   fileFormat: "GeoTIFF"
+// });
+
+// Export.image.toDrive({
+//   image: aspect_10km, 
+//   description: "aspect_10km", 
+//   folder: "Transect_Justification",
+//   region: ROI, 
+//   scale: 10e3, 
+//   crs: "EPSG:4326", 
+//   maxPixels: 1e13, 
+//   fileFormat: "GeoTIFF"
+// });
+

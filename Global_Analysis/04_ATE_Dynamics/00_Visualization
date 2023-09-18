@@ -1,0 +1,180 @@
+/**
+ * Introduction:
+ * 
+ *  1) Visualize transects with the temporal analysis 
+ *    result of ATE elevation.
+ * 
+ *  2) Display the meta-analysis data published by 
+ *    Lu et al. (2020).
+ * 
+ * Updated: 6/8/2023.
+ * 
+ * Runtime: N/A.
+ */
+
+
+/* Load module(s). */
+
+var GATE = require("users/ChenyangWei/Public:Modules/Treeline/Global_ATE.js");
+var FC_AP = require("users/ChenyangWei/Public:Modules/General/FeatureCollection_Analysis&Processing.js");
+var VIS = require("users/ChenyangWei/Public:Modules/General/Visualization.js");
+var ATEI_EA = require("users/ChenyangWei/Public:Modules/Treeline/ATEI_Estimation&Analysis.js");
+
+
+/* Object definition. */
+
+// Create a list of the working directories.
+var WDs_List = ATEI_EA.WDs_AllContinents_List;
+
+var contID = 5;
+
+
+/* Function definition. */
+
+// Define a function to load the annual ATEIs in 
+//  the new CATE of each continent.
+var Read_AnnualATEIs = function(wd_Cont) {
+  var annualATEIs_Cont = ee.Image(wd_Cont
+    + "ATEI_Estimation/" 
+    + "annualATEIs_1985to2020_NewCATE");
+  
+  return annualATEIs_Cont;
+};
+
+
+/* Dataset loading. */
+
+// Load global transects.
+var global_Transects = ee.FeatureCollection(
+  GATE.wd_Global + "ATE_Dynamics/"
+    + "Global_PreprocessedTransects_ATEelevationTrend"
+);
+
+// Load the meta-analysis data.
+var validation = ee.FeatureCollection(
+  GATE.wd_Global 
+  + "ATEI_Validation/2020Lu_MetaAnalysis/" 
+  + "Raw_DataPoint"
+);
+
+var buffered = ee.FeatureCollection(
+  GATE.wd_Global 
+  + "ATEI_Validation/2020Lu_MetaAnalysis/" 
+  + "ATEelevation_3yearMedian_5kmBuffered"
+);
+
+FC_AP.Print_FtrColInfo(
+  "validation:",
+  validation
+);
+
+
+/* Load the annual ATEIs during 1985-2020
+  in the new CATE by continent. */
+
+var annualATEIs_Raw;
+
+if (contID === 5) {
+  
+  /* Asia. */
+  
+  // Load the annual ATEIs.
+  annualATEIs_Raw = Read_AnnualATEIs(GATE.wd_Asia_2);
+
+} else if (contID === 4) {
+  
+  /* Europe. */
+  
+  // Load the annual ATEIs.
+  annualATEIs_Raw = Read_AnnualATEIs(GATE.wd_Europe_2);
+
+} else {
+  
+  /* Other continents. */
+  
+  // Load the annual ATEIs.
+  annualATEIs_Raw = Read_AnnualATEIs(contWD);
+}
+
+
+/* Observation number filtering. */
+
+var obsNum_Thres = 20;
+
+var obsNum_Filter = ee.Filter.gte(
+  "ATEelv_Num",
+  obsNum_Thres
+);
+
+// Filtered the global transects.
+var filtered_Transects = global_Transects
+  .filter(obsNum_Filter);
+
+// Compare the two types of transects.
+FC_AP.Print_FtrColInfo(
+  "global_Transects:",
+  global_Transects
+); // Size: 798066.
+
+FC_AP.Print_FtrColInfo(
+  "filtered_Transects:",
+  filtered_Transects
+); // Size: 494750.
+
+var display = true;
+
+if (display) {
+  
+  /* Visualize the transects. */
+  
+  var filteredTransects_Painted = 
+    VIS.paintFtrCol_FillANDEdge(
+      filtered_Transects,
+      "ATEelv_Trd",
+      1
+    );
+  
+  Map.setOptions("Satellite");
+  
+  
+  var ATEI_name = "ATEI_2010";
+  
+  Map.addLayer(annualATEIs_Raw.select(ATEI_name),
+    {min: 0, max: 1, 
+    palette: "0000ff, ffffff, ff0000"},
+    ATEI_name
+  );
+  
+  Map.addLayer(global_Transects,
+    {color: "0000ff"},
+    "global_Transects"
+  );
+  
+  Map.addLayer(filtered_Transects,
+    {color: "ffff00"},
+    "filtered_Transects"
+  );
+  
+  Map.addLayer(filteredTransects_Painted,
+    {min: -1, max: 1, 
+    palette: "0000ff, ffffff, ff0000"},
+    "filteredTransects_Painted"
+  );
+  
+  Map.addLayer(validation
+    .filter(ee.Filter.gte(
+      "Number",
+      120)),
+    {color: "ff0000"},
+    "test"
+  );
+  
+  Map.addLayer(validation.map(function(ftr) {
+    return ftr.buffer(5e3)
+  }),
+    {color: "00ffff"},
+    "validation"
+  );
+  
+}
+

@@ -1,0 +1,129 @@
+/*
+  Introduction:
+  1) To calculate elevation percentiles of the extracted forested areas
+    within each mountain range.
+    
+  Date: 6/5/2020.
+
+  Launch time: 6m.
+*/
+
+
+/* Load datasets. */
+
+// Define the extent of North America. 
+var northAmerica = ee.Geometry.Polygon({
+    coords: [[[-165.69002926658334, 72.44551256468144],
+          [-169.40248634956492, 65.69009098298687],
+          [-172.25893166206492, 63.826281515474996],
+          [171.35638590722195, 52.855285271231274],
+          [-159.1340353549648, 17.264443722753843],
+          [-122.14862062448367, 9.59539750905343],
+          [-79.06711256993691, 6.243890041056693],
+          [-77.03677448989225, 7.40316087095261],
+          [-76.78408894301725, 8.990725120234067],
+          [-75.7244458156751, 12.403191738791786],
+          [-71.5276684719251, 13.751533985801833],
+          [-62.8264965969251, 11.651035844929385],
+          [-62.005942990095036, 9.999896817210585],
+          [-60.791953732282536, 9.96743692413247],
+          [-55.5884807162513, 13.889226127218825],
+          [-47.99315852039507, 58.68729606716915],
+          [-66.52860968724042, 71.51769835770313],
+          [-77.86650031224042, 74.25356562488685],
+          [-89.90751593724042, 74.22969620284344],
+          [-106.04844453284761, 74.3012200035139],
+          [-114.63975312659761, 74.20581277506923],
+          [-120.18954789130242, 74.88484689543225],
+          [-136.27353226630242, 74.6772015427699]]],
+    geodesic: true
+});
+
+// Asset paths.
+var wdGlobal = "users/treeline/Global/";
+var wdNorthA = "users/treeline/North_America/CATE/";
+
+// Copernicus land cover forests.
+var forests = ee.Image(wdNorthA + 
+  "CopernicusLandCover_100mAllForests_2015_GMBAv12");
+
+// ALOS elevation.
+var elv = ee.Image('JAXA/ALOS/AW3D30/V2_2').select('AVE_DSM');
+
+var elvPrj = elv.projection();
+var elvCrs = elvPrj.crs().getInfo();
+var elvScale = elvPrj.nominalScale().getInfo();
+
+print("Elevation projection:", elvCrs, elvScale);
+
+// GMBA mountain inventory.  
+var gmba = ee.FeatureCollection(wdGlobal +
+  "GMBA/Mountain_Inventory_v1_2-World");
+  
+// Select mountain ranges within the study domain.
+gmba = gmba.filterBounds(northAmerica);
+
+// gmba = gmba.limit(10)
+
+
+/* Extract elevation percentiles. */
+
+//// Define an unweighted percentile reducer.
+
+// By default, reducers applied to imagery weight the inputs according to the mask value. 
+// This is relevant in the context of fractional pixels created through operations such as clip().
+// Adjust this behavior by calling unweighted() on the reducer. 
+// Using an unweighted reducer forces all pixels in the region to have the same weight of one. 
+var pctRd = ee.Reducer.percentile({
+  percentiles: [50, 60, 70, 80, 90]
+}).unweighted();
+
+// Extract forest elevation.
+var forestElv = elv.updateMask(forests);
+
+// Calculate percentiles of forest elevation in each mountain range.
+var forestElvPcts = forestElv.reduceRegions({
+  collection: gmba, 
+  reducer: pctRd, 
+  scale: elvScale, 
+  crs: elvCrs
+});
+
+// Remove mountain ranges with no extracted forest elevation.
+forestElvPcts = forestElvPcts.filter(ee.Filter.neq("p50", null));
+
+// print(forestElvPcts.size(), forestElvPcts.first()) 
+
+
+/* Output the mountain ranges with calculated elevation perecentiles. */
+if (true) {
+  var fileName = "CopernicusLC_allForests_ElvPcts_ALOSv22_GMBAv12";
+
+  Export.table.toAsset({
+    collection: forestElvPcts, 
+    description: fileName, 
+    assetId: wdNorthA + 
+      fileName
+  });
+}
+
+
+/* Visualization. */
+else if (true) {
+  var elevationVis = {
+    min: 0.0,
+    max: 4000.0,
+    palette: ['0000ff', '00ffff', 'ffff00', 'ff0000', 'ffffff'],
+  };
+  
+  Map.setOptions("hybrid");
+  
+  Map.setCenter(-126.346, 56.8585, 7);
+  // Map.centerObject(gmba, 6);
+  
+  Map.addLayer(gmba, {color: "FFFFFF"}, "GMBA mountain ranges");
+  
+  Map.addLayer(forestElv, elevationVis, 
+    'Extracted Forest Elevation', true);
+}
+

@@ -1,0 +1,162 @@
+/* 
+  Introduction: 
+  1) To downscale the climatically estimated treeline elevation (V1.2 CHELSA TLH dataset)
+    to the 30-m scale.
+  
+  2) Mask the average treeline elevation dataset with the Global Mountain Explorer K3 mountain ranges.
+  
+  Date: 7/11/2020.
+  
+  Launch time: 4h.
+*/
+
+
+/* Setup. */
+
+// Set the working directory.
+var wdGlobal = "users/treeline/Global/";
+var wdNorthA = "users/treeline/NorthAmerica_GME/CATE/";
+var wdGME = wdGlobal + "Global_Mountain_Explorer/";
+
+// GME K3 Binary dataset.  
+var k3Binary = ee.Image(wdGME +
+  "k3binary");
+
+// Load the Chelsa climatically estimated treeline elevation dataset.
+var chelsa_tlh = ee.Image(wdGlobal + "Global_CHELSA_TLH_V1_2/" +
+  "Stacked_CHELSA_v12_TLH_1979to2013_10000pixels_NAinterpolated_Predictor2_Zlevel9_DeflateCompressed");
+
+print('CHELSA TLH:', chelsa_tlh.bandTypes());
+
+// Read the 30-arcsec GMTED (Global Multi-resolution Terrain Elevation Data) dataset.
+var gmted = ee.Image(wdGlobal + "GMTED/GMTED2010_30arcsec");
+
+// ALOS elevation (V 2.2).
+var ALOSelv = ee.Image('JAXA/ALOS/AW3D30/V2_2').select('AVE_DSM');
+
+// Create a mask using the Hansen dataset (V 1.7) to define the area of land surface.
+var land = ee.Image('UMD/hansen/global_forest_change_2019_v1_7') // The newest version of the Hansen dataset.
+            .select('datamask')
+            .eq(1); // Select the "mapped land surface" in the Hansen dataset.
+
+
+/* Obtain useful information for outputing the final result. */
+
+// Get the projection information of the elevation data.
+var elvPrj = ALOSelv.projection();
+var elvCRS = elvPrj.crs();
+var elvScale = elvPrj.nominalScale();
+print("ALOS projection:", elvCRS, elvScale);
+
+// Define the extent of North America. 
+var northAmerica = ee.Geometry.Polygon({
+    coords: [[[-165.69002926658334, 72.44551256468144],
+          [-169.40248634956492, 65.69009098298687],
+          [-172.25893166206492, 63.826281515474996],
+          [171.35638590722195, 52.855285271231274],
+          [-159.1340353549648, 17.264443722753843],
+          [-122.14862062448367, 9.59539750905343],
+          [-79.06711256993691, 6.243890041056693],
+          [-77.03677448989225, 7.40316087095261],
+          [-76.78408894301725, 8.990725120234067],
+          [-75.7244458156751, 12.403191738791786],
+          [-71.5276684719251, 13.751533985801833],
+          [-62.8264965969251, 11.651035844929385],
+          [-62.005942990095036, 9.999896817210585],
+          [-60.791953732282536, 9.96743692413247],
+          [-55.5884807162513, 13.889226127218825],
+          [-47.99315852039507, 58.68729606716915],
+          [-66.52860968724042, 71.51769835770313],
+          [-77.86650031224042, 74.25356562488685],
+          [-89.90751593724042, 74.22969620284344],
+          [-106.04844453284761, 74.3012200035139],
+          [-114.63975312659761, 74.20581277506923],
+          [-120.18954789130242, 74.88484689543225],
+          [-136.27353226630242, 74.6772015427699]]],
+    geodesic: true
+});
+
+
+/* Tempora average climatic treeline elevation. */
+
+// Calculate the temporal average CHELSA treeline elevation from 1979 to 2013 
+// at 1-arcsecond level.
+var avgTLH = ee.ImageCollection(
+  chelsa_tlh.bandNames().map(function(b){
+    // Select the annual Chelsa treeline dataset.
+    var tlh = chelsa_tlh.select([b]);
+    
+    // Mask the GMTED elevation dataset overlapped with the annual Chelsa treeline data.
+    var gmtedElv = gmted.updateMask(tlh.gte(-1e18)); 
+    
+    // Calculate the absolute treeline height at 30 arcsec.
+    var height = tlh.add(gmtedElv);
+    
+    // Downscale the absolute treeline height 
+    // from 30 arcsec to 1 arcsec (the resolution of the elevation dataset)
+    // by using "bilinear" resampling algorithm.
+    var heightReprj = height.resample("bilinear")
+      .reproject({ 
+        crs: elvCRS,
+        scale: elvScale,
+      });
+    
+    // Rename the reprojected treeline elevation.
+    return heightReprj.rename("TLH");
+  })
+).mean(); // Calculate the temporal average elevation.
+
+// Determine the average treeline elevation within the "mapped land surface" of the Hansen dataset 
+// and the GME K3 mountain ranges.
+avgTLH = avgTLH.updateMask(land)
+  .updateMask(k3Binary)
+  .float(); // Reduce the size of the dataset.
+
+print("avgTLH:", avgTLH.bandTypes());
+
+
+/* Visualization. */
+
+if (false) {
+  // Set parameters.
+  var elv_palette =
+    "725428, 7c8d4c, b5ba61, e5d9c2, b6e3db, ffffff";
+    
+  var visELV = {min: 0, max: 5e3, palette: elv_palette, opacity: 1};
+  
+  // Map the results.
+  Map.setOptions("hybrid");
+  
+  Map.setCenter(-113.629, 48.6684, 9); // Glacier National Park.
+  // Map.setCenter(-67.4451, -55.7145, 9); // South end of South America.
+  
+  Map.addLayer(northAmerica, 
+    {color: "ffffff", opacity: 0.3}, "Study Domain", false);
+  
+  Map.addLayer(k3Binary, 
+    {palette: "0000FF"}, "K3 Binary", true);
+  
+  Map.addLayer(chelsa_tlh.select("b1"), visELV, "Original TLH", false);
+  
+  Map.addLayer(avgTLH, visELV, "Average TLH", false);
+}
+
+
+/* Export the result. */
+
+else if (true) {
+  var fileName = 
+    "avgTLH_1979to2013_1arcsec_mtRgLand_CHELSAv12_ALOSv22_GMEk3Binary_HansenV17";
+ 
+  Export.image.toAsset({
+    image: avgTLH,
+    description: fileName, 
+    assetId: wdNorthA +
+      fileName, 
+    crs: elvCRS.getInfo(),
+    scale: elvScale.getInfo(),
+    region: northAmerica,
+    maxPixels: 1e13
+  }); 
+}
+

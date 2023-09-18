@@ -1,0 +1,141 @@
+/**
+ * Introduction: 
+ * 1) Downgrade the focal elevations to the 30-m level.
+ * 2) Examine the new CATE.
+ * 
+ * Date: 6/21/2020.
+ */
+
+/* Setup. */
+
+// Define the extent of North America. 
+var northAmerica = ee.Geometry.Polygon({
+    coords: [[[-165.69002926658334, 72.44551256468144],
+          [-169.40248634956492, 65.69009098298687],
+          [-172.25893166206492, 63.826281515474996],
+          [171.35638590722195, 52.855285271231274],
+          [-159.1340353549648, 17.264443722753843],
+          [-122.14862062448367, 9.59539750905343],
+          [-79.06711256993691, 6.243890041056693],
+          [-77.03677448989225, 7.40316087095261],
+          [-76.78408894301725, 8.990725120234067],
+          [-75.7244458156751, 12.403191738791786],
+          [-71.5276684719251, 13.751533985801833],
+          [-62.8264965969251, 11.651035844929385],
+          [-62.005942990095036, 9.999896817210585],
+          [-60.791953732282536, 9.96743692413247],
+          [-55.5884807162513, 13.889226127218825],
+          [-47.99315852039507, 58.68729606716915],
+          [-66.52860968724042, 71.51769835770313],
+          [-77.86650031224042, 74.25356562488685],
+          [-89.90751593724042, 74.22969620284344],
+          [-106.04844453284761, 74.3012200035139],
+          [-114.63975312659761, 74.20581277506923],
+          [-120.18954789130242, 74.88484689543225],
+          [-136.27353226630242, 74.6772015427699]]],
+    geodesic: true
+});
+
+// Asset paths.
+var wdNorthA = "users/treeline/North_America/CATE/";
+var wd500m = wdNorthA + "AbsTLHdist_Lte500m/"; // 500-m CATE.
+var wd100m = wdNorthA + "AbsTLHdist_Lte100m/"; // 100-m CATE.
+
+// Load the focal elevation data.
+var focalElv500m = ee.Image(wd500m + 
+  "500mCATE_3kmBuffer_10kmCATEforElv_focalDiff"); // 500-m CATE.
+var focalElv100m = ee.Image(wd100m + 
+  "100mCATE_3kmBuffer_10kmFocalAvgElvDiff"); // 100-m CATE.
+
+print("Focal elevations:", focalElv500m.bandTypes(), 
+  focalElv100m.bandTypes());
+  
+// Load the CATEs.
+var CATEelv100m = ee.Image(wd100m + 
+  "100mCATE_30mCATEelv"); // 100-m CATE.
+
+var CATEelv500m = ee.Image(wd500m + 
+  "500mCATE_30mElv"); // 500-m CATE.
+
+// Load the average climatic treeline elevation.
+var avgTLH = ee.Image(wdNorthA +
+  "avgTLH_1979to2013_1arcsec_mtRgLand_CHELSAv12_ALOSv22_GMBAv12_HansenV17");
+
+// Study domain.
+var studyDomain = avgTLH.gte(-1e18);
+
+// ALOS elevation.
+var ALOSelv = ee.Image('JAXA/ALOS/AW3D30/V2_2').select('AVE_DSM')
+  .updateMask(studyDomain); // Within the study domain.
+
+var elvPrj = ALOSelv.projection();
+var elvCRS = elvPrj.crs().getInfo();
+var elvScale = elvPrj.nominalScale().getInfo();
+print("ALOS projection:", elvCRS, elvScale);
+
+
+/* Downgrade the focal elevation to the 30-m level. */
+
+// Determine the threshold of the absolute elevation difference.
+var diffThres = 20;
+
+function downgradeElv(focalElv, bandName) {
+  var absElvDiff = ALOSelv.subtract(focalElv.select(bandName)).abs();
+  var downgraded = absElvDiff.lte(diffThres).selfMask();
+  
+  return downgraded;
+}
+
+if (false) {
+  /* 100-m CATE. */
+  
+  var elvPalette = ['006600', '002200', 'fff700', 'ab7634', 'c4d0ff', 'ffffff'];
+  var elvVis = {min: 1000, max: 3500, palette: elvPalette};
+  
+  Map.setOptions("hybrid");
+  
+  Map.setCenter(-113.655, 48.734, 12);
+  
+  Map.addLayer(CATEelv100m.gte(-1e18).selfMask(), 
+    {palette: "808080"}, "100mCATE", true);
+    
+  Map.addLayer(downgradeElv(focalElv100m, "cldForElv_p75_p75_mean"), 
+    {palette: "00FF00"}, "cldForElv_p75_p75_mean", true);
+    
+  Map.addLayer(downgradeElv(focalElv100m, "cldForElv_p90_p90_mean"), 
+    {palette: "0000FF"}, "cldForElv_p90_p90_mean", true);
+  
+  Map.addLayer(downgradeElv(focalElv100m, "cldForElv_p95_p95_mean"), 
+    {palette: "FFFF00"}, "cldForElv_p95_p95_mean", true);
+  
+  Map.addLayer(downgradeElv(focalElv100m, "cldForElv_p100_p100_mean"), 
+    {palette: "00FFFF"}, "cldForElv_p100_p100_mean", true);
+  
+  Map.addLayer(downgradeElv(focalElv100m, "CATEelv_mean"), 
+    {palette: "FF0000"}, "CATEelv_mean", true);
+}  
+else {
+  /* 500-m CATE. */
+  
+  var elvPalette = ['006600', '002200', 'fff700', 'ab7634', 'c4d0ff', 'ffffff'];
+  var elvVis = {min: 1000, max: 3500, palette: elvPalette};
+  
+  Map.setOptions("hybrid");
+  
+  Map.setCenter(-113.655, 48.734, 12);
+  
+  Map.addLayer(CATEelv500m.gte(-1e18).selfMask(), 
+    {palette: "808080"}, "500mCATE", true);
+    
+  Map.addLayer(downgradeElv(focalElv500m, "cldForElv_p90_p90_mean"), 
+    {palette: "0000FF"}, "cldForElv_p90_p90_mean", true);
+  
+  Map.addLayer(downgradeElv(focalElv500m, "cldForElv_p95_p95_mean"), 
+    {palette: "FFFF00"}, "cldForElv_p95_p95_mean", true);
+  
+  Map.addLayer(downgradeElv(focalElv500m, "cldForElv_mean"), 
+    {palette: "00FFFF"}, "cldForElv_p100_p100_mean", true);
+  
+  Map.addLayer(downgradeElv(focalElv100m, "CATEelv_mean"), 
+    {palette: "FF0000"}, "CATEelv_mean", true);
+}

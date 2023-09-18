@@ -1,0 +1,201 @@
+/**
+ * Introduction:
+ * 1) Segment the CATE at the 30-m level based on the distance to mountain ridges in the ALOS landforms dataset.
+ * 2) Vectorize the segmented CATE.
+ * 3) Extract the minimum and maximum elevations within each vectorized polygon.
+ * 4) Select polygons with both elevational extreme values.
+ * 5) Generate and buffer an elevational transect from the highest pixel to the lowest pixel within each selected polygon.
+ * 
+ * Date: 6/29/2020.
+ * 
+ * Notes: 
+ * 1) The stripes with no data in the ALOS landforms product can cause some problematic large segmented areas.
+ * 2) The Rocky (#19) and Coast (#136) mountain ranges are too large to process at one time, 
+ *  so they are dissolved into smaller mountain ranges in QGIS beforehand.
+ */
+
+
+/* Setup. */
+
+// Define the extent of North America. 
+var northAmerica = ee.Geometry.Polygon({
+    coords: [[[-165.69002926658334, 72.44551256468144],
+          [-169.40248634956492, 65.69009098298687],
+          [-172.25893166206492, 63.826281515474996],
+          [171.35638590722195, 52.855285271231274],
+          [-159.1340353549648, 17.264443722753843],
+          [-122.14862062448367, 9.59539750905343],
+          [-79.06711256993691, 6.243890041056693],
+          [-77.03677448989225, 7.40316087095261],
+          [-76.78408894301725, 8.990725120234067],
+          [-75.7244458156751, 12.403191738791786],
+          [-71.5276684719251, 13.751533985801833],
+          [-62.8264965969251, 11.651035844929385],
+          [-62.005942990095036, 9.999896817210585],
+          [-60.791953732282536, 9.96743692413247],
+          [-55.5884807162513, 13.889226127218825],
+          [-47.99315852039507, 58.68729606716915],
+          [-66.52860968724042, 71.51769835770313],
+          [-77.86650031224042, 74.25356562488685],
+          [-89.90751593724042, 74.22969620284344],
+          [-106.04844453284761, 74.3012200035139],
+          [-114.63975312659761, 74.20581277506923],
+          [-120.18954789130242, 74.88484689543225],
+          [-136.27353226630242, 74.6772015427699]]],
+    geodesic: true
+});
+
+// Asset path.
+var wdGlobal = "users/treeline/Global/";
+var wdNorthA = "users/treeline/North_America/";
+var wd500m = "users/treeline/North_America/CATE/500mCATE/"; // 500-m CATE.
+var wdDissolved = wdGlobal + "Transects_GMBA_Lte60NS/VectorizedSegmented_StudyDomain/FailedMtRgs_3rdRound/";
+
+// GMBA mountain inventory.  
+var GMBA = ee.FeatureCollection(wdGlobal +
+  "GMBA/Mountain_Inventory_v1_2-World");
+
+// Import the dissolved mountain ranges of the Rocky (#19) and Coast (#136) ranges.
+var Coast_1 = ee.FeatureCollection(wdDissolved + "Coast_1");
+var Coast_2 = ee.FeatureCollection(wdDissolved + "Coast_2");
+var Coast_3 = ee.FeatureCollection(wdDissolved + "Coast_3");
+var Coast_4 = ee.FeatureCollection(wdDissolved + "Coast_4");
+var Coast_5 = ee.FeatureCollection(wdDissolved + "Coast_5");
+var Rocky_1 = ee.FeatureCollection(wdDissolved + "Rocky_1");
+var Rocky_2 = ee.FeatureCollection(wdDissolved + "Rocky_2");
+var Rocky_3 = ee.FeatureCollection(wdDissolved + "Rocky_3");
+var Rocky_4 = ee.FeatureCollection(wdDissolved + "Rocky_4");
+
+// Combine all the dissolved mountain ranges.
+var dissolvedMtRg = Coast_1.merge(Coast_2).merge(Coast_3).merge(Coast_4).merge(Coast_5)
+  .merge(Rocky_1).merge(Rocky_2).merge(Rocky_3).merge(Rocky_4);
+
+print("dissolvedMtRg:", dissolvedMtRg)
+
+// ALOS elevation (V2.2).
+var ALOSelv_V22 = ee.Image('JAXA/ALOS/AW3D30/V2_2').select('AVE_DSM');
+
+// Load the raw CATE.
+var rawCATE = ee.Image(wd500m + "3kmBuf500mCATE_gte10kmSmdClsdFrstElvMean_10kmBufClsdFrst");
+
+// CATE projection.
+var CATEprj = rawCATE.projection();
+var CATEcrs = CATEprj.crs();
+var CATEscale = CATEprj.nominalScale();
+
+print("rawCATE projection:", CATEcrs, CATEscale)
+
+// ALOS landforms: It is based on the 30m "AVE" band of JAXA's ALOS DEM (available in EE as JAXA/ALOS/AW3D30_V1_1).
+var landforms = ee.Image('CSP/ERGo/1_0/Global/ALOS_landforms').select('constant'); // With missing values (gaps).
+
+var ALOSv11 = ee.Image("JAXA/ALOS/AW3D30_V1_1").select("AVE");
+
+
+/* Select the landform of mountain ridge: peak/ridge (warm/normal/cool) and mountain/divide. */
+
+// CATE with the landform information (remove missing values, based on the ALOS V1.1 DEM).
+var CATElandforms = rawCATE.updateMask(ALOSv11).rename("CATElandforms");
+
+// No cliff (15), because its shape is normally irregular and 
+// its distribution is more random than peak/ridge and mountain/divide.
+var ridge = landforms.lte(14);
+
+// Ridge pixels within the CATE.
+var CATEridge = CATElandforms.updateMask(ridge).rename("CATEridge");
+
+// Non-ridge pixels within the CATE.
+var CATEnonRidge = CATElandforms.updateMask(ridge.not()).rename("CATEnonRidge");
+
+// print("CATEridge projection:", 
+//   CATEridge.projection().crs(), 
+//   CATEridge.projection().nominalScale())
+
+
+/* Caculate the distance to ridge pixels in the CATE. */
+
+// The reason of choosing ridge pixels:
+// 1) They are mostly at the center of local study area and surrounded by valley pixels. 
+// 2) The shape of ridge is more regular than the valley.
+var ridgeDist = CATEridge.fastDistanceTransform({
+  neighborhood: 1000,
+  units: "pixels",
+  metric: "squared_euclidean" // Get the distance in squared pixels.
+})// Request the data at the scale and projection of the CATE.
+  .reproject({
+    crs: CATEcrs,
+    scale: CATEscale
+  });
+
+
+/* Segment the study area based on the distance to ridge pixels. */
+
+// Define a Laplacian, or isotropic-edge-detection kernel.
+var laplacian = ee.Kernel.laplacian8({ 
+  normalize: false 
+});
+
+// Apply the Laplacian edge-detection kernel 
+// to detect the boundary of distance.
+var edgy = ridgeDist.convolve(laplacian)
+  .reproject({
+    crs: CATEcrs,
+    scale: CATEscale
+  });
+
+// Segment the study domain based on the distance boundary.
+var segmented = edgy.gt(0).selfMask()
+  .rename("Segmented");
+
+// Remove mountain ridges from the segmentation result.
+var ridgeRemoved = segmented.updateMask(CATEnonRidge)
+  .reproject({
+    crs: CATEcrs,
+    scale: CATEscale
+  });
+
+print("ridgeRemoved:",
+  ridgeRemoved.bandTypes(),
+  ridgeRemoved.projection().crs(), 
+  ridgeRemoved.projection().nominalScale());
+
+
+/* Load datasets for generating elevational transects */
+
+/* Output the segmented study domain. */
+
+if (false) {
+  var fileName = "30mSegmentedCATE_distToRidgesNoCliff_NAlandformsRemoved_ridgeRemoved"; 
+  
+  Export.image.toAsset({
+    image: ridgeRemoved, 
+    description: fileName, 
+    assetId: wdNorthA + "Transects/" + fileName,
+    region: northAmerica, 
+    crs: CATEcrs.getInfo(),
+    scale: CATEscale.getInfo(),
+    maxPixels: 1e13
+  });
+}
+
+
+/* Visualization. */
+
+else {
+  // Map.setCenter(-113.7571, 48.829, 12);
+  Map.setCenter(-132.7445, 61.332, 12); // Missing landforms.
+  Map.setOptions("hybrid");
+  
+  Map.addLayer(dissolvedMtRg, {color: "00FF00"}, "dissolvedMtRg", true);
+  
+  Map.addLayer(rawCATE, {palette: "0000FF"}, "rawCATE", false);
+  Map.addLayer(CATElandforms, {palette: "FFFF00"}, "CATElandforms", false);
+  
+  // Map.addLayer(ridgeDist, {}, "ridgeDist", false);
+  // Map.addLayer(edgy, {}, "edgy", false);
+  Map.addLayer(segmented, {palette: "0000FF"}, "segmented", true);
+  Map.addLayer(ridgeRemoved, {palette: "FFFF00"}, "ridgeRemoved", true);
+  
+  Map.addLayer(ridge.selfMask(), {palette: "00FFFF"}, "ridge", false);
+  Map.addLayer(CATEridge, {palette: "FF0000"}, "CATEridge", true);
+}
+

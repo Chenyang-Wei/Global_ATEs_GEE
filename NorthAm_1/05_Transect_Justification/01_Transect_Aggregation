@@ -1,0 +1,103 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var POI = /* color: #d63000 */ee.Geometry.Point([-113.71184487342835, 48.75823169971462]);
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+/**
+ * Introduction:
+ * 1) For a mountain range example, aggregate the values of slope aspect 
+ *  to the transect and mountain range levels.
+ * 
+ * Update: 8/6/2021.
+ * 
+ * Runtime: 57s ~ 5m.
+ */
+
+
+/* Load module(s). */
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+
+var IMG = require("users/ChenyangWei/Public:Modules/Image_Analysis&Processing");
+
+
+/* Data preparation. */
+
+// Work directory.
+var wdGlobal = GATE.wd_Global;
+
+var wdNA = GATE.wd_NorthAmerica;
+
+// Target projection.
+var targetPrj = IMG.WGS84_30m;
+
+// GMBA mountain ranges.
+var MtRg = ee.FeatureCollection(wdGlobal + "GMBA/"
+  + "Mountain_Inventory_v1_2-World")
+  .filterBounds(POI);
+
+MtRg = ee.Feature(MtRg.first()).geometry();
+// print(MtRg)
+
+// ALOS elevation (Version 3.2, released in January 2021) in the AOI.
+var ALOSelv = ee.ImageCollection('JAXA/ALOS/AW3D30/V3_2').select('DSM')
+  .filterBounds(MtRg)
+  .mosaic()
+  .reproject(targetPrj);
+
+// Load the transect center lines without ID.
+var centerLines = ee.FeatureCollection(wdNA + "Transect_Analysis/"
+  + "TransectCenterLines_LowerClosedForests_UpperNonForested_30mSegmentedNewCATE")
+  .filterBounds(MtRg);
+
+function bufferCL(CL) {
+  return CL.buffer({
+    distance: 45
+  });
+}
+
+var printImgInfo = IMG.printImageInformation;
+
+
+/* Calculate and aggregate the slope aspect. */
+
+// Generate transects.
+var transects = centerLines.map(bufferCL);
+
+// Get the aspect (in degrees) within the mountain range.
+var aspect = ee.Terrain.aspect(ALOSelv)
+  .clip(MtRg);
+
+// Aggregate the transect level;
+var transectAspect = aspect.reduceRegions({
+  collection: transects, 
+  reducer: ee.Reducer.mean().setOutputs(["avgAspect"]), 
+  scale: 30, 
+  crs: "EPSG:4326"
+});
+
+// print(transectAspect.first())
+
+// Map.addLayer(ALOSelv, {min: 1500, max: 3000, palette: "0000FF, FFFFFF, FF0000"})
+// Map.addLayer(aspect, {min: 0, max: 360, palette: "0000FF, FFFFFF, FF0000"})
+// Map.addLayer(MtRg, {color: "FFFFFF"})
+// Map.addLayer(transects)
+
+
+/* Export the result. */
+
+Export.table.toDrive({
+  collection: transectAspect, 
+  description: "transects_avgAspect", 
+  folder: "Transect_Justification", 
+  fileFormat: "SHP"
+});
+
+Export.image.toDrive({
+  image: aspect, 
+  description: "mountainRange_Aspect", 
+  folder: "Transect_Justification",
+  region: MtRg.bounds(), 
+  scale: 30, 
+  crs: "EPSG:4326", 
+  maxPixels: 1e13, 
+  fileFormat: "GeoTIFF"
+});
+

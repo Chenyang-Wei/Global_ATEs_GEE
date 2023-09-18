@@ -1,0 +1,140 @@
+/*
+  Introduction:
+  1) Extract the average ATEI within each elevational transect over the study period. 
+  2) Calculate the annual sum of all ATEIs within each transect.
+  3) Calculate the annual sum of the ATEI-weighted elevation at each pixel in each transect.
+  
+  Update:
+  1/19/2021.
+  
+  Runtime: 
+  1) 5 basins per group: 1m ~ 37m.
+*/
+
+
+/* Setup. */
+
+// Set the work directory.
+var wd = "users/treeline/NorthAmerica_GME/";
+
+// Annual ATEIs.
+var ATEI_1 = ee.Image(wd +
+  "Annual_ATEI/ATEI_medianSmdAnlMaxAvgNDVIs_1984to1999");
+var ATEI_2 = ee.Image(wd +
+  "Annual_ATEI/ATEI_medianSmdAnlMaxAvgNDVIs_2000to2019");
+
+var ATEI = ATEI_1.addBands(ATEI_2);
+
+// print("ATEI:", ATEI.bandTypes(),
+//   ATEI.projection().crs(),
+//   ATEI.projection().nominalScale())
+
+// Average ATEI over the study period.
+var avgATEI = ATEI.reduce(ee.Reducer.mean())
+  .rename("avgATEI");
+
+// print("avgATEI:", avgATEI.bandTypes(),
+//   avgATEI.projection().crs(),
+//   avgATEI.projection().nominalScale())
+
+// ALOS elevation.
+var ALOSelv = ee.Image('JAXA/ALOS/AW3D30/V2_2').select('AVE_DSM')
+  .reproject({
+    crs: "EPSG:4326",
+    scale: 30
+  });
+
+// print("ALOSelv:", ALOSelv.bandTypes(),
+//   ALOSelv.projection().crs(),
+//   ALOSelv.projection().nominalScale())
+
+// Calculate the ATEI-weighted elevation.
+var ATEIwtd_Elv = ATEI.multiply(ALOSelv);
+
+// print("ATEIwtd_Elv:", ATEIwtd_Elv.bandTypes(),
+//   ATEIwtd_Elv.projection().crs(),
+//   ATEIwtd_Elv.projection().nominalScale())
+
+// Function to rename the ATEI-weighted elevation.
+function renameWtdElv(currentYear, previousResult) {
+  // When convert a "floating point" to a "string", the result contains a ".", which isn't allowed in band names.
+  var yearName = ee.String(ee.Number(currentYear).int());
+  
+  // Rename the ATEI-weighted elevation.
+  var oldName = ee.String("ATEI_").cat(yearName);
+  var newName = ee.String("wtdElv").cat(yearName);
+  var renamedBand = ATEIwtd_Elv.select([oldName], [newName]);
+  
+  // Add the renamed band to the previous image.
+  var combinedImg = ee.Image(previousResult).addBands(renamedBand);
+  
+  return combinedImg;
+}
+
+// Years of interest.
+var yearList = ee.List.sequence(1984, 2019);
+
+// Rename the ATEI-weighted elevation and combine it with the ATEI image.
+var ATEIwtdElv_ATEI = ee.Image(yearList.iterate({
+  function: renameWtdElv, 
+  first: ATEI
+}));
+
+// print("ATEIwtdElv_ATEI:", ATEIwtdElv_ATEI.bandTypes(),
+//   ATEIwtdElv_ATEI.projection().crs(),
+//   ATEIwtdElv_ATEI.projection().nominalScale())
+
+
+/* Transect analysis by groups. */
+
+// Number of basins in each group.
+var step = 5;
+
+for (var startIndex = 0; startIndex < 125; startIndex = startIndex + step) {
+  // Load each group of raw transects.
+  var endIndex = startIndex + step;
+  var fileName = "Basins_" + startIndex + "to" + endIndex;
+  var transects = ee.FeatureCollection(wd + 
+    "Transects/SelectedHybas4Basins_closedForestsLowerSlopeValley_nonForestedUpperSlope/" +
+    "Grouped_Transects/" + fileName);
+  
+  // print("transects:", fileName, 
+  //   transects.first(), transects.size())
+
+  // Calculate the spatio-temporal average ATEI of each transect.
+  var st_avgATEI = avgATEI.reduceRegions({
+    collection: transects, 
+    reducer: ee.Reducer.mean().setOutputs(["st_avgATEI"]), 
+    scale: 30, 
+    crs: "EPSG:4326"
+  });
+  
+  // print("st_avgATEI:", fileName, 
+  //   st_avgATEI.first(),
+  //   st_avgATEI.size())
+  
+  // Calculate the sum of the ATEI and the ATEI-weighted elevation of each pixel
+  //  within each transect.
+  var ATEIwtdElv_ATEI_transectSum = ATEIwtdElv_ATEI.reduceRegions({
+    collection: st_avgATEI, 
+    reducer: ee.Reducer.sum(), 
+    scale: 30, 
+    crs: "EPSG:4326"
+  });
+  
+  // print("ATEIwtdElv_ATEI_transectSum:",  fileName, 
+  //   ATEIwtdElv_ATEI_transectSum.first(),
+  //   ATEIwtdElv_ATEI_transectSum.size())
+
+  // Output the result to the Asset.
+  if (true) {
+    Export.table.toAsset({
+      collection: ATEIwtdElv_ATEI_transectSum, 
+      description: fileName, 
+      assetId: wd + 
+        "Transects/SelectedHybas4Basins_closedForestsLowerSlopeValley_nonForestedUpperSlope/" +
+        "ATEIwtdElv_ATEI_transectSum/" + fileName
+    });
+  }
+}
+

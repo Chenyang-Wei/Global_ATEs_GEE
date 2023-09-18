@@ -1,0 +1,171 @@
+/**
+ * Introduction:
+ * 1) Buffer the selected transect center lines.
+ * 2) Mask the ATEI with the optimal ATEI threshold.
+ * 3) Sum the ATEI and the ATEI-weighted elevation 
+ *  at all the remaining pixels within each buffered center line.
+ * 
+ * Update: 4/6/2021.
+ * 
+ * Runtime: 1d.
+*/
+
+
+/* Data preparation. */
+
+// Set the working directory.
+var wdNA = "users/treeline/NorthAmerica_GME/";
+
+// Load the transect center lines.
+var centerLines = ee.FeatureCollection(wdNA + 
+  "Transect_Analysis/" + 
+  "TransectCL_withID_20210405");
+
+// print("centerLines:", centerLines.first(), // With ID.
+//   centerLines.size()) // 703172.
+
+// Function to print the image information.
+function printImgInfo(name, image) {
+  print(name,
+    image.bandTypes(),
+    image.projection().crs(),
+    image.projection().nominalScale());
+}
+
+// Annual ATEIs based on the annual maximum NDVIs (cloud masked and biome involved).
+var rawATEI = ee.Image(wdNA +
+  "ATEI_Estimation/AnnualATEI_1984to2020_Biomes356_medianSmdAnnualMaxNDVI_meanSmdElv_newCATE_AOI");
+
+// printImgInfo("rawATEI:", rawATEI)
+
+// Set the 10-km buffered bounding box of the study domain.
+var AOI = ee.Geometry.Rectangle({
+  coords: [-180, 7.114761500193937, -52.095625030545534, 80.24342770493531],
+  geodesic: false
+});
+
+// Target projection.
+var targetPrj = {
+  crs: "EPSG:4326",
+  scale: 30
+};
+
+// ALOS elevation (Version 3.2, released in January 2021) in the AOI.
+var ALOSelv = ee.ImageCollection('JAXA/ALOS/AW3D30/V3_2').select('DSM')
+  .filterBounds(AOI)
+  .mosaic()
+  .reproject(targetPrj);
+
+// printImgInfo("ALOSelv:", ALOSelv)
+
+
+/* Mask the ATEI with the optimal ATEI threshold. */
+
+// Get the optimal ATEI threshold.
+var optimalThreshold = 0.4329;
+
+// Create annual masks.
+var annualMasks = rawATEI.gt(optimalThreshold);
+
+// printImgInfo("annualMasks:", annualMasks)
+
+// Annually mask the ATEI.
+var ATEI = rawATEI.updateMask(annualMasks);
+
+// printImgInfo("ATEI:", ATEI)
+
+
+/* Weight the elevation with the annual ATEIs. */
+
+// Calculate the annual ATEI-weighted elevation.
+var ATEIwtd_Elv = ATEI.multiply(ALOSelv);
+
+// printImgInfo("ATEIwtd_Elv:", ATEIwtd_Elv)
+
+// Function to rename the annual ATEI-weighted elevation.
+function renameWtdElv(currentYear, previousResult) {
+  // Convert the year to a String.
+  var yearString = ee.String(ee.Number(currentYear).int());
+  
+  // Rename the ATEI-weighted elevation.
+  var oldName = ee.String("ATEI_").cat(yearString);
+  var newName = ee.String("wtdElv").cat(yearString);
+  var renamedBand = ATEIwtd_Elv.select([oldName], [newName]);
+  
+  // Append the renamed band to the previous image.
+  var combinedImg = ee.Image(previousResult).addBands(renamedBand);
+  
+  return combinedImg;
+}
+
+// Determine the years of interest.
+var yearList = ee.List.sequence(1984, 2020); // New ATEI.
+
+// Rename the annual ATEI-weighted elevation and append the result to the ATEI image.
+var ATEIwtdElv_ATEI = ee.Image(yearList.iterate({
+  function: renameWtdElv, 
+  first: ATEI
+}));
+
+// printImgInfo("ATEIwtdElv_ATEI:", ATEIwtdElv_ATEI)
+
+
+/* Annually sum the ATEI and the ATEI-weighted elevation within each transect. */
+
+// Set the distance of buffer.
+var bufDist = 45;
+
+// Function to buffer the transect center lines.
+function bufferCL(CL) {
+  return CL.buffer(bufDist);
+}
+
+// Generate transects by buffering each center line.
+var transects = centerLines.map(bufferCL);
+
+// print("transects:", transects.first(),
+//   transects.size())
+
+// Sum the annual variables within each transect.
+var annualSum = ee.FeatureCollection(transects.map(function(transect) {
+  var transectSum = ATEIwtdElv_ATEI.reduceRegions({
+    collection: transect, 
+    reducer: ee.Reducer.sum(), 
+    scale: 30, 
+    crs: "EPSG:4326"
+  });
+    
+  return transectSum;
+})).flatten();
+
+// print("annualSum:", annualSum.first())
+
+
+if (false) {
+  // Visualization.
+  Map.setOptions("HYBRID");
+  Map.setCenter(-110.50015, 40.84262, 14);
+  
+  Map.addLayer(transects, {color: "FFFF00"}, "transects", false);
+  Map.addLayer(centerLines, {color: "0000FF"}, "centerLines", false);
+  
+  var bandName = "ATEI_2015";
+  
+  Map.addLayer(annualMasks.select(bandName).selfMask(), 
+    {palette: "00FF00"}, "annualMasks");
+  Map.addLayer(ATEI.select(bandName), 
+    {min: 0, max: 1, palette: "0000FF, FFFFFF, FF0000"}, "ATEI");
+  
+} else {
+  // Export the result.
+  var fileName = "annualTransectSum_" + bufDist + "mBufferedCL_"
+    + "ATEIgtPt4329";
+  
+  Export.table.toDrive({
+    collection: annualSum, 
+    description: fileName, 
+    folder: "annualTransectSum_ATEImasked", 
+    fileFormat: "CSV"
+  });
+}
+

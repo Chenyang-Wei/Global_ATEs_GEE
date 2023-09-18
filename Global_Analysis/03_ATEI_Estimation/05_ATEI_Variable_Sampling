@@ -1,0 +1,305 @@
+/**
+ * Introduction:
+ * 
+ *  1) Calculate the median value of the annual NDVIs over 
+ *    the previous 3 years of the Google Earth image date at 
+ *    each sample point worldwide.
+ * 
+ *  2) Collect the following ATEI variables at each sample point:
+ *    a) 3-year median NDVI,
+ *    b) Gradient magnitude and direction of the 3-year median NDVI,
+ *    c) Gradient direction of the median-smoothed elevation,
+ *    d) 3-km smoothed open-forest NDVI,
+ *    e) Smaller NDVI difference between open forests and 
+ *      the other two land cover types 
+ *      (i.e., non-forested areas and closed forests).
+ * 
+ * Runtime: < 1m.
+ * 
+ * Updated: 5/28/2023.
+*/
+
+
+/* Load module(s). */
+
+var IMG = require("users/ChenyangWei/Public:Modules/General/Image_Analysis&Processing.js");
+var ATEI_EA = require("users/ChenyangWei/Public:Modules/Treeline/ATEI_Estimation&Analysis.js");
+var FC_AP = require("users/ChenyangWei/Public:Modules/General/FeatureCollection_Analysis&Processing.js");
+var GATE = require("users/ChenyangWei/Public:Modules/Treeline/Global_ATE.js");
+var TNA = require("users/ChenyangWei/Public:Modules/Treeline/Transect_NDVI_Analysis.js");
+
+
+/* Object definition. */
+
+// Define a list of the continent IDs (no Africa).
+var contIDs_List = [0, 1, 3, 4, 5];
+
+// Determine the target projection.
+var targetPrj = IMG.WGS84_30m;
+
+// Create a list of the working directories.
+var WDs_List = ATEI_EA.WDs_AllContinents_List;
+
+// Define a list of the region names.
+var Regions_List = ATEI_EA.Regions_AllContinents_List;
+
+
+/* Function definition. */
+
+// Import a function for checking FeatureCollections.
+var Check_FC = FC_AP.Print_FtrColInfo;
+
+// Define a function to load the annual NDVIs of 
+//  the buffered new CATE in continents 
+//  other than North America.
+var Read_AnnualNDVIs_BufferedCATE = function(wd_Cont) {
+  var annualNDVIs_Cont = TNA.loadAnnualNDVIs_nonNorthAmerica(wd_Cont)
+    .reproject(targetPrj);
+  
+  return annualNDVIs_Cont;
+};
+
+// Define a function to load and reproject the new CATE 
+//  of each continent.
+var Read_NewCATE = function(wd_Cont) {
+  var newCATE_Cont = ee.Image(wd_Cont
+    + "Climate-Based_ATE/" 
+    + GATE.newCATE_fileName)
+    .reproject(targetPrj);
+  
+  return newCATE_Cont;
+};
+
+// Define a function to load the gradient direction of 
+//  the median-smoothed elevation.
+var Read_MedElvDir = function(wd_Cont) {
+  var medElvDir_Cont = ee.Image(wd_Cont
+    + "ATEI_Estimation/" 
+    + "medianSmdElv_GradDir_NewCATE")
+    .reproject(targetPrj);
+  
+  return medElvDir_Cont;
+};
+
+// Define a function to load the smoothed open-forest NDVI 
+//  in each continent.
+var Read_SmdOpenfNDVI = function(wd_Cont) {
+  var smdOpenfNDVI_Cont = ee.Image(wd_Cont
+    + "ATEI_Estimation/OpenForestNDVI/" 
+    + "3kmSmoothed_OpenForestNDVI_NewCATE")
+    .reproject(targetPrj)
+    .rename("OpenF_NDVI");
+  
+  return smdOpenfNDVI_Cont;
+};
+
+// Define a function to load the smaller NDVI difference 
+//  in each continent.
+var Read_SmallerNDVIdiff = function(wd_Cont) {
+  var smallerNDVIdiff_Cont = ee.Image(wd_Cont
+    + "ATEI_Estimation/" 
+    + "3kmSmoothedLcNDVIs_SmallerDiff")
+    .reproject(targetPrj)
+    .rename("NDVI_diff");
+  
+  return smallerNDVIdiff_Cont;
+};
+
+// Define a function to generate a list of the NDVI band names 
+//  over the previous 3 years of a given year.
+var Generate_BandNames = function(lastYear) {
+  
+  // Create a list of the previous 3 years.
+  var lastYearNum = ee.Number(lastYear);
+  
+  var firstYearNum = lastYearNum.subtract(2);
+  
+  var threeYears_List = ee.List.sequence(firstYearNum, lastYearNum);
+  
+  // Convert the year list to a band name list.
+  var bandNames_List = threeYears_List.map(function(year_Num) {
+    
+    // Convert the "year" from a Number to a String 
+    //  (without a ".").
+    var year_Int = ee.Number(year_Num).int();
+    var year_Str = ee.String(year_Int);
+    
+    // Derive the band name of each year.
+    var bandName_Str = ee.String("smdNDVI_").cat(year_Str);
+    
+    return bandName_Str;
+  });
+  
+  return bandNames_List;
+};
+
+
+/* Dataset loading. */
+
+// Load global sample points.
+var rawSamples_Global = ee.FeatureCollection(
+  GATE.wd_Global + 
+  "ATEI_Estimation/Manual_Sampling/" + 
+  "Raw_GlobalSamplePoints"
+);
+
+
+/* Collect the ATEI variables by continent.*/
+
+// Create an empty FeatureCollection of global variables.
+var global_SampledVars_FC = ee.FeatureCollection([]);
+
+contIDs_List.forEach(function(contID) {
+  
+  // Determine the working directory of the continent.
+  var contWD = WDs_List[contID];
+
+  // Determine the region name of the continent.
+  var contRegion = Regions_List[contID];
+  
+  // Select the sample points of the continent.
+  var contSamples = rawSamples_Global.filter(
+    ee.Filter.eq("Region", contRegion));
+  
+  
+  /* Load the annual NDVIs of the buffered new CATE. */
+  
+  var annualNDVIs;
+  
+  if (contID === 0) {
+    // Load the annual NDVIs in North America.
+    annualNDVIs = ee.Image(GATE.wd_NorthAmerica
+      + "ATEI_Estimation/"
+      + TNA.annualMaxNDVI_300mBufNewCATE_NorthAmerica_fileName)
+      .reproject(targetPrj);
+    
+  } else if (contID === 5) {
+    // Load the annual NDVIs in Asia 
+    //  (using a different working directory).
+    annualNDVIs = Read_AnnualNDVIs_BufferedCATE(
+      GATE.wd_Asia_2);
+    
+  } else {
+    // Load the annual NDVIs in other continents.
+    annualNDVIs = Read_AnnualNDVIs_BufferedCATE(
+      contWD);
+  }
+
+
+  /* Load other ATEI variables in the continent. */
+  
+  // Load the new CATE.
+  var newCATE = Read_NewCATE(contWD);
+  
+  // Load the gradient direction of 
+  //  the median-smoothed elevation.
+  var medElv_Dir = Read_MedElvDir(contWD);
+
+  // Load the smoothed open-forest NDVI.
+  var smdOpenfNDVI = Read_SmdOpenfNDVI(contWD);
+  
+  // Load the smaller NDVI difference.
+  var smallerNDVIdiff = Read_SmallerNDVIdiff(contWD);
+  
+  
+  /* Sample the ATEI variables by year. */
+  
+  // Obtain the Google Earth image year of each sample point.
+  var imageYears_List = contSamples.aggregate_array("Year")
+    .distinct().sort();
+  
+  var contSampledVars_List = imageYears_List.map(function(imageYear) {
+    
+    // Generate a list of the NDVI band names.
+    var NDVI_BandNames = Generate_BandNames(imageYear);
+    
+    // Calculate the median NDVI of the previous 3 years.
+    var medianNDVI = annualNDVIs.select(NDVI_BandNames)
+      .reduce(ee.Reducer.median())
+      .reproject(targetPrj)
+      .rename("medianNDVI");
+    
+    // Compute the NDVI gradient.
+    var NDVI_grad = medianNDVI.gradient()
+      .reproject(targetPrj);
+    
+    // Derive the magnitude of the NDVI gradient.
+    var NDVI_mag = NDVI_grad.select("y")
+      .hypot(NDVI_grad.select("x"))
+      .reproject(targetPrj)
+      .rename("NDVI_mag");
+    
+    // Determine the direction of the NDVI gradient.
+    var NDVI_dir = NDVI_grad.select("y")
+      .atan2(NDVI_grad.select("x"))
+      .reproject(targetPrj);
+    
+    // Calculate the absolute angle between the NDVI and elevation gradients.
+    var dir_Angle = NDVI_dir
+      .subtract(medElv_Dir).abs()
+      .reproject(targetPrj)
+      .rename("dir_Angle");
+
+    // Combine the derived ATEI variables.
+    var combinedVars = medianNDVI
+      .addBands(NDVI_mag)
+      .addBands(dir_Angle)
+      .addBands(smdOpenfNDVI)
+      .addBands(smallerNDVIdiff)
+      .updateMask(newCATE)
+      .reproject(targetPrj);
+    
+    // Select the samples with the same image year.
+    var selectedSamples = contSamples.filter(
+      ee.Filter.eq("Year", imageYear));
+    
+    // Get the ATEI variables at each selected sample.
+    var sampledVars = combinedVars.reduceRegions({
+      collection: selectedSamples, 
+      reducer: ee.Reducer.first(), 
+      scale: targetPrj.scale, 
+      crs: targetPrj.crs
+    });
+    
+    return sampledVars;
+  });
+
+  // Convert the List of the sampled variables to 
+  //  a FeatureCollection.
+  var contSampledVars_FC = ee.FeatureCollection(contSampledVars_List)
+    .flatten();
+
+  // Add the sampled variables to the global dataset.
+  global_SampledVars_FC = global_SampledVars_FC
+    .merge(contSampledVars_FC);
+});
+
+
+/* Check/output the globally sampled variables. */
+
+var output = true;
+
+if (!output) {
+  
+  Check_FC("global_SampledVars_FC", 
+    global_SampledVars_FC); // Size: 1970.
+  
+} else {
+  
+  var fileName = "GlobalSamplePoints_withATEIvars";
+  
+  Export.table.toAsset({
+    collection: global_SampledVars_FC, 
+    description: fileName, 
+    assetId: GATE.wd_Global + 
+      "ATEI_Estimation/Manual_Sampling/" + 
+      fileName
+  });
+  
+  Export.table.toDrive({
+    collection: global_SampledVars_FC,
+    description: fileName, 
+    folder: fileName,
+    fileFormat: "SHP"
+  });
+}

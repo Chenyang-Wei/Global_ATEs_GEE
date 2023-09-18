@@ -1,0 +1,305 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var studyDomain = 
+    /* color: #d63000 */
+    /* displayProperties: [
+      {
+        "type": "rectangle"
+      }
+    ] */
+    ee.Geometry.Polygon(
+        [[[-116.36604621161408, 51.65500863326976],
+          [-116.36604621161408, 51.50652104718649],
+          [-116.28227545966095, 51.50652104718649],
+          [-116.28227545966095, 51.65500863326976]]], null, false),
+    geom = 
+    /* color: #98ff00 */
+    /* displayProperties: [
+      {
+        "type": "rectangle"
+      }
+    ] */
+    ee.Geometry.Polygon(
+        [[[-116.59675910223908, 51.75012053915455],
+          [-116.59675910223908, 51.391626241436825],
+          [-116.1367066120047, 51.391626241436825],
+          [-116.1367066120047, 51.75012053915455]]], null, false);
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+
+// Set the 10-km buffered bounding box of the study domain.
+var AOI = ee.Geometry.Rectangle({
+  coords: [-180, 7.114761500193937, -52.095625030545534, 80.24342770493531],
+  geodesic: false
+});
+
+// Target projection.
+var targetPrj = {
+  crs: "EPSG:4326",
+  scale: 30
+};
+
+// ALOS elevation (Version 3.2, released in January 2021) in the AOI.
+var ALOSelv = ee.ImageCollection('JAXA/ALOS/AW3D30/V3_2').select('DSM')
+  .filterBounds(AOI)
+  .mosaic()
+  .reproject(targetPrj);
+
+// Set the working directory.
+var wdNA = "users/treeline/NorthAmerica_GME/";
+
+// Load the transect center lines.
+var centerLines = ee.FeatureCollection(wdNA + 
+  "Transect_Analysis/" + 
+  "TransectCL_withID_20210405");
+
+// Load the previously selected hydrobasin subwatersheds.
+var subwatersheds = ee.FeatureCollection(wdNA + 
+  "Transect_Analysis/" + 
+  "Hybas12Basins_LowerClosedForests_UpperNonForested_30mSegmentedNewCATE");
+
+var selectedSWS = subwatersheds.filterBounds(studyDomain);
+
+print("selectedSWS:", selectedSWS.size())
+Map.addLayer(selectedSWS, {color: "0000FF"}, "selectedSWS");
+
+// Load the new CATE.
+var newCATE = ee.Image(wdNA + "Climate-Based_ATE/" +
+  "30mNewCATE_gteSmd10kmCForestElv_3kmCForestBuffer_BufRawCATEclosedForests_AOI");
+
+// Load the smoothed annual maximum NDVIs in the buffered new CATE.
+var NDVI = ee.Image(wdNA + "ATEI_Estimation/" +
+  "medianSmdAnnualMaxNDVI_1984to2020_cloudShadowMasked_300mBufNewCATE_AOI").updateMask(newCATE);
+// print(NDVI.bandNames())
+
+// Extract elevation within the buffered new CATE.
+var newCATEelv = ALOSelv.updateMask(newCATE);
+
+function buffering(CL) {
+  return CL.buffer(45);
+}
+
+
+/* Pre-process the ALOS landform dataset. */
+
+// The landform dataset is based on the 30m "AVE" band of JAXA's ALOS DEM 
+// (available in EE as JAXA/ALOS/AW3D30_V1_1).
+// There are stripes in the area over 60 degrees in latitude.
+var rawLF = ee.Image('CSP/ERGo/1_0/Global/ALOS_landforms').select('constant')
+  .reproject(targetPrj);
+
+// Landforms within the segmented new CATE
+// (with both ridges and invalid landform stripes removed).
+var CATE_LF = rawLF.updateMask(newCATE);
+
+
+/* Extract the landforms of interest in the segmented new CATE
+  (with both ridges and invalid landform stripes removed). */
+
+// Upper regions (Cliff and Upper slopes).
+var upper = CATE_LF.gte(15).and(CATE_LF.lte(24));
+
+// Lower regions (Lower slopes and Valleys).
+var lower = CATE_LF.gte(31);
+
+
+/* Load the Copernicus Global Land Cover datasets (v3.0.1) from 2015 to 2019. */
+
+// Set the file path and band name of land cover data.
+var lcPath = "COPERNICUS/Landcover/100m/Proba-V-C3/Global/";
+
+var lcName = "discrete_classification";
+
+// Function to read the annual land cover datasets.
+function readAnnualLC(year) {
+  return ee.Image(lcPath + year).select(lcName);
+}
+
+// Read the datasets of 2015-2019.
+var landCover = ee.ImageCollection.fromImages([
+  readAnnualLC(2015),
+  readAnnualLC(2016),
+  readAnnualLC(2017),
+  readAnnualLC(2018),
+  readAnnualLC(2019),
+]);
+
+
+/* Extract and reproject the elevation of closed forests 
+  (tree canopy > 70 %) in 2015-2019. */
+
+// Function to extract the annual closed forests.
+function extractCF(lcImg) {
+  return lcImg.gte(111).and(lcImg.lte(116));
+}
+
+// Annual closed forests from 2015 to 2019.
+var annualCF = landCover.map(extractCF);
+
+// Extract and reproject areas classified as closed forests 
+// in ALL the five years.
+var CF_5yr = annualCF.min()
+  .reproject(targetPrj);
+
+
+/* Extract and reproject the non-forested areas in 2015-2019. */
+
+// Function to extract the annual non-forested areas
+// (from "Shrubs" to "Moss and lichen").
+function extractNonF(lcImg) {
+  return lcImg.gte(20).and(lcImg.lte(100));
+}
+
+// Annual non-forested areas from 2015 to 2019.
+var annualNonF = landCover.map(extractNonF);
+
+// Extract and reproject areas classified as non-forested areas 
+// in ALL the five years.
+var NonF_5yr = annualNonF.min()
+  .reproject(targetPrj);
+
+
+/* Obtain the qualified closed forests and non-forested areas. */
+
+// Closed forests on the lower slope or in the valley.
+var CF_lower = CF_5yr.updateMask(lower).rename("CF_lower");
+
+// non-forested areas on the upper slope or the cliff.
+var nonF_upper = NonF_5yr.updateMask(upper).rename("nonF_upper");
+
+var selectedTransects = centerLines.filterBounds(selectedSWS).map(buffering);
+print("selectedTransects:", selectedTransects.size())
+Map.addLayer(selectedTransects, {color: "FFFF00"}, "selectedTransects");
+
+
+var combinedImg = NDVI
+  .addBands(newCATEelv)
+  .addBands(CF_lower)
+  .addBands(nonF_upper)
+  .float()
+  .clipToCollection(selectedTransects);
+
+print(combinedImg.bandNames())
+
+Export.image.toDrive({
+  image: combinedImg, 
+  description: "transectNDVI_img", 
+  folder: "transectNDVI_img", 
+  region: geom, 
+  scale: 30, 
+  crs: "EPSG:4326", 
+  maxPixels: 1e13, 
+  skipEmptyTiles: true,
+  fileFormat: "GeoTIFF"
+});
+
+Export.table.toDrive({
+  collection: selectedTransects, 
+  description: "transectNDVI_shp", 
+  folder: "transectNDVI_shp", 
+  fileFormat: "SHP"
+});
+
+
+/* Calculate the difference between the average NDVIs of 
+  lower closed forests and upper non-forested areas. */
+
+var NDVI_CF_lower = NDVI.updateMask(CF_lower);
+
+var NDVI_nonF_upper = NDVI.updateMask(nonF_upper);
+
+// Band renaming.
+var raw_BandNames = NDVI.bandNames();
+
+var yearList = ee.List.sequence(1984, 2020);
+
+var CF_BandNames = yearList.map(function(year) {
+  var CF_BN = ee.String("CF_");
+  var yearString = ee.String(ee.Number(year).int());
+  
+  return CF_BN.cat(yearString);
+});
+
+var nonF_BandNames = yearList.map(function(year) {
+  var nonF_BN = ee.String("nonF_");
+  var yearString = ee.String(ee.Number(year).int());
+  
+  return nonF_BN.cat(yearString);
+});
+
+var renamedNDVI_CF_lower = NDVI_CF_lower.select(raw_BandNames, CF_BandNames);
+
+print("renamedNDVI_CF_lower:", renamedNDVI_CF_lower.bandTypes())
+
+var renamedNDVI_nonF_upper = NDVI_nonF_upper.select(raw_BandNames, nonF_BandNames);
+
+print("renamedNDVI_nonF_upper:", renamedNDVI_nonF_upper.bandTypes())
+
+// Combine the two types of NDVIs.
+var NDVIs_CF_nonF = renamedNDVI_CF_lower.addBands(renamedNDVI_nonF_upper);
+
+print("NDVIs_CF_nonF:", NDVIs_CF_nonF.bandTypes())
+
+// Average NDVIs in each transect.
+var transect_avgNDVIs = NDVIs_CF_nonF.reduceRegions({
+  collection: selectedTransects, 
+  reducer: ee.Reducer.mean(), 
+  scale: 30, 
+  crs: "EPSG:4326"
+});
+
+// print("transect_avgNDVIs:", 
+//   transect_avgNDVIs.first(),
+//   transect_avgNDVIs.size())
+
+
+Export.table.toDrive({
+  collection: transect_avgNDVIs, 
+  description: "transect_avgNDVIs", 
+  folder: "transect_avgNDVIs", 
+  fileFormat: "CSV"
+});
+
+
+// Sen's slope between elevation and NDVI in each transect.
+function sensSlope_Calculation(currentYear, previousResult) {
+  var yearString = ee.String(ee.Number(currentYear).int());
+  
+  var NDVI_BN = ee.String("smdNDVI_").cat(yearString);
+  
+  var offsetName = ee.String("offs_").cat(yearString);
+  var slopeName = ee.String("slope_").cat(yearString);
+  
+  var annualNDVI = NDVI.select([NDVI_BN]);
+  
+  var X_Y = newCATEelv.addBands(annualNDVI);
+  
+  var annual_SensSlope = X_Y.reduceRegions({
+    collection: previousResult, 
+    reducer: ee.Reducer.sensSlope().setOutputs([slopeName, offsetName]), 
+    // The inputs are expected to be x data followed by y data.
+    // It returns two double values; the estimated slope and the offset.
+    scale: 30, 
+    crs: "EPSG:4326"
+  });
+  
+  return annual_SensSlope;
+}
+
+var transect_NDVIsensSlope = yearList.iterate({
+  function: sensSlope_Calculation, 
+  first: selectedTransects
+});
+
+transect_NDVIsensSlope = ee.FeatureCollection(transect_NDVIsensSlope);
+
+// print("transect_NDVIsensSlope:", 
+//   transect_NDVIsensSlope.first(),
+//   transect_NDVIsensSlope.size())
+
+
+Export.table.toDrive({
+  collection: transect_NDVIsensSlope, 
+  description: "transect_NDVIsensSlope", 
+  folder: "transect_NDVIsensSlope", 
+  fileFormat: "CSV"
+});
+

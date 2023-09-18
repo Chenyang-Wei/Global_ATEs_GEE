@@ -1,0 +1,324 @@
+/**
+ * Introduction:
+ * 
+ * 1) Visualize the buffers of the medial-axis pixels.
+ * 
+ * 2) Visualize the non-forested ridges and the non-ridge closed forests in the new CATE.
+ * 
+ * 3) Visualize the raw centerlines and their endpoints.
+ * 
+ * 4) Visualize the 30-m ALOS elevation in the new CATE.
+ * 
+ * 5) Export datasets in the region of interest.
+ * 
+ *  
+ * Update: 8/22/2022.
+ */
+
+
+/* Setups. */
+
+// Load module(s).
+
+var IMG = require("users/ChenyangWei/Public:Modules/Image_Analysis&Processing");
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var TNA = require("users/ChenyangWei/Public:Modules/Transect_NDVI_Analysis");
+var FC_AP = require("users/ChenyangWei/Public:Modules/FeatureCollection_Analysis&Processing");
+var VIS = require("users/ChenyangWei/Public:Modules/Visualization");
+
+// Target projection.
+var targetPrj = IMG.WGS84_30m;
+
+// Set the area of interest.
+var AOI = GATE.AOI_NorthAmerica;
+
+// Set the working directory.
+var wd_Main = GATE.wd_NorthAmerica;
+
+// Load the new CATE.
+var newCATE = ee.Image(wd_Main + "Climate-Based_ATE/" 
+  + GATE.newCATE_fileName);
+
+// Load the ALOS elevation (Version 3.2, released in January 2021) in the new CATE.
+var ALOSelv = GATE.load_ALOSelevation(AOI, targetPrj)
+  .updateMask(newCATE);
+
+
+/* Extract the ridges and  the non-ridge landforms in the new CATE. */
+
+// Load and reproject the ALOS landforms dataset in the new CATE.
+var LF_noInvaid_newCATE = GATE.loadReproject_ALOSlandforms(targetPrj)
+  .updateMask(newCATE);
+
+// Ridges in the new CATE.
+var ridges = GATE.extractRidgeLandforms(LF_noInvaid_newCATE);
+
+// Non-ridge landforms in the new CATE.
+var nonRidges = ridges.not();
+
+
+/* Obtain the non-forested areas of the ridge landform and
+  the closed forests of the non-ridge landforms in the new CATE. */
+
+// Read the Land Cover datasets of 2015-2019.
+var landCover = GATE.readCoperLandCover15to19();
+
+// Extract and reproject the elevation of closed forests 
+//   (tree canopy > 70 %) in 2015-2019.
+var CF_inAllYrs = GATE.extractClosedForests_inAllYears(landCover, targetPrj);
+
+// Extract and reproject the non-forested areas in 2015-2019.
+var nonF_inAllYrs = GATE.extractNonForested_inAllYears(landCover, targetPrj);
+
+// Closed forests of the non-ridge landforms.
+var CF_nonRidges = CF_inAllYrs.updateMask(nonRidges)
+  .selfMask();
+
+// Non-forested areas of the ridge landform.
+var nonF_ridges = nonF_inAllYrs.updateMask(ridges)
+  .selfMask();
+
+
+/* Load the medial-axis buffers. */
+
+var medialAxis_Buffers = ee.FeatureCollection(wd_Main 
+  + "Elevational_Transect_Generation/"
+  + GATE.distBufferedPxCtds_fileName);
+
+
+/* Determine the ROI. */
+
+// var ROI = selectedBasins.filterBounds(Geom)
+//   .geometry().buffer(3000).bounds();
+
+var ROI = 
+    ee.Geometry.Polygon(
+        [[[-123.58230322240499,47.656338432609665],
+          [-122.9597641481639,47.656338432609665],
+          [-122.9597641481639,48.01089235785535],
+          [-123.58230322240499,48.01089235785535]]], null, false);
+
+
+/* Load and buffer the transect centerlines. */
+
+// Determine the universal file path of the selected transect centerlines
+//  with a length between 300m and 3km.
+var wd_SelectedCLs = wd_Main
+  + "Elevational_Transect_Generation/"
+  + TNA.selectedCLs_fileName
+  + "/"
+  + TNA.selectedCLs_byBasinGroup_fileName;
+
+// Create an empty List to store all the selected transect centerlines.
+var allCLs_List = ee.List([]);
+
+for (var basinGroupID = 1; basinGroupID <= 5; basinGroupID ++) {
+
+  // Load the selected transect centerlines of each basin group.
+  var selectedCLs = ee.FeatureCollection(wd_SelectedCLs
+    + basinGroupID);
+  
+  // Add the loaded FeatureCollection to the List.
+  allCLs_List = allCLs_List
+    .add(selectedCLs);
+
+}
+
+// Convert the generated FeatureCollection List to a FeatureCollection.
+var allCLs_FtrCol = ee.FeatureCollection(
+  allCLs_List
+).flatten();
+
+// Buffer each selected centerline by 45 m.
+var allTransects = TNA.buffer_Centerlines_by45m(allCLs_FtrCol);
+
+// Select transects intersecting with the ROI.
+var selectedTransects = allTransects.filterBounds(ROI);
+
+
+/* Visualize the raw centerlines and their endpoints. */
+
+// Load the raw transect centerlines intersecting with the ROI.
+var rawCLs = ee.FeatureCollection(wd_Main
+  + "Elevational_Transect_Generation/"
+  + GATE.rawCLs_fileName + "/"
+  + GATE.rawCLs_AllBasinGroups_fileName)
+  .filterBounds(ROI);
+
+// Construct the upper endpoint of each centerline.
+var upper_Endpts = rawCLs.map(function(rawCL) {
+  // Extract the coordinates of the upper endpoint.
+  var nonF_long = rawCL.get("nonF_long");
+  var nonF_lat = rawCL.get("nonF_lat");
+
+  // Construct the upper endpoint.
+  var nonF_pt = ee.Geometry.Point(
+    [nonF_long, nonF_lat]);
+  
+  // Create a Feature and copy the properties of interest from the centerline.
+  var upper_Endpt = ee.Feature(nonF_pt).copyProperties({
+    source: rawCL, 
+    exclude: ["CL_ID"]
+  });
+  
+  return upper_Endpt;
+});
+
+// Construct the lower endpoint of each centerline.
+var lower_Endpts = rawCLs.map(function(rawCL) {
+  // Extract the coordinates of the lower endpoint.
+  var CF_long = rawCL.get("CF_long");
+  var CF_lat = rawCL.get("CF_lat");
+  
+  // Construct the lower endpoint.
+  var CF_pt = ee.Geometry.Point(
+    [CF_long, CF_lat]);
+
+  // Create a Feature and copy the properties of interest from the centerline.
+  var lower_Endpt = ee.Feature(CF_pt).copyProperties({
+    source: rawCL, 
+    exclude: ["CL_ID"]
+  });
+  
+  return lower_Endpt;
+});
+
+
+if (false) {
+  
+  // FC_AP.Print_FtrColInfo("medialAxis_PxCtds:", medialAxis_PxCtds);
+  // FC_AP.Print_FtrColInfo("medialAxis_Buffers:", medialAxis_Buffers);
+  // FC_AP.Print_FtrColInfo("selectedBasins:", selectedBasins);
+  FC_AP.Print_FtrColInfo("rawCLs:", rawCLs);
+  FC_AP.Print_FtrColInfo("selectedTransects:", selectedTransects);
+
+  /* Visualization. */
+  
+  Map.setOptions("satellite");
+  
+  Map.setCenter(-123.3188, 47.79649, 13); // Olympic Mountain.
+  
+  
+  Map.addLayer(ROI, {color: "FFFFFF"}, 
+    "ROI", false, 0.5);
+  
+
+  Map.addLayer(ALOSelv, {min: 2.2e3, max: 1e3, palette: VIS.NDVI_palette}, 
+    "ALOSelv", true, 0.5);
+
+
+  Map.addLayer(newCATE, {palette: "808080"}, 
+    "newCATE", false, 0.5);
+
+
+  Map.addLayer(nonF_ridges, {palette: "0000FF"}, 
+    "nonF_ridges", true, 0.5);
+
+  Map.addLayer(CF_nonRidges, {palette: "00FF00"}, 
+    "CF_nonRidges", true, 0.5);
+
+
+  Map.addLayer(medialAxis_Buffers, {color: "FFFF00"}, 
+    "medialAxis_Buffers", false, 0.5);
+
+
+  Map.addLayer(upper_Endpts, {color: "0000FF"}, 
+    "upper_Endpts", true);
+
+  Map.addLayer(lower_Endpts, {color: "00FF00"}, 
+    "lower_Endpts", true);
+
+
+  Map.addLayer(rawCLs, {color: "FFFF00"}, 
+    "rawCLs", true);
+
+
+  Map.addLayer(selectedTransects, {color: "FF0000"}, 
+    "selectedTransects", false);
+
+} else if (true) {
+  
+  /* Output the TIF datasets in the ROI. */
+  
+  // Export.image.toDrive({
+  //   image: ALOSelv, 
+  //   description: "ALOSelv", 
+  //   folder: "OlympicMt_2_TIF", 
+  //   region: ROI, 
+  //   scale: targetPrj.scale, 
+  //   crs: targetPrj.crs, 
+  //   maxPixels: 1e13, 
+  //   fileFormat: "GeoTIFF"
+  // });
+  
+  // Export.image.toDrive({
+  //   image: nonF_ridges, 
+  //   description: "nonF_ridges", 
+  //   folder: "OlympicMt_2_TIF", 
+  //   region: ROI, 
+  //   scale: targetPrj.scale, 
+  //   crs: targetPrj.crs, 
+  //   maxPixels: 1e13, 
+  //   fileFormat: "GeoTIFF"
+  // });
+  
+  // Export.image.toDrive({
+  //   image: CF_nonRidges, 
+  //   description: "CF_nonRidges", 
+  //   folder: "OlympicMt_2_TIF", 
+  //   region: ROI, 
+  //   scale: targetPrj.scale, 
+  //   crs: targetPrj.crs, 
+  //   maxPixels: 1e13, 
+  //   fileFormat: "GeoTIFF"
+  // });
+  
+  Export.image.toDrive({
+    image: nonF_inAllYrs.updateMask(newCATE), 
+    description: "nonF_inAllYrs_newCATE", 
+    folder: "OlympicMt_2_TIF", 
+    region: ROI, 
+    scale: targetPrj.scale, 
+    crs: targetPrj.crs, 
+    maxPixels: 1e13, 
+    fileFormat: "GeoTIFF"
+  });
+  
+  Export.image.toDrive({
+    image: CF_inAllYrs.updateMask(newCATE), 
+    description: "CF_inAllYrs_newCATE", 
+    folder: "OlympicMt_2_TIF", 
+    region: ROI, 
+    scale: targetPrj.scale, 
+    crs: targetPrj.crs, 
+    maxPixels: 1e13, 
+    fileFormat: "GeoTIFF"
+  });
+  
+} else {
+  
+  /* Output the SHP datasets in the ROI. */
+  
+  Export.table.toDrive({
+    collection: upper_Endpts, 
+    description: "upper_Endpts", 
+    folder: "OlympicMt_2_upper_Endpts", 
+    fileFormat: "SHP"
+  });
+  
+  Export.table.toDrive({
+    collection: lower_Endpts, 
+    description: "lower_Endpts", 
+    folder: "OlympicMt_2_lower_Endpts", 
+    fileFormat: "SHP"
+  });
+  
+  Export.table.toDrive({
+    collection: rawCLs, 
+    description: "rawCLs", 
+    folder: "OlympicMt_2_rawCLs", 
+    fileFormat: "SHP"
+  });
+  
+}
+

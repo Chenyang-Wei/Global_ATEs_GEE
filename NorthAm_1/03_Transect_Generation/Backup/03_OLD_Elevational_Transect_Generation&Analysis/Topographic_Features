@@ -1,0 +1,228 @@
+/**
+ * Introduction:
+ * 1) Generate the environmental variables at the 30-m level.
+ * 2) Calculate the average environmental variables within each unioned ATE segment.
+ * 
+ * Update: 4/29/2021.
+ * 
+ * Runtime: .
+*/
+var Banff = 
+    /* color: #d63000 */
+    /* shown: false */
+    /* displayProperties: [
+      {
+        "type": "rectangle"
+      }
+    ] */
+    ee.Geometry.Polygon(
+        [[[-117.14589296115562, 51.64703157776777],
+          [-117.14589296115562, 50.19627709535742],
+          [-114.56410585178062, 50.19627709535742],
+          [-114.56410585178062, 51.64703157776777]]], null, false);
+
+
+/* Useful function(s). */
+
+// Function to print the image information.
+function printImgInfo(name, image) {
+  print(name,
+    image.bandTypes(),
+    image.projection().crs(),
+    image.projection().nominalScale());
+}
+
+// Function to print the feature collection information.
+function printFCinfo(name, featureCollection) {
+  print(name,
+    featureCollection.first(),
+    featureCollection.size());
+}
+
+
+/* Data preparation. */
+
+// A target projection system.
+var targetPrj = {
+  crs: "EPSG:4326", 
+  scale: 30
+};
+
+// Set the working directory.
+var wdNA = "users/treeline/NorthAmerica_GME/";
+
+// ALOS elevation (Version 3.2, released in January 2021) in the AOI.
+var ALOSelv = ee.ImageCollection('JAXA/ALOS/AW3D30/V3_2').select('DSM')
+  .filterBounds(Banff) // Testing.
+  .mosaic()
+  .rename("elevation")
+  .reproject(targetPrj);
+
+// printImgInfo("ALOSelv:", ALOSelv)
+
+// Load the previously selected hydrobasin subwatersheds.
+var subwatersheds = ee.FeatureCollection(wdNA + 
+  "Transect_Analysis/" + 
+  "Hybas12Basins_LowerClosedForests_UpperNonForested_30mSegmentedNewCATE");
+
+// printFCinfo("subwatersheds:", subwatersheds)
+
+// Load the ATE segment unions.
+var ATEsegs = ee.FeatureCollection(wdNA + "Transect_Analysis/" +
+  "UnionedAnnualATEsegments_byCenterLine_testing"); // Testing.
+
+// printFCinfo("ATEsegs:", ATEsegs)
+
+// Load the climatic data.
+var clim = ee.ImageCollection("NASA/ORNL/DAYMET_V4")
+  .select(["dayl", "prcp", "tmax", "tmin"])
+  .filterBounds(Banff)
+  .filterDate('1984-01-01', '2021-01-01'); // The end date is exclusive.
+
+// printImgInfo("clim.first():", clim.first())
+
+// Extract the climatic data during the growing season.
+var growingSeason = clim.filter(ee.Filter.calendarRange({
+  start: 6, 
+  end: 8, 
+  field: "month"
+}));
+
+// printImgInfo("growingSeason.first():", growingSeason.first())
+
+
+/* Self-defined function(s). */
+
+// Function to compute the sin of an image.
+function sinImage(img) {
+  var sinImg = img.divide(180).multiply(Math.PI)
+    .sin();
+  
+  return sinImg;
+}
+
+// Function to compute the cos of an image.
+function cosImage(img) {
+  var cosImg = img.divide(180).multiply(Math.PI)
+    .cos();
+  
+  return cosImg;
+}
+
+// Function to buffer each ATE segment.
+var segBuf = 45; // Equals to 1.5 pixels.
+
+function bufferATEseg(ATEseg) {
+  return ATEseg.buffer(segBuf);
+}
+
+// Function to average the environmental variables within each buffered ATE segment by subwatershed.
+function avgSegmentVarsBySubwatershed(SWS) {
+  // Acquire and buffer the ATE segments within each subwatershed.
+  var SWSgeom = SWS.geometry();
+  var selectedSegs = bufferedATEsegs.filterBounds(SWSgeom);
+
+  // Average variables within each buffered segment.
+  var avgEnvVars = envVars.reduceRegions({
+    collection: selectedSegs, 
+    reducer: ee.Reducer.mean(), 
+    scale: 30, 
+    crs: "EPSG:4326"
+  });
+  
+  return avgEnvVars;
+}
+
+
+
+/* Climatic factor calculation. */
+
+// Calculate the temporal average values.
+var avgClim = clim.mean()
+  .reproject(targetPrj);
+
+// printImgInfo("avgClim:", avgClim)
+
+// Calculate the temporal average values over the growing season.
+var avgGS = growingSeason.mean()
+  .select(["dayl", "prcp", "tmax", "tmin"], 
+    ["dayl_GS", "prcp_GS", "tmax_GS", "tmin_GS"])
+  .reproject(targetPrj);
+
+// printImgInfo("avgGS:", avgGS)
+
+
+/* Topographic feature calculation. */
+
+// Get the slope.
+var slope = ee.Terrain.slope(ALOSelv);
+
+// Get the aspect (in degrees).
+var aspect = ee.Terrain.aspect(ALOSelv);
+
+// East-westness: sin(slope) * sin(aspect).
+var East_West = sinImage(slope).multiply(sinImage(aspect))
+  .rename("East_West");
+
+// North-southness: sin(slope) * cos(aspect).
+var North_South = sinImage(slope).multiply(cosImage(aspect))
+  .rename("North_South");
+
+
+/* Calculate the average environmental variables within each unioned ATE segment. */
+
+// // Combine all the environmental variables.
+// var envVars = avgClim.addBands(avgGS)
+//   .addBands(ALOSelv)
+//   .addBands(slope)
+//   .addBands(aspect)
+//   .addBands(East_West)
+//   .addBands(North_South);
+
+// Combine all the environmental variables.
+var envVars = ALOSelv.addBands(slope)
+  .addBands(aspect)
+  .addBands(East_West)
+  .addBands(North_South);
+
+// printImgInfo("envVars:", envVars)
+
+// Buffer each ATE segment union.
+var bufferedATEsegs = ATEsegs.map(bufferATEseg);
+
+// Average the environmental variables by sub-watershed.
+var avgSegmentVars = subwatersheds.map(avgSegmentVarsBySubwatershed)
+  .flatten();
+
+// print("avgSegmentVars:", avgSegmentVars.first())
+
+if (false) {
+  // Visualization.
+  
+  // Load the transect center lines with ID.
+  var centerLines = ee.FeatureCollection(wdNA + 
+    "Transect_Analysis/" + 
+    "TransectCL_withID_20210405")
+    .filterBounds(Banff) // Testing.
+
+  Map.setOptions("hybrid");
+  // Map.setCenter(-115.48205, 50.88843, 14);
+  Map.setCenter(-115.38029, 50.82515, 13);
+  
+  Map.addLayer(centerLines, {color: "FFFF00"}, "centerLines");
+  Map.addLayer(ATEsegs, {color: "FF0000"}, "ATEsegs");
+
+} else if (true) {
+  // Output the result to the Asset.
+  // var fileName = "ATEsegmentUnion_perCenterLine";
+  var fileName = "avgSegmentVars_Topographic_testing";
+  
+  Export.table.toAsset({
+    collection: avgSegmentVars, 
+    description: fileName, 
+    assetId: wdNA + 
+      "Transect_Analysis/" + 
+      fileName
+  });
+}
+

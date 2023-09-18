@@ -1,0 +1,345 @@
+/**
+ * Introduction:
+ * 
+ *  1) Visualize the elements of the land-cover-based ATE identification
+ *    in Olympic Mountains.
+ * 
+ *  
+ * Update: 7/26/2022.
+ * 
+ * Runtime: 1m ~ 21m.
+ */
+
+
+// Load module(s).
+var IMG = require("users/ChenyangWei/Public:Modules/Image_Analysis&Processing");
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+
+// Target projection.
+var targetPrj = IMG.WGS84_30m;
+
+// Set the working directories.
+var wdGlobal = GATE.wd_Global;
+var wdGME = wdGlobal + "Global_Mountain_Explorer/";
+var wdNA = GATE.wd_NorthAmerica;
+
+// Olympic Mountains.
+var AOI = ee.Geometry.Rectangle({
+  coords: [-124.95733407018274,46.888984033161485, 
+    -122.54939566075853,48.528591259260935],
+  geodesic: false
+});
+
+// K3 mountainous regions.
+var k3Binary = ee.Image(wdGME +
+  "k3binary")
+  .reproject(targetPrj);
+
+// Land surface area based on the Hansen Global Forest Change dataset (v1.7).
+var land_k3 = ee.Image("UMD/hansen/global_forest_change_2019_v1_7")
+  .select("datamask")
+  .eq(1) // Select the "Mapped land surface" area in the Hansen dataset.
+  .reproject(targetPrj)
+  .updateMask(k3Binary);
+
+// ALOS elevation (Version 3.2, released in January 2021) in the AOI.
+var ALOSelv = ee.ImageCollection('JAXA/ALOS/AW3D30/V3_2').select('DSM')
+  .filterBounds(AOI)
+  .mosaic()
+  .reproject(targetPrj);
+
+// Load the climate-based ATE identification result.
+var CATE = ee.Image(wdNA + "Climate-Based_ATE/" +
+  "30mRawCATE_500mToAvgTLH_3kmBuf_NorthAmerica_10kmBufBBoxTo-180")
+  .reproject(targetPrj);
+
+// Load the closed forest elevation within the buffered raw CATE at the 30-m level.
+var clsdFrstElv_30m = ee.Image(wdNA + "Climate-Based_ATE/"
+  + "ClosedForests_in2015-2019ALLyears_BufRawCATE_ALOSelv")
+  .reproject(targetPrj)
+  .updateMask(CATE);
+
+// Load the closed forest elevation at the 10-km level.
+var clsdFrstElv_10km = ee.Image(wdNA + "Climate-Based_ATE/"
+  + "ClosedForestsALLyears_BufRawCATE_10000mMeanElv")
+  .reproject(targetPrj)
+  .updateMask(CATE);
+
+// Load the smoothed 10-km closed forest elevation.
+var smdElv_10km = ee.Image(wdNA + "Climate-Based_ATE/"
+  + "ClosedForestsALLyears_BufRawCATE_10kmMeanElv_10pxCircleMean")
+  .reproject(targetPrj)
+  .updateMask(CATE);
+
+
+/* Identify areas within the buffered raw CATE higher than 
+  the smoothed 10-km closed forest elevation. */
+
+// Elevation of the buffered raw CATE.
+var CATEelv = ALOSelv.updateMask(CATE);
+
+// Extract areas over the smoothed elevation.
+var gteSmdElv = CATEelv.gte(smdElv_10km)
+  .selfMask();
+
+
+/* Obtain the closed forests in the new CATE. */
+
+// Read the Land Cover datasets of 2015-2019.
+var landCover = GATE.readCoperLandCover15to19();
+
+// Extract and reproject the elevation of closed forests 
+//   (tree canopy > 70 %) in 2015-2019.
+var CF_inAllYrs_k3 = GATE.extractClosedForests_inAllYears(landCover, targetPrj)
+  .updateMask(k3Binary);
+
+
+/* Extract a new CATE in the identified areas within 3 km to closed forests. */
+
+// Select the closed forests within the buffered raw CATE.
+var CF_5yr = clsdFrstElv_30m.mask()
+  .selfMask();
+
+// Determine the size of neighborhood.
+var neighborhood = 200; // Number of 30-m pixels.
+
+// Calculate the distance to closed forests at each pixel in the neighborhood.
+var forestDist_px = CF_5yr.fastDistanceTransform({
+  neighborhood: neighborhood,
+  units: "pixels",
+  metric: "squared_euclidean"
+}).sqrt() // Get the distance in the number of pixels (30 m).
+  .reproject(targetPrj);
+  // .updateMask(CATE);
+
+var forestDist_m = forestDist_px.multiply(30)
+  .updateMask(CATE);
+
+// Generate a buffer of closed forests.
+var distThres_px = 100; // Number of 30-m pixels.
+
+var forestBuffer = forestDist_px.lte(distThres_px)
+  .updateMask(CATE)
+  .selfMask();
+
+// Extract a new CATE within the forest buffer in the study domain.
+var land = land_k3.updateMask(CATE)
+  .selfMask();
+
+// var newCATE = gteSmdElv.updateMask(forestBuffer)
+//   .updateMask(land) // Within the land area.
+//   .selfMask()
+//   .rename("newCATE");
+
+// Load the new CATE.
+var newCATE_loaded = ee.Image(wdNA + "Climate-Based_ATE/" 
+  + GATE.newCATE_fileName)
+  .reproject(targetPrj);
+
+
+/* Extract the most detailed (level 12) HydroSHEDS basins 
+  intersecting the AOI. */
+
+var selectedBasins = ee.FeatureCollection("WWF/HydroSHEDS/v1/Basins/hybas_12")
+  .filterBounds(AOI);
+
+
+var show = false;
+
+if (show) {
+  
+  /* Visualization. */
+  
+  var elvPalette = ['006600', '002200', 'fff700', 'ab7634', 'c4d0ff', 'ffffff'];
+  var elvVis = {min: 100, max: 1600, palette: elvPalette};
+  
+  Map.setOptions("satellite");
+  Map.setCenter(-123.6159, 47.801, 9);
+  
+  // Map.addLayer(CATE, {palette: "FFFF00"}, "CATE", true, 0.5);
+  
+  // Map.addLayer(CF_5yr, {palette: "FF0000"}, "CF_5yr", true, 0.5);
+  
+  // Map.addLayer(smdElv_10km, elvVis, "smdElv_10km", true);
+  // Map.addLayer(clsdFrstElv_10km, elvVis, "clsdFrstElv_10km", true);
+  // Map.addLayer(clsdFrstElv_30m, elvVis, "clsdFrstElv_30m", true);
+  
+  // Map.addLayer(CATEelv, elvVis, "CATEelv", true);
+  
+  // Map.addLayer(forestDist_m, {min: 0, max: 3e3, 
+  //   palette: "FF0000, FFFFFF, 0000FF"}, "forestDist_m", true, 1);
+  
+  // Map.addLayer(forestBuffer, {palette: "FFFF00"}, "forestBuffer", true, 0.5);
+  
+  // Map.addLayer(gteSmdElv, {palette: "00FF00"}, "gteSmdElv", true, 0.5);
+  
+  // Map.addLayer(land, {palette: "00FFFF"}, "land", true, 0.5);
+  
+  Map.addLayer(newCATE_loaded, {palette: "FFFF00"}, "newCATE_loaded", true, 1);
+  
+  Map.addLayer(selectedBasins, {color: "0000FF"}, "selectedBasins", true, 0.5);
+  
+} else if (true) {
+  
+  // Determine the new resolution.
+  // var newScale = 1e4; // In meters.
+
+  /* Output the TIF datasets in the AOI. */
+  
+  // Export.image.toDrive({
+  //   image: CATE, 
+  //   description: "CATE", 
+  //   folder: "OlympicMt_Total_TIF", 
+  //   region: AOI, 
+  //   scale: targetPrj.scale, 
+  //   crs: targetPrj.crs, 
+  //   maxPixels: 1e13, 
+  //   fileFormat: "GeoTIFF"
+  // });
+  
+  // Export.image.toDrive({
+  //   image: CF_5yr, 
+  //   description: "CF_5yr", 
+  //   folder: "OlympicMt_Total_TIF", 
+  //   region: AOI, 
+  //   scale: targetPrj.scale, 
+  //   crs: targetPrj.crs, 
+  //   maxPixels: 1e13, 
+  //   fileFormat: "GeoTIFF"
+  // });
+  
+  // Export.image.toDrive({
+  //   image: smdElv_10km, 
+  //   description: "smdElv_10km", 
+  //   folder: "OlympicMt_Total_TIF", 
+  //   region: AOI, 
+  //   // scale: newScale, 
+  //   scale: targetPrj.scale, 
+  //   crs: targetPrj.crs, 
+  //   maxPixels: 1e13, 
+  //   fileFormat: "GeoTIFF"
+  // });
+  
+  // Export.image.toDrive({
+  //   image: clsdFrstElv_10km, 
+  //   description: "clsdFrstElv_10km", 
+  //   folder: "OlympicMt_Total_TIF", 
+  //   region: AOI, 
+  //   // scale: newScale, 
+  //   scale: targetPrj.scale, 
+  //   crs: targetPrj.crs, 
+  //   maxPixels: 1e13, 
+  //   fileFormat: "GeoTIFF"
+  // });
+  
+  // Export.image.toDrive({
+  //   image: clsdFrstElv_30m, 
+  //   description: "clsdFrstElv_30m", 
+  //   folder: "OlympicMt_Total_TIF", 
+  //   region: AOI, 
+  //   scale: targetPrj.scale, 
+  //   crs: targetPrj.crs, 
+  //   maxPixels: 1e13, 
+  //   fileFormat: "GeoTIFF"
+  // });
+  
+  // Export.image.toDrive({
+  //   image: CATEelv, 
+  //   description: "CATEelv", 
+  //   folder: "OlympicMt_Total_TIF", 
+  //   region: AOI, 
+  //   scale: targetPrj.scale, 
+  //   crs: targetPrj.crs, 
+  //   maxPixels: 1e13, 
+  //   fileFormat: "GeoTIFF"
+  // });
+  
+  // Export.image.toDrive({
+  //   image: forestDist_m, 
+  //   description: "forestDist_m", 
+  //   folder: "OlympicMt_Total_TIF", 
+  //   region: AOI, 
+  //   scale: targetPrj.scale, 
+  //   crs: targetPrj.crs, 
+  //   maxPixels: 1e13, 
+  //   fileFormat: "GeoTIFF"
+  // });
+  
+  // Export.image.toDrive({
+  //   image: forestBuffer, 
+  //   description: "forestBuffer", 
+  //   folder: "OlympicMt_Total_TIF", 
+  //   region: AOI, 
+  //   scale: targetPrj.scale, 
+  //   crs: targetPrj.crs, 
+  //   maxPixels: 1e13, 
+  //   fileFormat: "GeoTIFF"
+  // });
+  
+  // Export.image.toDrive({
+  //   image: gteSmdElv, 
+  //   description: "gteSmdElv", 
+  //   folder: "OlympicMt_Total_TIF", 
+  //   region: AOI, 
+  //   scale: targetPrj.scale, 
+  //   crs: targetPrj.crs, 
+  //   maxPixels: 1e13, 
+  //   fileFormat: "GeoTIFF"
+  // });
+  
+  // Export.image.toDrive({
+  //   image: land, 
+  //   description: "land", 
+  //   folder: "OlympicMt_Total_TIF", 
+  //   region: AOI, 
+  //   scale: targetPrj.scale, 
+  //   crs: targetPrj.crs, 
+  //   maxPixels: 1e13, 
+  //   fileFormat: "GeoTIFF"
+  // });
+  
+  // Export.image.toDrive({
+  //   image: newCATE_loaded, 
+  //   description: "newCATE_loaded", 
+  //   folder: "OlympicMt_Total_TIF", 
+  //   region: AOI, 
+  //   scale: targetPrj.scale, 
+  //   crs: targetPrj.crs, 
+  //   maxPixels: 1e13, 
+  //   fileFormat: "GeoTIFF"
+  // });
+  
+  // Export.image.toDrive({
+  //   image: CF_inAllYrs_k3, 
+  //   description: "CF_inAllYrs_k3", 
+  //   folder: "OlympicMt_Total_TIF", 
+  //   region: AOI, 
+  //   scale: targetPrj.scale, 
+  //   crs: targetPrj.crs, 
+  //   maxPixels: 1e13, 
+  //   fileFormat: "GeoTIFF"
+  // });
+  
+  Export.image.toDrive({
+    image: land_k3, 
+    description: "land_k3", 
+    folder: "OlympicMt_Total_TIF", 
+    region: AOI, 
+    scale: targetPrj.scale, 
+    crs: targetPrj.crs, 
+    maxPixels: 1e13, 
+    fileFormat: "GeoTIFF"
+  });
+  
+} else {
+  
+  /* Output the selected basins. */
+  
+  Export.table.toDrive({
+    collection: selectedBasins, 
+    description: "OlympicMt_5_selectedBasins", 
+    folder: "OlympicMt_5_selectedBasins", 
+    fileFormat: "SHP"
+  });
+}
+

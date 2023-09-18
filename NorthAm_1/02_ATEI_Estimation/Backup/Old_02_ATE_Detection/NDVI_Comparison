@@ -1,0 +1,113 @@
+/**
+ * Introduction:
+ * 1) Compare the annual NDVI and gradient data.
+ * 
+ * Date: 7/28/2020.
+ */
+
+
+/* Setup. */
+
+// Asset path.
+var wdNorthA = "users/treeline/NorthAmerica_GME/";
+
+// Load the climatic ATE.
+var CATE = ee.Image(wdNorthA + "CATE/" + 
+  "500mCATE_3kmSurrounding_gte10kmClsdFrstElvFocalMean_10kmClsdFrstBuffer")
+  .reproject({
+    crs: "EPSG:4326",
+    scale: 30
+  });
+
+// Original NDVI (with cloud masking).
+var rawNDVI = ee.Image(wdNorthA + "Annual_NDVI/" +
+  "rawAnlMaxNDVI_L5L7_1984to2013").addBands(ee.Image(wdNorthA + "Annual_NDVI/" +
+  "rawAnlMaxNDVI_L8_2014to2019"));
+
+// Annual NDVI and gradient (testing).
+var ndviL5L7 = ee.Image(wdNorthA + "Annual_NDVI/" +
+  "RawMedianSmdAnlMaxNDVI_gradMagDir_L5L7_1984to2013_testing");
+var ndviL8 = ee.Image(wdNorthA + "Annual_NDVI/" +
+  "RawMedianSmdAnlMaxNDVI_gradMagDir_L8_2014to2019_testing");
+var NDVIgrad = ndviL5L7.addBands(ndviL8);
+
+// Masking before smoothing.
+var Kn = ee.Kernel.circle({
+  radius: 10 // Default units: "pixels".
+}); 
+
+var sNDVI_2014_maskingFirst = NDVIgrad.select("rNDVI_2014").reduceNeighborhood({
+  // The median reducer is less smooth than the mean reducer, 
+  // but the former one makes the spatial variation of NDVI more abrupt (i.e., less gradual),
+  // which then provides a sharper gradient (i.e., with larger magnitude).
+  reducer: ee.Reducer.median(),
+  kernel: Kn,
+  skipMasked: false // Do NOT mask output pixels if the corresponding input pixel is masked.
+}).reproject({
+  crs: "EPSG:4326",
+  scale: 30
+}).updateMask(CATE);
+
+print("NDVI and gradient:", NDVIgrad.bandTypes(),
+  NDVIgrad.projection().crs(),
+  NDVIgrad.projection().nominalScale())
+
+
+if (true) {
+  // Visualization.
+  Map.setOptions("hybrid");
+  Map.setCenter(-113.724166, 48.5763, 12);
+  
+  var ndvi_palette =
+      'FFFFFF, CE7E45, DF923D, F1B555, FCD163, 99B718, 74A901, 66A000, 529400,' +
+      '3E8601, 207401, 056201, 004C00, 023B01, 012E01, 011D01, 011301';
+  
+  Map.addLayer(CATE, {palette: "0000FF"}, "CATE");
+  
+  Map.addLayer(rawNDVI.select("NDVI_1984"), 
+    {min: 0, max: 1, palette: ndvi_palette}, 
+    "Raw NDVI of 1984 (cloud masking)", true);
+  
+  Map.addLayer(NDVIgrad.select("rNDVI_1984"), 
+    {min: 0, max: 1, palette: ndvi_palette}, 
+    "Raw NDVI of 1984 (no cloud masking)", true);
+  
+  Map.addLayer(rawNDVI.select("NDVI_2014"), 
+    {min: 0, max: 1, palette: ndvi_palette}, 
+    "Raw NDVI of 2014 (cloud masking)", true);
+  
+  Map.addLayer(NDVIgrad.select("rNDVI_2014"), 
+    {min: 0, max: 1, palette: ndvi_palette}, 
+    "Raw NDVI of 2014 (no cloud masking)", true);
+  
+  // Map.addLayer(NDVIgrad.select("sNDVI_1984"), 
+  //   {min: 0, max: 1, palette: ndvi_palette}, 
+  //   "Smoothed NDVI of 1984", true);
+  
+  Map.addLayer(sNDVI_2014_maskingFirst, 
+    {min: 0, max: 1, palette: ndvi_palette}, 
+    "Smoothed NDVI of 2014 (masking first)", true);
+  
+  Map.addLayer(NDVIgrad.select("sNDVI_2014"), 
+    {min: 0, max: 1, palette: ndvi_palette}, 
+    "Smoothed NDVI of 2014 (smoothing first)", true);
+  
+  // Map.addLayer(NDVIgrad.select("dir_1984"),
+  //   {min: -Math.PI, max: Math.PI}, "NDVI Gradient Direction of 1984", true);
+  
+  Map.addLayer(NDVIgrad.select("dir_2014"),
+    {min: -Math.PI, max: Math.PI}, "NDVI Gradient Direction of 2014", true);
+  
+  // Map.addLayer(NDVIgrad.select("dir_2019"),
+  //   {min: -Math.PI, max: Math.PI}, "NDVI Gradient Direction of 2019", true);
+  
+  // Map.addLayer(NDVIgrad.select("mag_1984"),
+  //   {min: 0, max: 2e-3, palette: "FFFFFF, FF0000"}, "NDVI Gradient Magnitude of 1984", true);
+  
+  Map.addLayer(NDVIgrad.select("mag_2014"),
+    {min: 0, max: 2e-3, palette: "FFFFFF, FF0000"}, "NDVI Gradient Magnitude of 2014", true);
+  
+  // Map.addLayer(NDVIgrad.select("mag_2019"),
+  //   {min: 0, max: 2e-3, palette: "FFFFFF, FF0000"}, "NDVI Gradient Magnitude of 2019", true);
+}
+

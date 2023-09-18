@@ -1,0 +1,680 @@
+/*
+  Introduction:
+    1) Visualize the annual NDVI and gradient data.
+    2) Display the histograms of the selected variables at the sampled points.
+    3) Display the modeling results of logistic regression and random forest.
+  
+  Update:
+    10/13/2020.
+*/
+
+
+var point = ee.Geometry.Point([-113.49153672863031, 48.74125005784002]); // GNP.
+// var point = ee.Geometry.Point([-115.49024400807646, 51.32579263179932]); // Calgary.
+// var point = ee.Geometry.Point([-148.99293, 63.737]); // Alaska.
+
+// Asset path.
+var wdNorthA = "users/treeline/NorthAmerica_GME/";
+
+// Read the sampled data with the extracted variables of interest.
+var sampled = ee.FeatureCollection(wdNorthA + "Pixel_Sampling/Random/" +
+  "extractedVariables_smd2019_GausOrien_MaxAvgPost");
+
+// print(sampled.size())
+// print(sampled.first())
+
+// Divide the extracted variables into the three classes of pixels.
+var Above = sampled.filter(ee.Filter.eq("Class", "Above"));
+var Within = sampled.filter(ee.Filter.eq("Class", "Within"));
+var Below = sampled.filter(ee.Filter.eq("Class", "Below"));
+
+// // Calculate NDVI medians of ATE pixels.
+// var maxMedians = Within.reduceColumns({
+//   reducer: ee.Reducer.median(), 
+//   selectors: ["maxNDVI2019"]
+// });
+
+// print(maxMedians)
+
+// var avgMedians = Within.reduceColumns({
+//   reducer: ee.Reducer.median(), 
+//   selectors: ["avgNDVI2019"]
+// });
+
+// print(avgMedians)
+
+// GEDI forest canopy height.
+var height = ee.ImageCollection("users/potapovpeter/GEDI_V27")
+  .filterBounds(sampled.geometry());
+
+// ALOS elevation.
+var elevation = ee.Image('JAXA/ALOS/AW3D30/V2_2').select('AVE_DSM');
+
+// Load the climatic ATE.
+var CATE = ee.Image(wdNorthA + "CATE/" + 
+  "3kmBuffered_30mReprj_500mCATE3kmBuffer_gteAvgClsdFrstElv_10kmRes10pxFocalMean_10kmClsdFrstBuffer");
+
+// Elevational transects in North America.
+var transects = ee.FeatureCollection(wdNorthA + "Transects/30mBufTransects30mRes_90mSegmentedCATE_Hybas4_5_combined");
+
+// Remove transects either too short or too long.
+var lowerLimit = 500;
+var upperLimit = 3e3;
+
+transects = transects.filter({
+  filter: ee.Filter.and(
+    ee.Filter.gte("Length_m", lowerLimit),
+    ee.Filter.lte("Length_m", upperLimit)
+  )
+});
+
+// Load the annual NDVI and gradient data.
+var NDVIgradL5L7 = ee.Image(wdNorthA + "Annual_NDVI/" +
+"RawMedianSmdAnlMaxNDVI_gradMagDir_L5L7_1984to2013");
+var NDVIgradL8 = ee.Image(wdNorthA + "Annual_NDVI/" +
+  "RawMedianSmdAnlMaxNDVI_gradMagDir_L8_2014to2019");
+var NDVIgrad = NDVIgradL5L7.addBands(NDVIgradL8);
+
+// Extract the raw NDVI.
+var rawNDVI = ee.ImageCollection.fromImages(NDVIgrad.select("r.*").bandNames().map(function(b) {
+  var year = ee.Number.parse(ee.String(b).slice(6, 10)).int();
+  year = ee.Date.fromYMD(year, 1, 1);
+  return NDVIgrad.select([b], ["rawNDVI"]).set("year", year);
+}));
+
+var avgRawNDVI = rawNDVI.mean();
+
+// Extract the smoothed NDVI.
+var smdNDVI = ee.ImageCollection.fromImages(NDVIgrad.select("s.*").bandNames().map(function(b) {
+  var year = ee.Number.parse(ee.String(b).slice(6, 10)).int();
+  year = ee.Date.fromYMD(year, 1, 1);
+  return NDVIgrad.select([b], ["smdNDVI"]).set("year", year);
+}));
+
+var avgSmdNDVI = smdNDVI.mean();
+
+// Examine the NDVIs.
+// print("rawNDVI:", rawNDVI)
+// print("smdNDVI:", smdNDVI)
+
+// Add a null image as an interval in displaying the animation.
+var rawNDVI_withNull = rawNDVI.merge(ee.Image.constant(0).rename("constant"));
+var smdNDVI_withNull = smdNDVI.merge(ee.Image.constant(0).rename("constant"));
+
+// Calculate the average magnitude and direction of NDVI gradient.
+var avgMag = NDVIgrad.select("mag.*")
+  .reduce(ee.Reducer.mean());
+
+var avgDir = NDVIgrad.select("dir.*")
+  .reduce(ee.Reducer.mean());
+
+// Modeling results of logistic regression and random forest in 1984 and 2019.
+var predicted1984 = ee.Image(wdNorthA + "Pixel_Sampling/Random/" +
+  "LRvsRF_predictedImg_1984_2");
+
+var predicted2019 = ee.Image(wdNorthA + "Pixel_Sampling/Random/" +
+  "LRvsRF_predictedImg_2019_2");
+
+
+/* Functions for visualizing the clicked point and the zoom box. */
+
+// Show point on the map.
+function showPointOnMap(m, point, layer) {
+  var dot = ui.Map.Layer(point, {color: "FF0000"}, "Clicked point");
+  m.layers().set(layer, dot);
+}
+
+// Show the zoom box.
+function centerZoomBox(point) {
+  showPointOnMap(zoomBox, point, 2);
+  zoomBox.centerObject(point, 13);
+}
+
+
+/* Functions for generating NDVI time-series charts. */
+
+// Display an raw NDVI chart.
+function makeRawNDVIchart(point) {
+  var chart = ui.Chart.image.series({
+    imageCollection: rawNDVI, 
+    region: point, 
+    reducer: ee.Reducer.first(), 
+    scale: 30, 
+    xProperty: "year"
+  });
+  
+  chart.setOptions({
+    title: {position: 'none'},
+    vAxis: {title: "Raw NDVI", gridlines: {count: 5}},
+    hAxis: {title: "Year", gridlines: {count: 10}},
+    trendlines: {0: {
+      lineWidth: 3,
+      pointSize: 0,
+      color: 'CC0000'
+    }},
+    lineWidth: 2,
+    pointSize: 4,
+    series: {
+      0: {color: "228B22"}
+    },
+    legend: {position: 'none'}
+  });
+  
+  return chart;
+}
+
+// Display a smoothed NDVI chart.
+function makeSmdNDVIchart(point) {
+  var chart = ui.Chart.image.series({
+    imageCollection: smdNDVI, 
+    region: point, 
+    reducer: ee.Reducer.first(), 
+    scale: 30, 
+    xProperty: "year"
+  });
+  
+  chart.setOptions({
+    title: {position: 'none'},
+    vAxis: {title: "Smoothed NDVI", gridlines: {count: 5}},
+    hAxis: {title: "Year", gridlines: {count: 10}},
+    trendlines: {0: {
+      lineWidth: 3,
+      pointSize: 0,
+      color: "0000FF"
+    }},
+    lineWidth: 2,
+    pointSize: 4,
+    series: {
+      0: {color: "FF0000"}
+    },
+    legend: {position: 'none'}
+  });
+  
+  return chart;
+}
+
+
+/* Functions for creating NDVI animations. */
+
+// Make a raw NDVI animation.
+// var Dim = 840; // Possible maximum.
+var Dim = 300;
+var Buf = 3e3;
+var fps = 2;
+
+function makeRawNDVIanimation(point) {
+  var NDVIparams = {
+    dimensions: Dim,
+    region: point.buffer(Buf),
+    framesPerSecond: fps,
+    crs: 'EPSG:3857',
+    min: 0,
+    max: 1,
+    palette: ndvi_palette
+  };
+
+  return ui.Thumbnail(rawNDVI_withNull, NDVIparams);
+}
+
+// Make a smoothed NDVI animation.
+function makeSmdNDVIanimation(point) {
+  var NDVIparams = {
+    dimensions: Dim,
+    region: point.buffer(Buf),
+    framesPerSecond: fps,
+    crs: 'EPSG:3857',
+    min: 0,
+    max: 1,
+    palette: ndvi_palette
+  };
+
+  return ui.Thumbnail(smdNDVI_withNull, NDVIparams);
+}
+
+
+/* Function for generating histograms for the sampled variables of each pixel class. */
+
+function generateHistogram(chartName, variable, min, max, steps) {
+  // Create fixed histograms by pixel classes.
+  var oldHist = ee.List(sampled.reduceColumns({
+    selectors: [variable, 'Class'],
+    reducer: ee.Reducer.fixedHistogram({
+      min: min, 
+      max: max, 
+      steps: steps
+    }).group({
+      groupField: 1,
+      groupName: 'Pixel_Class',
+    })
+  }).get("groups"));
+  
+  // Process the old histogram for plotting.
+  var newHist = ee.FeatureCollection(oldHist.map(function(element) {
+    // Extract the histogram of each pixel class.
+    var pixelClass = ee.Dictionary(element).get("Pixel_Class");
+    var histogram = ee.Array(ee.Dictionary(element).get("histogram")).toList();
+  
+    // Separate the value and count in each histogram.
+    histogram = ee.FeatureCollection(histogram.map(function(element) {
+      var value = ee.List(element).get(0);
+      var count = ee.List(element).get(1);
+      
+      return ee.Feature(null).set({
+        Pixel_Class: pixelClass,
+        Value: value,
+        Count: count
+      });
+    }));
+    
+    return histogram;
+  })).flatten();
+  
+  // Create a histogram chart.
+  var chart = ui.Chart.feature.groups({
+    features: newHist, 
+    xProperty: "Value", 
+    yProperty: "Count", 
+    seriesProperty: "Pixel_Class"
+  }).setChartType('AreaChart')
+    .setOptions({
+      title: chartName,
+      series: {
+        0: {color: 'blue'},
+        1: {color: 'darkgreen'},
+        2: {color: 'orange'}
+      }
+    });
+    
+  return chart;
+}
+
+  
+/* Initialize the widgets. */
+
+function init(ptLayer) { // Layer # of the clicked point.
+  
+  var Padding = "0px 2px";
+  var titlePadding = "2px 2px";
+  
+  /* Create a left panel to display the animations and time-series charts of annual NDVIs. */
+
+  // Create an empty panel.
+  var panel = ui.Panel({
+    style: {
+      width: "400px", // '30%'
+      border: '3px solid #228B22'
+    }
+  });
+  
+  // Title, instructions, and labels.
+  var panelTitle = ui.Label({
+    value: 'NDVI Explorer',
+    style: {
+      fontSize: '24px',
+      fontWeight: 'bold',
+      padding: titlePadding,
+      color: '#228B22',
+      textAlign: "center",
+      stretch: "horizontal"
+    }
+  });
+  
+  var instructions = ui.Label({
+    value: 'Click on the map to show the time-series charts and animations' + 
+      ' of local annual maximum normalized difference vegetation indices (NDVIs) from 1984 to 2019.',
+    style: {
+      color: 'gray',
+      padding: Padding
+    }
+  });
+  
+  var rawNDVIlabel = ui.Label({
+    value: 'Raw annual maximum NDVIs from 1984 to 2019 (WITHOUT cloud or cloud-shadow masking)', 
+    style: {
+      fontWeight: 'bold',
+      fontSize: "15px",
+      padding: Padding,
+      color: 'black'
+    }
+  });
+  
+  var smdNDVIlabel = ui.Label({
+    value: 'Smoothed annual maximum NDVIs from 1984 to 2019 (WITHOUT cloud or cloud-shadow masking)', 
+    style: {
+      fontWeight: 'bold',
+      fontSize: "15px",
+      padding: Padding,
+      color: 'black'
+    }
+  });
+  
+  // Create several empty panels to hold the animations and time-series charts.
+  var chartPanel1 = ui.Panel();
+  var chartPanel2 = ui.Panel();
+  
+  var animationPanel1 = ui.Panel();
+  var animationPanel2 = ui.Panel();
+  
+  // Add widgets to the left panel.
+  panel.add(panelTitle);
+  panel.add(instructions);
+  
+  panel.add(rawNDVIlabel);
+  panel.add(animationPanel1);
+  panel.add(chartPanel1);
+  
+  panel.add(smdNDVIlabel);
+  panel.add(animationPanel2);
+  panel.add(chartPanel2);
+  
+  
+  /* Create a panel for displaying the information at the sampled points. */
+
+  // An empty panel.
+  var panel2 = ui.Panel({
+    style: {
+      width: '400px',
+      border: '3px solid #228B22',
+    }
+  });
+  
+  // Add a title and a label.
+  var panel2Title = ui.Label({
+    value: 'Sampling Information',
+    style: {
+      fontSize: '24px',
+      fontWeight: 'bold',
+      padding: titlePadding,
+      color: '#228B22',
+      textAlign: "center",
+      stretch: "horizontal"
+    }
+  });
+  
+  var panel2Label = ui.Label({
+    value: 'Variables of interest all types of sample points, including: ' +
+      '1) Above the alpine treeline ectone (ATE), 2) Below the ATE, and 3) Within the ATE.', 
+    style: {
+      color: 'gray',
+      padding: Padding
+    }
+  });
+  
+  var maxNDVIlabel = ui.Label({
+    value: 'Variables based on the annual maximum NDVI', 
+    style: {
+      fontWeight: 'bold',
+      fontSize: "15px",
+      padding: Padding,
+      color: 'black'
+    }
+  });
+  
+  var avgNDVIlabel = ui.Label({
+    value: 'Variables based on the annual average NDVI', 
+    style: {
+      fontWeight: 'bold',
+      fontSize: "15px",
+      padding: Padding,
+      color: 'black'
+    }
+  });
+  
+  // var nonNDVIlabel = ui.Label({
+  //   value: 'Non-NDVI variables', 
+  //   style: {
+  //     fontWeight: 'bold',
+  //     fontSize: "15px",
+  //     padding: Padding,
+  //     color: 'black'
+  //   }
+  // });
+  
+  panel2.add(panel2Title);
+  panel2.add(panel2Label);
+  
+  // Maximum NDVI variables.
+  panel2.add(maxNDVIlabel);
+  
+  panel2.add(generateHistogram("Annual maximum NDVI", 
+    "maxNDVI201", 0, 1, 50));
+  
+  panel2.add(generateHistogram("Gaussian component", 
+    "maxNDVIGau", 0, 1, 50));
+  
+  panel2.add(generateHistogram("NDVI gradient magnitude", 
+    "maxNDVImag", 0, 0.01, 50));
+  
+  panel2.add(generateHistogram("Angle between the gradients of NDVI and elevation", 
+    "maxNDVIelv", 0, 6.3, 64));
+  
+  panel2.add(generateHistogram("Orientation component", 
+    "maxOrien", 0, 1, 50));
+  
+  // Average NDVI variables.
+  panel2.add(avgNDVIlabel);
+  
+  panel2.add(generateHistogram("Annual average NDVI", 
+    "avgNDVI201", 0, 1, 50));
+  
+  panel2.add(generateHistogram("Gaussian component", 
+    "avgNDVIGau", 0, 1, 50));
+  
+  panel2.add(generateHistogram("NDVI gradient magnitude", 
+    "avgNDVImag", 0, 0.01, 50));
+  
+  panel2.add(generateHistogram("Angle between the gradients of NDVI and elevation", 
+    "avgNDVIelv", 0, 6.3, 64));
+  
+  panel2.add(generateHistogram("Orientation component", 
+    "avgOrien", 0, 1, 50));
+  
+  // // Non-NDVI variables.
+  // panel2.add(nonNDVIlabel);
+  
+  // panel2.add(generateHistogram("GEDI forest canopy height", 
+  //   "Canopy_Height", 0, 40, 41));
+  
+  // panel2.add(generateHistogram("Elevation", 
+  //   "AVE_DSM", 500, 5500, 50));
+  
+  // panel2.add(generateHistogram("Elevation gradient magnitude", 
+  //   "elvMag", 0, 1, 50));
+
+  
+  /* Create a zoom box panel to show a detailed view of the clicked point. */
+
+  // An empty panel.
+  var zoomPanel = ui.Panel({
+    style: {
+      position: 'bottom-right',
+      height: '335px',
+      width: '300px',
+    }
+  });
+  
+  // Instruction information.
+  var zoomInstructions = ui.Label({
+    value: 'Detailed View', 
+    style: {
+      fontWeight: 'bold',
+      fontSize: "15px",
+      padding: Padding,
+      stretch: 'horizontal',
+      textAlign: 'center',
+      color: 'gray'
+    }
+  });
+  
+  // Add widgets to the zoom panel.
+  zoomPanel.add(zoomInstructions);
+  zoomPanel.add(zoomBox);
+
+
+  /* Arrange the generated panels. */
+
+  // Add the zoom box panel to the default map.
+  map.add(zoomPanel);
+  
+  // Create a panel containing the map and the sampled information explorer.
+  var mapContainer = ui.Panel({
+    widgets: [map, panel2], 
+    layout: ui.Panel.Layout.flow("horizontal")
+  });
+  
+  // Create a split panel for the NDVI explorer and the map container.
+  var splitPanel = ui.SplitPanel({
+    firstPanel: panel,
+    secondPanel: mapContainer,
+  });
+
+  // Display the split panel.
+  ui.root.clear();
+  ui.root.add(splitPanel);
+  
+  // Display the zoom box.
+  centerZoomBox(point);
+  
+  // Display the pre-determined point.
+  showPointOnMap(map, point, ptLayer);
+  
+  map.centerObject(point, 10);
+  
+  // Generat time-series charts and animations at the pre-determined point.
+  chartPanel1.clear();
+  chartPanel2.clear();
+  animationPanel1.clear();
+  animationPanel2.clear();
+  
+  chartPanel1.add(makeRawNDVIchart(point));
+  chartPanel2.add(makeSmdNDVIchart(point));
+  animationPanel1.add(makeRawNDVIanimation(point));
+  animationPanel2.add(makeSmdNDVIanimation(point));
+  
+  // Bind the click handler to the new map.
+  map.onClick(function(coordinates){
+    var point = ee.Geometry.Point([coordinates.lon, coordinates.lat]);
+    
+    // Display the zoom box.
+    centerZoomBox(point);
+    
+    // Display the clicked point.
+    showPointOnMap(map, point, ptLayer);
+    
+    // Generat time-series charts and animations at the pre-determined point.
+    chartPanel1.clear();
+    chartPanel2.clear();
+    animationPanel1.clear();
+    animationPanel2.clear();
+    
+    chartPanel1.add(makeRawNDVIchart(point));
+    chartPanel2.add(makeSmdNDVIchart(point));
+    animationPanel1.add(makeRawNDVIanimation(point));
+    animationPanel2.add(makeSmdNDVIanimation(point));
+  });
+}
+
+
+/* Final visualization. */
+
+if (true) {
+  var ndvi_palette =
+      'FFFFFF, CE7E45, DF923D, F1B555, FCD163, 99B718, 74A901, 66A000, 529400,' +
+      '3E8601, 207401, 056201, 004C00, 023B01, 012E01, 011D01, 011301';
+  
+  var elevationPalette = ['006600', '002200', 'fff700', 'ab7634', 'c4d0ff', 'ffffff'];
+  
+  var ATEIpalette = ["a50026","d73027","f46d43","fdae61","fee090",
+    "ffffbf","e0f3f8","abd9e9","74add1","4575b4","313695"]
+    .reverse();
+  
+  var NDVIvisParams = {min: 0, max: 1, palette: ndvi_palette};
+  var elvVisParams = {min: 500, max: 4500, palette: elevationPalette};
+  var ATEIvisParams = {min: 0, max: 1, palette: ATEIpalette};
+  
+  // Initialize the map.
+  var map = ui.Map();
+  
+  map.style().set("cursor", "crosshair");
+  
+  map.setOptions("hybrid");
+  
+  map.addLayer(CATE.select("Buffered_3km"), 
+    {palette: "FFFF00"}, 
+    "3km-buffered climatic ATE", false);
+  
+  map.addLayer(CATE.select("gteFocalMean_30mReprj"), 
+    {palette: "0000FF"}, 
+    "Climatic ATE", false);
+  
+  map.addLayer(avgRawNDVI, NDVIvisParams,
+    "Average raw NDVI from 1984 to 2019"); 
+    
+  map.addLayer(avgSmdNDVI, NDVIvisParams,
+    "Average smoothed NDVI from 1984 to 2019"); 
+  
+  map.addLayer(avgDir,
+    {min: -Math.PI, max: Math.PI}, 
+    "Average gradient direction", false);
+  
+  map.addLayer(avgMag,
+    {min: 0, max: 2e-3, palette: "FFFFFF, FF0000"}, 
+    "Average gradient magnitude", false);
+  
+  map.addLayer(elevation, elvVisParams,
+    "ALOS elevation", false);
+  
+  map.addLayer(height, 
+    {min: 0, max: 40, palette: "FFFFFF, 228B22"}, 
+    "GEDI forest canopy height", false);
+  
+  map.addLayer(predicted1984.select("RFpredictedImg_Raw"), ATEIvisParams,
+    "Random forest predicted ATEI in 1984", false);
+  
+  map.addLayer(predicted1984.select("LRpredictedImg_Raw"), ATEIvisParams,
+    "Logistic regression predicted ATEI in 1984", true);
+  
+  map.addLayer(predicted2019.select("RFpredictedImg_Raw"), ATEIvisParams,
+    "Random forest predicted ATEI in 2019", false);
+  
+  map.addLayer(predicted2019.select("LRpredictedImg_Raw"), ATEIvisParams,
+    "Logistic regression predicted ATEI in 2019", true);
+  
+  map.addLayer(transects, {color: "0000FF"}, // "228B22"
+    "Elevational transects", false);
+  
+  map.addLayer(Above, {color: "blue"}, 
+    "Samples above the ATE", false, 1);
+  map.addLayer(Below, {color: "darkgreen"}, 
+    "Samples below the ATE", false, 1);
+  map.addLayer(Within, {color: "orange"}, 
+    "Samples within the ATE", false, 1);
+  
+  // Create a map to be used as the zoom box.
+  var zoomBox = ui.Map({style: {stretch: "both", shown: true}})
+      .setControlVisibility({
+        all: false,
+        layerList: true
+      }).setOptions("hybrid");
+  
+  // zoomBox.addLayer(avgRawNDVI, NDVIvisParams,
+  //   "Average raw NDVI");
+    
+  // zoomBox.addLayer(avgSmdNDVI, NDVIvisParams,
+  //   "Average smoothed NDVI");
+  
+  // zoomBox.addLayer(predicted1984.select("RFpredictedImg_Raw"), ATEIvisParams,
+  //   "Random forest in 1984", false);
+  
+  zoomBox.addLayer(predicted1984.select("LRpredictedImg_Raw"), ATEIvisParams,
+    "Logistic regression in 1984", true);
+  
+  // zoomBox.addLayer(predicted2019.select("RFpredictedImg_Raw"), ATEIvisParams,
+  //   "Random forest in 2019", false);
+  
+  zoomBox.addLayer(predicted2019.select("LRpredictedImg_Raw"), ATEIvisParams,
+    "Logistic regression in 2019", true);
+  
+  init(16);
+}
+

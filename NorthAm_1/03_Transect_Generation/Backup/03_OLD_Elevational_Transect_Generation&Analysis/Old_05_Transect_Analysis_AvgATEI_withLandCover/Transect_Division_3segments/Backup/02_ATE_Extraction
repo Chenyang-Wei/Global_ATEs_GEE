@@ -1,0 +1,227 @@
+/**
+ * Introduction:
+ * 1) Locate pixels with avgATEI around 0.5 along the center line. 
+ * 2) Generate a divide at each set of the qualified pixels.
+ * 3) Select center lines with two divides.
+ * 4) Connect the two divides with a line string.
+ * 
+ * Update: 2/3/2021.
+ * 
+ * Runtime: 1m ~ 26m.
+*/
+
+
+/* Load datasets. */
+
+// Set the work directory.
+var wd = "users/treeline/NorthAmerica_GME/";
+
+// Annual ATEIs.
+var ATEI_1 = ee.Image(wd +
+  "Annual_ATEI/ATEI_medianSmdAnlMaxAvgNDVIs_1984to1999");
+var ATEI_2 = ee.Image(wd +
+  "Annual_ATEI/ATEI_medianSmdAnlMaxAvgNDVIs_2000to2019");
+
+var ATEI = ATEI_1.addBands(ATEI_2);
+
+// print(ATEI.projection().crs(), ATEI.projection().nominalScale())
+
+
+/* Generate the average ATEIs over time within each transect. */
+
+var avgATEI = ATEI.reduce(ee.Reducer.mean()).reproject({
+  crs: "EPSG:4326", 
+  scale: 30
+});
+
+// print(avgATEI)
+
+
+/* Functions to group center lines. */
+
+function groupCL(index) {
+  // Load center lines in each basin.
+  var CL = ee.FeatureCollection(wd
+    + "Transects/SelectedHybas4Basins_closedForestsLowerSlopeValley_nonForestedUpperSlope/"
+    + "CenterLines/"
+    + "Basin_" + index);
+  
+  return CL;
+}
+
+
+/* Function to divide a center line. */
+
+var threshold = 0.1;
+
+var ATEIdiff = avgATEI.subtract(0.5).abs();
+var ATEImask = ATEIdiff.lte(threshold);
+
+var coords = ee.Image.pixelLonLat().reproject({
+  crs: "EPSG:4326", 
+  scale: 30
+});
+
+var maskedCoords = coords.updateMask(ATEImask);
+
+// Function to extract divides along each center line.
+function extractDivide(CL) {
+  // Get the pixels of qualified points.
+  var longList = ee.List(CL.get("longitude"));
+  var latList = ee.List(CL.get("latitude"));
+  
+  var longLat = longList.zip(latList);
+  
+  // Number of the qualified pixels.
+  var pxCount = longLat.size();
+  
+  // Create a polygon (buffered points) around each set of qualified pixels.
+  var multiPlg = ee.Geometry.MultiPoint(longLat)
+    .buffer(45);
+  var plgCoords = multiPlg.coordinates();
+  
+  // Number of the created polygons (the divides).
+  var divideCount = plgCoords.size();
+  
+  // Set the centroid of each polygon as a divide.
+  var ctrs = plgCoords.map(function(coords) {
+    var ctr = ee.Geometry.Polygon(coords)
+      .centroid();
+    
+    return ctr;
+  });
+  
+  ctrs = ee.Geometry.MultiPoint(ctrs);
+  
+  // Copy and set the variables of interest.
+  ctrs = ee.Feature(ctrs).copyProperties({
+    source: CL, 
+    properties: CL.propertyNames()
+  }).set({
+    pxCount: pxCount,
+    divideCount: divideCount
+  });
+  
+  return ctrs;
+}
+
+// Function to generate a line string connnecting divides along each center line.
+function connectDivide(CL) {
+  // Generate a line string between the divides.
+  var pts = CL.geometry().coordinates();
+  var LS = ee.Geometry.LineString(pts);
+  
+  // Get the length of the line string.
+  var ATElen = LS.length();
+  
+  // Save the coordinates of divides.
+  var divide1 = ee.List(pts.get(0));
+  var divide2 = ee.List(pts.get(1));
+  
+  var dvd1Long = divide1.get(0);
+  var dvd1Lat = divide1.get(1);
+  
+  var dvd2Long = divide2.get(0);
+  var dvd2Lat = divide2.get(1);
+  
+  // Copy and set the variables of interest.
+  LS = ee.Feature(LS).copyProperties({
+    source: CL, 
+    exclude: ["latitude", "longitude"] // List-type properties can not be output to Asset.
+  }).set({
+    ATElen: ATElen,
+    
+    dvd1Long: dvd1Long,
+    dvd1Lat: dvd1Lat,
+    
+    dvd2Long: dvd2Long,
+    dvd2Lat: dvd2Lat,
+  });
+  
+  return LS;
+}
+  
+
+/* Create a list of the index groups of basins. */
+
+// Create a list of indices.
+var indices = ee.List.sequence(0, 123);
+
+// Remove the failed task.
+indices = indices.remove(106).getInfo();
+
+
+/* Group and export the center lines by indices. */
+
+// Number of basins in each group.
+var step = 5;
+
+for (var startIndex = 0; startIndex <= 123; startIndex = startIndex + step) {
+  // Generate a subset of indices.
+  var endIndex = startIndex + step;
+  var indexSlice = indices.slice(startIndex, endIndex);
+  
+  // print("indexSlice:", indexSlice)
+  
+  // Load the center lines of each group.
+  var groupedCL = ee.FeatureCollection(indexSlice.map(groupCL)).flatten();
+  
+  // Extract the qualified pixel coordinates along each center line.
+  var coordsExtracted = maskedCoords.reduceRegions({
+    collection: groupedCL, 
+    reducer: ee.Reducer.toList(), 
+    scale: 30,
+    crs: "EPSG:4326"
+  });
+  
+  // Remove center lines with no qualified pixels.
+  coordsExtracted = coordsExtracted.filter(ee.Filter.and(
+    ee.Filter.neq("longitude", []),
+    ee.Filter.neq("latitude", [])
+  ));
+
+  // Extract divides at the qualified pixels along each center line.
+  var divideExtracted = coordsExtracted.map(extractDivide);
+  
+  // Select center lines with two divides.
+  divideExtracted = divideExtracted.filter(ee.Filter.equals({
+    leftField: "divideCount", 
+    rightValue: 2
+  }));
+  
+  // Connect the two divides along each center line.
+  var divideConnected = divideExtracted.map(connectDivide);
+  
+  // Export the generated feature collection to the Asset.
+  if (true) {
+    var fileName = "Basins_" + startIndex + "to" + endIndex;
+    
+    // print("fileName:", fileName)
+    
+    Export.table.toAsset({
+      collection: divideConnected, 
+      description: fileName, 
+      assetId: wd + "Transects/SelectedHybas4Basins_closedForestsLowerSlopeValley_nonForestedUpperSlope/"
+        + "CenterLines/"
+        + "divideConnected_avgATEI_Pt4toPt6_45mBufPlg/" + fileName
+    });
+  }
+}
+
+// print("groupedCL:", groupedCL.first(),
+//   groupedCL.size())
+// print("divideExtracted:", divideExtracted.first(),
+//   divideExtracted.size())
+
+// print("divideConnected:", divideConnected.first(),
+//   divideConnected.size())
+
+// Map.setOptions("HYBRID");
+// // Map.centerObject(groupedCL.first(), 14);
+// Map.setCenter(-114.32445, 38.97152, 14);
+
+// Map.addLayer(avgATEI, {min: 0, max: 1, palette: "0000FF, FFFFFF, FF0000"}, "avgATEI");
+// Map.addLayer(ATEImask.selfMask(), {palette: "00FF00"}, "ATEImask");
+
+// Map.addLayer(groupedCL, {color: "FFFF00"}, "groupedCL", true);
+// Map.addLayer(divideConnected, {color: "0000FF"}, "divideConnected", true);

@@ -1,0 +1,103 @@
+/**
+ * Introduction:
+ * 1) Extract the endpoint elevations of 
+ *  annual ATE segments within each transect.
+ * 
+ * Update: 4/8/2021.
+ * 
+ * Runtime: 7h.
+*/
+
+
+/* Data preparation. */
+
+// Set the working directory.
+var wdNA = "users/treeline/NorthAmerica_GME/";
+
+// Set the 10-km buffered bounding box of the study domain.
+var AOI = ee.Geometry.Rectangle({
+  coords: [-180, 7.114761500193937, -52.095625030545534, 80.24342770493531],
+  geodesic: false
+});
+
+// Target projection.
+var targetPrj = {
+  crs: "EPSG:4326",
+  scale: 30
+};
+
+// ALOS elevation (Version 3.2, released in January 2021) in the AOI.
+var ALOSelv = ee.ImageCollection('JAXA/ALOS/AW3D30/V3_2').select('DSM')
+  .filterBounds(AOI)
+  .mosaic()
+  .reproject(targetPrj);
+
+// print("ALOSelv:",
+//   ALOSelv.bandTypes(),
+//   ALOSelv.projection().crs(),
+//   ALOSelv.projection().nominalScale());
+
+// Load the annual ATE segments.
+var ATEsegments = ee.FeatureCollection(wdNA + "Transect_Analysis/Validation/"
+  + "TransectCenterLines_annualSegments_ATEIgtPt4329");
+
+// print("ATEsegments:", ATEsegments.first(),
+//   ATEsegments.size()) // 15659.
+
+
+/* Extract the endpoint elevations of annual ATE segments within each transect. */
+
+// Function to extract the endpoint elevations of each annual ATE segment.
+function extractEndPtElv(ATEseg) {
+  // Generate a geometry for the two endpoints.
+  var endPt1Long = ATEseg.get("endPt1Long");
+  var endPt1Lat = ATEseg.get("endPt1Lat");
+  
+  var endPt2Long = ATEseg.get("endPt2Long");
+  var endPt2Lat = ATEseg.get("endPt2Lat");
+  
+  var endPoints = ee.Geometry.MultiPoint([[endPt1Long, endPt1Lat], [endPt2Long, endPt2Lat]]);
+  
+  // Extract the endpoint elevations.
+  var endPtElvs = ALOSelv.reduceRegion({
+    reducer: ee.Reducer.toList(), 
+    geometry: endPoints, 
+    scale: 30, 
+    crs: "EPSG:4326"
+  }).get("DSM");
+  
+  // Sort the extracted elevations.
+  var sortedElvs = ee.List(endPtElvs).sort();
+  
+  // Extract the number of elevation values.
+  //  (Note: There might be only one value.)
+  var elv_num = sortedElvs.size();
+  
+  // Get the lower endpoint and upper endpoint elevations, respectively.
+  var lowerPtElv = sortedElvs.get(0);
+  var upperPtElv = sortedElvs.get(ee.Number(elv_num).subtract(1));
+  
+  return ATEseg.set({
+    lowerPtElv: lowerPtElv,
+    upperPtElv: upperPtElv
+  });
+}
+
+var endPtElvs = ATEsegments.map(extractEndPtElv);
+
+// print("endPtElvs:", endPtElvs.first(),
+//   endPtElvs.size())
+
+
+if (true) {
+  // Export the result.
+  var fileName = "TransectCL_annualEndPtElvs_Validation";
+  
+  Export.table.toDrive({
+    collection: endPtElvs, 
+    description: fileName, 
+    folder: fileName, 
+    fileFormat: "CSV"
+  });
+}
+

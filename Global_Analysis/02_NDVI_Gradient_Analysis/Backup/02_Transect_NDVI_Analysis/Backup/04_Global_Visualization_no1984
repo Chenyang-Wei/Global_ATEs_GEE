@@ -1,0 +1,231 @@
+/**
+ * Introduction:
+ * 1) Visualize the temporal trend of the annual elevational NDVI gradients
+ *  of each transect (with the dataset of 1984 being removed).
+ * 2) Visualize the number of observations of each transect segment
+ *  (with the dataset of 1984 being removed).
+ * 
+ * Update: 1/14/2022.
+ */
+
+
+/* Load module(s). */
+
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var VIS = require("users/ChenyangWei/Public:Modules/Visualization");
+var TNA = require("users/ChenyangWei/Public:Modules/Transect_NDVI_Analysis");
+
+
+/* Get the major working directories. */
+
+var wd_NAm = GATE.wd_NorthAmerica;
+var wd_SAm = GATE.wd_SouthAmerica;
+var wd_As = GATE.wd_Asia;
+var wd_Eu = GATE.wd_Europe;
+var wd_Af = GATE.wd_Africa;
+var wd_Oc = GATE.wd_Oceania;
+
+
+/* Read the gradient trend datasets. */
+
+var readGradTrend_nonNAm = function(wd) {
+  var fileName = TNA.elvNDVIgradientTrends_fileName;
+  
+  return ee.FeatureCollection(wd
+    + "Transect_NDVI_Analysis/"
+    + fileName);
+};
+
+var readGradTrend_NAm = function(basinGroupID) {
+  
+  var wd = wd_NAm
+    + "Transect_NDVI_Analysis/"
+    + TNA.elvNDVIgradientTrends_fileName
+    + "/";
+  
+  var fileName = TNA.gradientTrends_byBasinGroup_fileName
+    + basinGroupID;
+  
+  return ee.FeatureCollection(wd + fileName);
+};
+
+var readGradTrends_Asia = function() {
+  
+  var allTransects = ee.List([]);
+  
+  // Asian AOI: 1 ~ 6.
+  for (var AOI_ID = 1; AOI_ID <= 6; AOI_ID ++) {
+    
+    // Set the working directory of the AOI.
+    var wd_AOI = wd_As
+      + "Transect_NDVI_Analysis/"
+      + "AOI_Asia_" + AOI_ID + "/";
+    
+    var wd_Transects = wd_AOI 
+      + TNA.elvNDVIgradientTrends_fileName
+      + "/"
+      + TNA.gradientTrends_byBasinGroup_fileName;
+      
+    // Basin group: 1 ~ 5.
+    for (var basinGroupID = 1; basinGroupID <= 5; basinGroupID ++) {
+      
+      // Load the steepest centerlines of each basin group.
+      var transects = ee.FeatureCollection(wd_Transects
+        + basinGroupID);
+      
+      allTransects = allTransects.add(transects);
+    }
+  }
+  
+  var allTransects_Flattened = ee.FeatureCollection(allTransects)
+    .flatten();
+  
+  return allTransects_Flattened;
+};
+
+var gradTrend_NAm = ee.FeatureCollection([
+  readGradTrend_NAm(1),
+  readGradTrend_NAm(2),
+  readGradTrend_NAm(3),
+  readGradTrend_NAm(4),
+  readGradTrend_NAm(5)
+]).flatten();
+
+var gradTrend_SAm = readGradTrend_nonNAm(wd_SAm);
+var gradTrend_Eu = readGradTrend_nonNAm(wd_Eu);
+var gradTrend_Af = readGradTrend_nonNAm(wd_Af);
+var gradTrend_Oc = readGradTrend_nonNAm(wd_Oc);
+
+var gradTrend_As = readGradTrends_Asia();
+
+var gradTrend_Global = gradTrend_NAm
+  .merge(gradTrend_SAm)
+  .merge(gradTrend_Eu)
+  .merge(gradTrend_Af)
+  .merge(gradTrend_Oc)
+  .merge(gradTrend_As);
+
+print("Global elevational gradient trends:", 
+  gradTrend_Global.first(),
+  gradTrend_Global.size());
+
+
+/* Sampling. */
+
+var gradTrend_Sample = gradTrend_Global.randomColumn("RandomID")
+  .limit(1e4, "RandomID");
+
+// print("Elevational gradient sample:", 
+//   gradTrend_Sample.first(),
+//   gradTrend_Sample.size());
+
+
+
+/* Map visualization. */
+
+if (true) { // true OR false.
+
+  var displayFC = VIS.paintFtrCol_FillANDEdge;
+  
+  VIS.centerAsia(7);
+  // VIS.centerNorthAmerica(7);
+  // VIS.centerSouthAmerica(7);
+  
+  
+  /* Transects. */
+  
+  var gradTrend_absMax = 1e-5;
+  
+  Map.addLayer(gradTrend_Global, 
+    {color: "FFFF00"}, 
+    "Raw transects", false);
+  
+  Map.addLayer(displayFC(gradTrend_Global, "gradTrend", 1), 
+    {min: gradTrend_absMax * -1, max: gradTrend_absMax, palette: VIS.BWR_palette}, 
+    "Elevational gradient trend", true);
+  
+  Map.addLayer(displayFC(gradTrend_Global, "gradYearNum", 1), 
+    {min: 0, max: 36, palette: VIS.BWR_palette}, 
+    "Number of observations", true);
+}
+
+
+/* Scatterplot visualization. */
+
+if (false) {
+  
+  // Function to generate scatter plots.
+  var generate_ScatterPlots_no1to1line = 
+    function(xAxis, yAxis, mainTitle, hTitle, vTitle) {
+      var scatterPlot = ui.Chart.array.values({
+        array: yAxis,
+        axis: 0,
+        xLabels: xAxis})
+        .setChartType("ScatterChart")
+        .setOptions({
+          legend: {position: "none"},
+          title: mainTitle,
+          hAxis: {title: hTitle},
+          vAxis: {title: vTitle},
+          series: {
+            0: {
+              pointSize: 0.2,
+              dataOpacity: 0.2,
+            }
+          }
+        });
+      
+      return scatterPlot;
+    }; 
+  
+  var gradTrend_YearNum = generate_ScatterPlots_no1to1line(
+    gradTrend_Sample.aggregate_array("gradYearNum"), 
+    gradTrend_Sample.aggregate_array("gradTrend"), 
+    "Elevational gradient sample (10,000 transects)", 
+    "Number of observations", 
+    "Elevational gradient trend");
+  
+  print(gradTrend_YearNum);
+}
+
+
+/* Histogram visualization. */
+
+if (false) { // true OR false.
+  
+  // Function to generate histograms.
+  var generate_Histograms = 
+    function(FtrCol, propertyName, hAxisTitle, mainTitle) {
+      var histogram = ui.Chart.feature.histogram({
+        features: FtrCol, 
+        property: propertyName, 
+        maxBuckets: 2e4
+      }).setOptions({
+          legend: {position: "none"},
+          title: mainTitle,
+          hAxis: {title: hAxisTitle},
+          vAxis: {title: "Frequency"},
+          // series: {
+          //   0: {
+          //     pointSize: 0.2,
+          //     dataOpacity: 0.2,
+          //   },
+          //   1: {
+          //     pointSize: 0,
+          //     lineWidth: 2,
+          //   }
+          // }
+        });
+      
+      return histogram;
+    }; 
+  
+  print(generate_Histograms(gradTrend_Sample, 
+    "gradTrend", "Gradient trend",
+    "Elevational gradient sample (10,000 transects)"));
+  
+  print(generate_Histograms(gradTrend_Sample, 
+    "gradYearNum", "Number of observations",
+    "Elevational gradient sample (10,000 transects)"));
+}
+

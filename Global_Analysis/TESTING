@@ -1,0 +1,502 @@
+/**
+ * Introduction:
+ * 
+ *  1) Smooth the ALOS elevation within the 300m-buffered climatic ATE (CATE) 
+ *    by calculating its focal mean within a 10-pixel circular kernel.
+ * 
+ *  2) Generate the three ATEI components by year based on the parameters calibrated in R.
+ * 
+ *  3) Estimate the annual ATEI using the logistic regression model constructed in R.
+ * 
+ * Update: 11/3/2022.
+ */
+
+
+/* Load module(s). */
+
+var IMG = require("users/ChenyangWei/Public:Modules/Image_Analysis&Processing");
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var TNA = require("users/ChenyangWei/Public:Modules/Transect_NDVI_Analysis");
+var IC_AP = require("users/ChenyangWei/Public:Modules/ImageCollection_Analysis&Processing.js");
+var VIS = require("users/ChenyangWei/Public:Modules/Visualization");
+
+
+/* Setup. */
+
+// Determine the target projection.
+var targetPrj = IMG.WGS84_30m;
+
+
+/* Data loading. */
+
+// Load the combined samples within the new CATE.
+var samples = ee.FeatureCollection(GATE.wd_NorthAmerica + "ATEI_Estimation/" +
+  "maxNDVI_gradMagDir_elvDir_biomeNum_CombinedSamples_In30mNewCATE");
+// print(samples)
+
+var bufferedSamples = samples.map(function(pt) {
+  return pt.buffer(300);
+});
+
+// Load and reproject the ALOS elevation in the buffered new CATE.
+var bufCATE_elv = ee.ImageCollection('JAXA/ALOS/AW3D30/V3_2').select('DSM')
+  .mosaic()
+  .reproject(targetPrj);
+
+
+/* Smooth the ALOS elevation within the 300m-buffered new CATE 
+  by calculating its focal mean within a 10-pixel circular kernel. */
+
+// Define a circular kernel of 10 pixels.
+var Kn = ee.Kernel.circle({
+  radius: 10,
+  units: "pixels"
+}); 
+
+// Calculate the focal mean within the kernel.
+var smdElv = bufCATE_elv.reduceNeighborhood({
+  // The mean reducer is smoother than the median reducer, 
+  //  which then provides a less scattered gradient direction dataset.
+  reducer: ee.Reducer.mean(),
+  kernel: Kn,
+  skipMasked: true // Output the smoothed elevation within the 300m-buffered new CATE.
+}).reproject(targetPrj); // Reproject to the target projection.
+
+
+/* Generate the gradient direction of the smoothed elevation. */
+
+// Compute the elevation gradient in the X and Y directions.
+var elvGrad = smdElv.gradient()
+  .reproject(targetPrj);
+
+// Compute the direction of the elevation gradient.
+// "atan2" calculates the angle formed by the 2D vector [x, y].
+// (Gradient: -179 ~ 180 (-PI ~ PI), 
+// south: 0, north: 180 (PI), 
+// west : 90 (PI/2), east: -90 (-PI/2)).
+var elvDir = elvGrad.select("y").atan2(elvGrad.select("x"))
+  .rename("elvDir");
+
+// IMG.printImgInfo("elvDir", elvDir);
+
+var elvMag = elvGrad.select("y").hypot(elvGrad.select("x"))
+  .rename("elvMag");
+
+
+/* Function to calculate the "Gradient" component. */
+
+// Check the determined parameters.
+var k_Value = 8804.288;
+var x_0 = 0.000649;
+
+// Define a function.
+var mag_Fun = function(mag_Value) {
+  
+  var power = mag_Value.subtract(x_0).multiply(-1 * k_Value);
+  
+  var comp_Mag = ee.Image(1).divide(power.exp().add(1))
+    .rename("comp_Mag")
+    .reproject(targetPrj);
+  
+  return comp_Mag;
+};
+
+
+/* Function-1 to calculate the "Greenness" component. */
+
+// Check the determined parameters.
+var b_1 = 0.444227;
+var c_1 = 0.170322;
+var n_1 = 2;
+
+// Define a function.
+var NDVI_fun = function(NDVI_value) {
+  
+  var base = NDVI_value.subtract(b_1).divide(c_1);
+  
+  var power = 2 * n_1;
+  
+  var comp_NDVI = base.pow(power).multiply(-1 / 2).exp()
+    .rename("comp_NDVI")
+    .reproject(targetPrj);
+  
+  return comp_NDVI;
+};
+
+
+/* Function-2 to calculate the "Greenness" component. */
+
+// Check the determined parameters.
+var k_NDVI_Value = 15.08539;
+var x0_NDVI = 0.4309655;
+
+// Define a function.
+var NDVI_fun2 = function(x_NDVI) {
+  
+  var power = x_NDVI.subtract(x0_NDVI).multiply(-1 * k_NDVI_Value);
+  
+  var comp_NDVI = ee.Image(1).divide(power.exp().add(1))
+    .rename("comp_NDVI")
+    .reproject(targetPrj);
+  
+  return comp_NDVI;
+};
+
+
+/* Function-3 to calculate the "Greenness" component. */
+
+// Check the determined parameters.
+var b_2 = 0.444227;
+var c_2 = 0.097218;
+
+// Define a function.
+var NDVI_fun3 = function(NDVI_value) {
+  
+  var base = NDVI_value.subtract(b_2).divide(c_2);
+  
+  var comp_NDVI = base.pow(2).multiply(-1 / 2).exp()
+    .rename("comp_NDVI")
+    .reproject(targetPrj);
+  
+  return comp_NDVI;
+};
+
+
+
+/* Function to calculate the "Orientation" component. */
+
+// Check the determined parameters.
+var m = 3.084104;
+var p_Value = 14.16005;
+
+// Define a function.
+var angle_Fun = function(angle_Value) {
+  
+  var cos_Value = angle_Value.subtract(m).add(Math.PI).cos();
+  
+  var base = ee.Image(1).subtract(cos_Value).divide(2);
+  
+  var comp_Angle = base.pow(p_Value)
+    .rename("comp_Angle")
+    .reproject(targetPrj);
+  
+  return comp_Angle;
+};
+
+
+var LDM = require("users/ChenyangWei/Public:Modules/LANDSAT_Data_Manipulation.js");
+
+// Land surface area based on the Hansen Global Forest Change dataset (v1.7).
+var land = ee.Image("UMD/hansen/global_forest_change_2019_v1_7")
+  .select("datamask")
+  .eq(1) // Select the "Mapped land surface" area in the Hansen dataset.
+  .reproject(targetPrj);
+
+// Define the reflectance bands.
+var refBands = LDM.L8_SR_refBands_List;
+
+// Define the pixel quality band.
+var qualBand = LDM.L578_SR_qualBand_Str;
+
+// Combine the two types of bands.
+var L8_Bands = ee.List(refBands).add(qualBand);
+
+var year = 2018;
+
+// Determine the start and end (exclusive) dates.
+var interval = 1;
+
+var startDate = year + "-01-01";
+
+var endDate = year + interval + "-01-01";
+// print(endDate);
+
+// Load the function to preprocess the LANDSAT-8 SR imagery.
+var Preprocess_SRimg = LDM.MaskCloudShadow_RemoveInvalidPx_SRimg;
+
+// Load the function to compute the NDVI for each image.
+var ComputeNDVI_byImg = function(raw_L8_SR_Img) {
+  
+  /**
+   * "Image": 
+   *  raw_L8_SR_Img.
+   * 
+   * Result: Image.
+  */
+  
+  // Derive a band of NDVI.
+  var L8_SR_NDVI = raw_L8_SR_Img.normalizedDifference(["B5", "B4"])
+    .rename("NDVI");
+  
+  // Return the NDVI band with all the input image properties.
+  return raw_L8_SR_Img.addBands(L8_SR_NDVI);
+};
+
+
+/* 1) Load and preprocess the LANDSAT-8 imagery of 2020. */
+
+// Load the raw LANDSAT-8 SR imagery.
+var raw_L8_ImgCol = LDM.Load_L8_SR_byRegionDate(
+  L8_Bands, GATE.AOI_NorthAmerica, startDate, endDate
+).merge(
+  LDM.Load_L8_SR_byRegionDate(
+    L8_Bands, GATE.AOI_Oceania, startDate, endDate
+  )
+).merge(
+  LDM.Load_L8_SR_byRegionDate(
+    L8_Bands, GATE.AOI_SouthAmerica, startDate, endDate
+  )
+).merge(
+  LDM.Load_L8_SR_byRegionDate(
+    L8_Bands, GATE.AOI_Africa, startDate, endDate
+  )
+).merge(
+  LDM.Load_L8_SR_byRegionDate(
+    L8_Bands, GATE.AOI_Europe, startDate, endDate
+  )
+).merge(
+  LDM.Load_L8_SR_byRegionDate(
+    L8_Bands, GATE.AOI_Asia, startDate, endDate
+  )
+);
+
+// Preprocess each loaded image.
+var L8_ImgCol = raw_L8_ImgCol.map(Preprocess_SRimg);
+
+
+/* 2) Calculate the annual maximum NDVI. */
+
+// Derive the NDVI for each image.
+var NDVI_ImgCol = L8_ImgCol.map(ComputeNDVI_byImg);
+// print(NDVI_ImgCol.qualityMosaic("NDVI"));
+
+// Compute the maximum value at each pixel.
+var rawNDVI_img = NDVI_ImgCol.select("NDVI").max()
+  .updateMask(land);
+
+// Calculate the focal mean within the kernel.
+var maxNDVI_img = rawNDVI_img.reduceNeighborhood({
+  // The mean reducer is smoother than the median reducer, 
+  //  which then provides a less scattered gradient direction dataset.
+  reducer: ee.Reducer.median(),
+  kernel: Kn,
+  skipMasked: true // Output the smoothed elevation within the 300m-buffered new CATE.
+}).reproject(targetPrj); // Reproject to the target projection.
+
+// // Reproject the NDVI image.
+// var maxNDVI_reprj = maxNDVI_img.reproject(targetPrj);
+
+// // Remove the water body.
+// var maxNDVI_noWater = maxNDVI_reprj.updateMask(land);
+
+
+// Compute the NDVI gradient in the X and Y directions.
+var NDVIgrad = maxNDVI_img.gradient()
+  .reproject(targetPrj);
+
+// Compute the direction of the NDVI gradient.
+var NDVIdir = NDVIgrad.select("y").atan2(NDVIgrad.select("x"))
+  .rename("NDVIdir");
+
+// Compute the magnitude of the NDVI gradient. 
+//  ("hypot" calculates the magnitude of the 2D vector [x, y].)
+var NDVImag = NDVIgrad.select("y").hypot(NDVIgrad.select("x"))
+  .rename("NDVImag");
+
+// Calculate the absolute angle between the NDVI and elevation gradients.
+var dir_Angle = NDVIdir.subtract(elvDir).abs();
+
+
+/* Generate the three components and estimate the ATEI by year. */
+
+// "Gradient" component.
+var comp_Mag = mag_Fun(NDVImag);
+
+// "Greenness" component.
+var comp_NDVI = NDVI_fun(maxNDVI_img);
+var comp_NDVI2 = NDVI_fun2(maxNDVI_img);
+var comp_NDVI3 = NDVI_fun3(maxNDVI_img);
+
+// "Orientation" component.
+var comp_Angle = angle_Fun(dir_Angle);
+
+// Combine the components.
+var ATEI_comps = comp_Mag.addBands(comp_NDVI)
+  .addBands(comp_Angle);
+
+var ATEI_comps2 = comp_Mag.addBands(comp_NDVI2)
+  .addBands(comp_Angle);
+
+var ATEI_comps3 = comp_Mag.addBands(comp_NDVI3)
+  .addBands(comp_Angle);
+
+// Determine the formula of the logistic regression.
+var logit_Formula = "-3.336548 + 4.062081 * comp_Mag + 1.830734 * comp_NDVI + 2.045759 * comp_Angle";
+
+// Determine the formula-2 of the logistic regression.
+var logit_Formula2 = "-2.918374 + 4.760077 * comp_Mag + 0.229922 * comp_NDVI + 2.155388 * comp_Angle";
+
+// Determine the formula-3 of the logistic regression.
+var logit_Formula3 = "-3.161072 + 4.240018 * comp_Mag + 1.961691 * comp_NDVI + 2.073763 * comp_Angle";
+
+
+/* Fit the logistic regression model. */
+
+// Determine the logit.
+var logit = ATEI_comps.expression({
+  expression: logit_Formula,
+  map: {
+    "comp_Mag": ATEI_comps.select("comp_Mag"),
+    "comp_NDVI": ATEI_comps.select("comp_NDVI"),
+    "comp_Angle": ATEI_comps.select("comp_Angle")
+  }
+}); 
+
+var logit2 = ATEI_comps2.expression({
+  expression: logit_Formula2,
+  map: {
+    "comp_Mag": ATEI_comps2.select("comp_Mag"),
+    "comp_NDVI": ATEI_comps2.select("comp_NDVI"),
+    "comp_Angle": ATEI_comps2.select("comp_Angle")
+  }
+}); 
+
+var logit3 = ATEI_comps3.expression({
+  expression: logit_Formula3,
+  map: {
+    "comp_Mag": ATEI_comps3.select("comp_Mag"),
+    "comp_NDVI": ATEI_comps3.select("comp_NDVI"),
+    "comp_Angle": ATEI_comps3.select("comp_Angle")
+  }
+}); 
+
+var exp_Logit = logit.exp();
+var exp_Logit2 = logit2.exp();
+var exp_Logit3 = logit3.exp();
+
+// Calculate the annual ATEI.
+var ATEI = exp_Logit.divide(exp_Logit.add(1))
+  .rename("ATEI");
+
+var ATEI2 = exp_Logit2.divide(exp_Logit2.add(1))
+  .rename("ATEI");
+
+var ATEI3 = exp_Logit3.divide(exp_Logit3.add(1))
+  .rename("ATEI");
+
+
+var output = false;
+
+if (!output) {
+  
+  // Visualize the result.
+  Map.setOptions("satellite");
+  
+  // Map.setCenter(-65.1787, -17.5405, 12); // Bolivia.
+  // Map.setCenter(-113.66273, 48.67261, 12); // Glacier National Park.
+  // Map.setCenter(7.7537, 46.0153, 12); // Zermatt.
+  // Map.setCenter(36.7437, -3.2381, 12); // Tanzania.
+  Map.setCenter(169.3757, -44.0807, 12); // New Zealand.
+  
+  var palettes = require('users/gena/packages:palettes');
+  
+  var ATEI_visParams = {min: 0, max: 1, palette: palettes.matplotlib.plasma[7]};
+  
+  var visParams = {min: 0, max: 1, palette: palettes.matplotlib.viridis[7]};
+  
+  Map.addLayer(NDVI_ImgCol.select("NDVI"), VIS.NDVI_vis, "Year-round NDVI", false);
+  
+  var L8_composite = NDVI_ImgCol.qualityMosaic("NDVI");
+  
+  Map.addLayer(
+    L8_composite, 
+    {
+      bands: ['B4', 'B3', 'B2'],
+      min: 0,
+      max: 1500
+    },
+    "L8 (True Color)",
+    true
+  );
+  
+  Map.addLayer(
+    L8_composite, 
+    {
+      bands: ['B5', 'B4', 'B3'],
+      min: 0,
+      max: 5000
+    },
+    "L8 (False Color)",
+    true
+  );
+  
+  Map.addLayer(
+    L8_composite
+      .select('B4'), 
+    {
+      min: 0,
+      max: 1500
+    },
+    "L8 - Red",
+    true
+  );
+  
+  Map.addLayer(
+    L8_composite
+      .select('B5'), 
+    {
+      min: 0,
+      max: 5000
+    },
+    "L8 - Near Infrared",
+    true
+  );
+  
+  Map.addLayer(
+    L8_composite
+      .select('NDVI'), 
+    VIS.NDVI_vis,
+    "L8 - raw NDVI",
+    true
+  );
+  
+  Map.addLayer(maxNDVI_img, VIS.NDVI_vis, "Smoothed NDVI");
+  
+  Map.addLayer(elvMag, visParams, "Elevation gradient magnitude", false);
+  
+  Map.addLayer(NDVImag, {min: 0, max: 0.003, palette: palettes.matplotlib.viridis[7]}, "NDVImag");
+  Map.addLayer(comp_Mag, visParams, "Gradient");
+  
+  Map.addLayer(comp_NDVI, visParams, "Greenness (generalized Gaussian)");
+  Map.addLayer(comp_NDVI2, visParams, "Greenness (logistic)");
+  Map.addLayer(comp_NDVI3, visParams, "Greenness (Gaussian)");
+  
+  Map.addLayer(comp_Angle, visParams, "Orientation");
+  
+  Map.addLayer(ATEI, ATEI_visParams, "ATEI (generalized Gaussian)");
+  Map.addLayer(ATEI2, ATEI_visParams, "ATEI (logistic)");
+  Map.addLayer(ATEI3, ATEI_visParams, "ATEI (Gaussian)");
+  
+  // var NDVI_samples = VIS.paintFtrCol_FillANDEdge(bufferedSamples), "smdNDVI", 10);
+
+  // Map.addLayer(NDVI_samples, VIS.NDVI_vis, "NDVI (buffered samples)");
+  
+  Map.addLayer(samples, {color: "FF0000"}, "Samples");
+  
+} else {
+  
+  // Export the result.
+  var fileName = GATE.annualATEI_fileName;
+  
+  Export.image.toAsset({
+    image: ATEI_img,
+    description: fileName, 
+    assetId: wd_Main + "ATEI_Estimation/"
+      + fileName, 
+    crs: targetPrj.crs,
+    scale: targetPrj.scale,
+    region: AOI,
+    maxPixels: IMG.maxPxNum
+  }); 
+}
+

@@ -1,0 +1,182 @@
+/**
+ * Introduction:
+ * 1) Segment the 30-m new CATE based on the distance to mountain ridge pixels 
+ *  in the ALOS landform dataset.
+ * 
+ * Update: 3/5/2021.
+ * 
+ * Runtime: 8h.
+ * 
+ * Notes: The stripes with no valid data in the ALOS landform dataset 
+ *  can cause some problems in the segmented areas. 
+ *  So, they need to be removed.
+ */
+
+
+/* Load and reproject the required datasets. */
+
+// Set the 10-km buffered bounding box of the study domain.
+var AOI = ee.Geometry.Rectangle({
+  coords: [-180, 7.114761500193937, -52.095625030545534, 80.24342770493531],
+  geodesic: false
+});
+
+// Target projection.
+var targetPrj = {
+  crs: "EPSG:4326",
+  scale: 30
+};
+
+// Set the working directory.
+var wdNA = "users/treeline/NorthAmerica_GME/";
+
+// Load the new CATE.
+var newCATE = ee.Image(wdNA + "Climate-Based_ATE/" +
+  "30mNewCATE_gteSmd10kmCForestElv_3kmCForestBuffer_BufRawCATEclosedForests_AOI");
+
+// print("newCATE:", newCATE.bandTypes(),
+//   newCATE.projection().crs(),
+//   newCATE.projection().nominalScale())
+
+
+/* Pre-process the ALOS landform dataset. */
+
+// The landform dataset is based on the 30m "AVE" band of JAXA's ALOS DEM 
+// (available in EE as JAXA/ALOS/AW3D30_V1_1).
+// There are stripes in the area over 60 degrees in latitude.
+var rawLF = ee.Image('CSP/ERGo/1_0/Global/ALOS_landforms').select('constant')
+  .reproject(targetPrj);
+
+// Remove the high-latitude NA (invalid) stripes 
+// in the landform dataset (based on the ALOS DEM V1.1).
+var ALOSv11 = ee.Image("JAXA/ALOS/AW3D30_V1_1").select("AVE")
+  .reproject(targetPrj);
+
+var maskedLF = rawLF.updateMask(ALOSv11.mask());
+
+// print("maskedLF:", maskedLF.bandTypes(),
+//   maskedLF.projection().crs(),
+//   maskedLF.projection().nominalScale())
+
+
+/* Extract the landforms of mountain ridges in the new CATE.
+  Including: peak/ridge (warm/normal/cool) and mountain/divide. */
+
+// Masked landforms within the new CATE.
+var CATE_LF = maskedLF.updateMask(newCATE);
+
+// Extract the mountain ridge pixels.
+// Pixel values: 11 ~ 14.
+// No cliff (15), because its shape is normally irregular and 
+// its distribution is more random than the peak/ridge or the mountain/divide.
+var ridge = CATE_LF.lte(14);
+
+// print("ridge:", ridge.bandTypes(),
+//   ridge.projection().crs(), 
+//   ridge.projection().nominalScale())
+
+// Non-ridge pixels within the CATE.
+var nonRidge = ridge.not();
+
+// print("nonRidge:", nonRidge.bandTypes(),
+//   nonRidge.projection().crs(), 
+//   nonRidge.projection().nominalScale())
+
+
+/* Caculate the distance to the extracted ridge pixels 
+  at each pixel in the new CATE. */
+
+// The reasons for choosing the ridge pixels rather than the valley ones:
+// 1) The ridge pixels are mostly located at the center of local study area and 
+//  are surrounded by the valley pixels. 
+// 2) The distribution pattern of the ridge pixels is more regular than 
+//  that of the valley ones.
+// 3) Most valley pixels are not contained in the new CATE.
+var ridgeDist = ridge.fastDistanceTransform({
+  neighborhood: 200,
+  units: "pixels",
+  metric: "squared_euclidean" // Get the distance in the squared number of pixels (30 m).
+}).reproject(targetPrj);
+
+// print("ridgeDist:", ridgeDist.bandTypes(),
+//   ridgeDist.projection().crs(), 
+//   ridgeDist.projection().nominalScale())
+
+
+/* Segment the new CATE based on the distance to the ridge pixels. */
+
+// Define a Laplacian, or isotropic-edge-detection kernel.
+var laplacian = ee.Kernel.laplacian8({ 
+  normalize: false 
+});
+
+// Apply the Laplacian edge-detection kernel to detect the boundary of the ridge distance.
+var edgy = ridgeDist.convolve(laplacian)
+  .reproject(targetPrj);
+
+// print("edgy:", edgy.bandTypes(),
+//   edgy.projection().crs(), 
+//   edgy.projection().nominalScale())
+
+// Segment the new CATE based on the distance boundary.
+var segmented = edgy.gt(0).selfMask();
+
+// print("segmented:", segmented.bandTypes(),
+//   segmented.projection().crs(), 
+//   segmented.projection().nominalScale())
+
+// Remove the ridge pixels from the segmentation result.
+var ridgeRemoved = segmented.updateMask(nonRidge)
+  .rename("segmented_newCATE");
+
+print("ridgeRemoved:", ridgeRemoved.bandTypes(),
+  ridgeRemoved.projection().crs(), 
+  ridgeRemoved.projection().nominalScale());
+
+
+if (false) {
+  // Visualization.
+  var LFvis = {
+    min: 11.0,
+    max: 42.0,
+    palette: [
+      '141414', '383838', '808080', 'EBEB8F', 'F7D311', 'AA0000', 'D89382',
+      'DDC9C9', 'DCCDCE', '1C6330', '68AA63', 'B5C98E', 'E1F0E5', 'a975ba',
+      '6f198c'
+    ],
+  };
+
+  Map.setOptions("hybrid");
+  
+  Map.addLayer(newCATE, {palette: "FFFF00"}, "newCATE", false);
+  
+  Map.setCenter(-132.7445, 61.332, 11); // Area with stripes in the landform dataset.
+  Map.addLayer(rawLF, LFvis, "rawLF", false);
+  Map.addLayer(maskedLF, LFvis, "maskedLF", false);
+  
+  // Map.setCenter(-113.6307, 48.888, 13); // GNP.
+  Map.addLayer(ridgeDist, {min: 0, max: 10000}, "ridgeDist", false);
+  
+  Map.addLayer(edgy, {}, "edgy", false);
+  Map.addLayer(segmented, {palette: "FF0000"}, "segmented", false);
+  Map.addLayer(ridgeRemoved, {palette: "FFFF00"}, "ridgeRemoved", true);
+  
+  Map.addLayer(nonRidge.selfMask(), {palette: "00FF00"}, "nonRidge", false);
+  Map.addLayer(ridge.selfMask(), {palette: "0000FF"}, "ridge", true);
+
+} else if (true) {
+  // Export the result.
+  var fileName = "30mSegmentedNewCATE_distToRidgesNoCliff_NAstripesRemoved_ridgesRemoved"; 
+  
+  Export.image.toAsset({
+    image: ridgeRemoved,
+    description: fileName, 
+    assetId: wdNA + "Transect_Analysis/"
+      + fileName, 
+    crs: "EPSG:4326",
+    scale: 30,
+    region: AOI,
+    maxPixels: 1e13
+  }); 
+}
+

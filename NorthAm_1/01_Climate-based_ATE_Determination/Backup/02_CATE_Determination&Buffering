@@ -1,0 +1,171 @@
+/**
+ * Introduction: 
+ * 1) Extract the CATE within a vertical distance to the average TLH. 
+ * 2) Determine the surrounding regions of the extracted climatic ATE (CATE).
+ * 3) Extract the elevations of the CATE, its surrounding area, and 
+ *  the forested regions within its surrounding area.
+ * 
+ * Date: 7/11/2020.
+ * 
+ * Launch time: 2h.
+ */
+
+
+/* Setup. */
+
+// Define the extent of North America. 
+var northAmerica = ee.Geometry.Polygon({
+    coords: [[[-165.69002926658334, 72.44551256468144],
+          [-169.40248634956492, 65.69009098298687],
+          [-172.25893166206492, 63.826281515474996],
+          [171.35638590722195, 52.855285271231274],
+          [-159.1340353549648, 17.264443722753843],
+          [-122.14862062448367, 9.59539750905343],
+          [-79.06711256993691, 6.243890041056693],
+          [-77.03677448989225, 7.40316087095261],
+          [-76.78408894301725, 8.990725120234067],
+          [-75.7244458156751, 12.403191738791786],
+          [-71.5276684719251, 13.751533985801833],
+          [-62.8264965969251, 11.651035844929385],
+          [-62.005942990095036, 9.999896817210585],
+          [-60.791953732282536, 9.96743692413247],
+          [-55.5884807162513, 13.889226127218825],
+          [-47.99315852039507, 58.68729606716915],
+          [-66.52860968724042, 71.51769835770313],
+          [-77.86650031224042, 74.25356562488685],
+          [-89.90751593724042, 74.22969620284344],
+          [-106.04844453284761, 74.3012200035139],
+          [-114.63975312659761, 74.20581277506923],
+          [-120.18954789130242, 74.88484689543225],
+          [-136.27353226630242, 74.6772015427699]]],
+    geodesic: true
+});
+
+// Asset path.
+var wdNorthA = "users/treeline/NorthAmerica_GME/CATE/";
+
+// Load the average climatic treeline elevation.
+var avgTLH = ee.Image(wdNorthA +
+  "avgTLH_1979to2013_1arcsec_mtRgLand_CHELSAv12_ALOSv22_GMEk3Binary_HansenV17");
+
+// Determine the study domain of mountain ranges.
+var studyDomain = avgTLH.gte(-1e18);
+
+// ALOS elevation (V 2.2).
+var ALOSelv = ee.Image('JAXA/ALOS/AW3D30/V2_2').select('AVE_DSM')
+  .updateMask(studyDomain); // Within the study domain.
+
+// Copernicus land cover product.
+var copernicus = ee.ImageCollection("COPERNICUS/Landcover/100m/Proba-V/Global")
+  .select('discrete_classification').first();
+
+
+/* Extract the CATE within a vertical distance to the average TLH. */ 
+
+// Calculate the absolute vertical distance to the average TLH.
+var absTLHdist = avgTLH.subtract(ALOSelv).abs(); 
+
+// Extract the CATE within a certain vertical distance.
+var CATEthres = 500; // In meters.
+
+var CATEmask = absTLHdist.lte(CATEthres);
+
+// Obtain the elevation of the extracted CATE.
+var CATEelv = ALOSelv.updateMask(CATEmask).rename("CATEelv");
+
+// print("CATE elevation:", CATEelv.bandTypes(), 
+//   CATEelv.projection().crs(), CATEelv.projection().nominalScale())
+
+
+/* Determine the surrounding region of the extracted CATE. */
+
+// Determine the size of neighborhood.
+var neighborhood = 200; // Number of ~30-m pixels.
+
+// Extract the ALOS elevation projection.
+var elvPrj = ALOSelv.projection();
+var elvCRS = elvPrj.crs();
+var elvScale = elvPrj.nominalScale();
+
+var surroundingDist = CATEmask.fastDistanceTransform({
+  neighborhood: neighborhood,
+  units: "pixels",
+  metric: "squared_euclidean"
+}).sqrt() // Get the distance in pixels.
+  // Request the data at the scale and projection of the elevation image.
+  .reproject({
+    crs: elvCRS,
+    scale: elvScale
+  });
+
+// Threshold of the horizontal distance for the surrounding region.
+var surroudingThres = 100; // Number of ~30-m pixels.
+var surroundingArea = surroundingDist.lte(surroudingThres);
+
+// print("Surrounding area:", surroundingArea.projection().crs(), 
+//   surroundingArea.projection().nominalScale())
+
+
+/* Extract the elevations of forested regions within the surrounding area of CATE. */
+
+// Closed forests in the Copernicus dataset.
+var closedForests = copernicus.gte(111).and(copernicus.lte(116));
+
+// Elevation of the surrounding area.
+var surroundingElv = ALOSelv.updateMask(surroundingArea)
+  .rename("surroundingElv");
+
+// Elevation of the closed forests in the surrounding area.
+var clsdFrstElv = surroundingElv.updateMask(closedForests)
+  .rename("clsdFrstElv");
+
+
+/* Combine the elevation datasets. */
+
+var combElv = CATEelv.addBands(clsdFrstElv)
+  .addBands(surroundingElv);
+
+print("Combined elevations:", combElv.bandTypes(), 
+  combElv.projection().crs(), combElv.projection().nominalScale());
+
+
+if (false) {
+  /* Visualization. */
+  
+  var elvPalette = ['006600', '002200', 'fff700', 'ab7634', 'c4d0ff', 'ffffff'];
+  var elvVis = {min: 1000, max: 3500, palette: elvPalette};
+  
+  var disVis = {
+    min: 0,
+    max: 2000,
+    palette: ['0000ff', '00ffff', 'ffff00', 'ff0000', 'ffffff'],
+  };
+  
+  Map.setOptions("hybrid");
+  
+  Map.setCenter(-113.655, 48.734, 10);
+  
+  Map.addLayer(surroundingArea.selfMask(), {palette: "0000FF"}, "Surrounding area", true);
+  Map.addLayer(CATEmask.selfMask(), {palette: "FF0000"}, "CATE mask", true);
+  
+  Map.addLayer(combElv.select("clsdFrstElv"), elvVis, "Closed forest elevation", true);
+  Map.addLayer(combElv.select("CATEelv"), elvVis, "CATE elevation", true);
+}
+
+else {
+  /* Output the results. */
+  
+  // Aggregated Forest elevation.
+  var fileName = CATEthres + "mCATEelv_3kmSurrounding_ALOSelv_copernicusClsdFrstElv_30mRes";
+  
+  Export.image.toAsset({
+    image: combElv, 
+    description: fileName, 
+    assetId: wdNorthA + fileName,
+    region: northAmerica, 
+    crs: elvCRS.getInfo(),
+    scale: elvScale.getInfo(),
+    maxPixels: 1e13
+  });
+}
+

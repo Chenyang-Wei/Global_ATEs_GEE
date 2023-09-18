@@ -1,0 +1,107 @@
+/**
+ * Introduction:
+ * 
+ *  1) Identify Karger's validation points within the new CATEs worldwide.
+ * 
+ * Update: 11/20/2022.
+ * 
+ * Runtime: 1m.
+*/
+
+
+/* Load module(s). */
+
+var IMG = require("users/ChenyangWei/Public:Modules/Image_Analysis&Processing");
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var FC_AP = require("users/ChenyangWei/Public:Modules/FeatureCollection_Analysis&Processing");
+var VIS = require("users/ChenyangWei/Public:Modules/Visualization");
+
+
+/* Setup. */
+
+// Determine the target projection.
+var targetPrj = IMG.WGS84_30m;
+
+// Load Dirk's validation points.
+var samples = ee.FeatureCollection(GATE.wd_Global
+  + "Validation/"
+  + "2019Karger_ValidationPoints_byContinent");
+
+// Define a function to load and reproject the new CATEs in each continent.
+var Read_ContCATE = function(wd_Cont) {
+  var CATE = ee.Image(wd_Cont
+    + "Climate-Based_ATE/" 
+    + GATE.newCATE_fileName)
+    .reproject(targetPrj);
+
+  return CATE;
+};
+
+// Read and combine the new CATEs of all continents.
+var global_CATEs = ee.ImageCollection.fromImages([
+    Read_ContCATE(GATE.wd_Africa),
+    Read_ContCATE(GATE.wd_Oceania),
+    Read_ContCATE(GATE.wd_Europe),
+    Read_ContCATE(GATE.wd_SouthAmerica),
+    Read_ContCATE(GATE.wd_NorthAmerica),
+    Read_ContCATE(GATE.wd_Asia),
+  ]).mosaic()
+  .reproject(targetPrj);
+
+
+/* Identify the samples within the combined new CATEs. */
+
+var propertyName = "InNewCATE";
+
+var samples_Identified = global_CATEs.reduceRegions({
+  collection: samples, 
+  reducer: ee.Reducer.first().setOutputs([propertyName]), 
+  scale: targetPrj.scale, 
+  crs: targetPrj.crs
+});
+
+var samples_InNewCATE = samples_Identified.filter(
+  ee.Filter.notNull([propertyName]));
+
+
+if (false) {
+  // Check the combined new CATEs.
+  IMG.printImgInfo("global_CATEs", global_CATEs);
+
+  // Check the processed validation points.
+  FC_AP.Print_FtrColInfo("samples:", samples);
+  print(samples.aggregate_array("Continent").distinct());
+
+  // Check the identified samples.
+  FC_AP.Print_FtrColInfo("samples_InNewCATE:", samples_InNewCATE);
+  print(samples_InNewCATE.geometry().projection().crs());
+
+  // Visualization.
+  Map.setOptions("satellite");
+  VIS.centerNorthAmerica(12);
+  
+  Map.addLayer(global_CATEs, 
+    {palette: "00FF00"}, "global_CATEs");
+  
+  Map.addLayer(samples, 
+    {color: "FF0000"}, "samples");
+  
+  Map.addLayer(samples.filter(ee.Filter.eq("Continent", "Asia")), 
+    {color: "00FFFF"}, "samples (Asia)");
+  
+  Map.addLayer(samples.filter(ee.Filter.eq("Continent", "North_America")), 
+    {color: "0000FF"}, "samples (North America)");
+  
+} else {
+  // Export the validation points within the combined new CATEs.
+  var fileName = "2019Karger_ValidationPoints_" + propertyName;
+  
+  Export.table.toAsset({
+    collection: samples_InNewCATE, 
+    description: fileName, 
+    assetId: GATE.wd_Global
+      + "Validation/"
+      + fileName
+  });
+}
+

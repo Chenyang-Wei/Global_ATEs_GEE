@@ -1,0 +1,24 @@
+
+// Target projection.
+var targetPrj = {
+  crs: "EPSG:4326",
+  scale: 30
+};
+
+// Set the working directories.
+var wdGlobal = "users/treeline/Global/";
+var wdGME = wdGlobal + "Global_Mountain_Explorer/";
+var wdNA = "users/treeline/NorthAmerica_GME/";
+
+// Global Mountain Explorer K3 Binary dataset.  
+var k3Binary = ee.Image(wdGME +
+  "k3binary");
+  // .reproject(targetPrj);
+var k3Classes = ee.Image(wdGME +
+  "k3classes");
+print(k3Classes)
+
+print(k3Binary.projection().nominalScale())
+
+Map.addLayer(k3Binary, {palette: "FF00FF"}, "k3Binary");
+Map.addLayer(k3Classes, {min: 26, max: 32, palette: "0000FF, 00FFFF, FFFF00, FF0000"}, "k3Classes");

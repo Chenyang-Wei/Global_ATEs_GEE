@@ -1,0 +1,69 @@
+/**
+ * Introduction: 
+ * 1) Eliminate snow and ice from the new ATE. 
+ * 
+ * Date: 6/26/2020.
+ */
+
+
+/* Setup. */
+
+// Define the extent of North America. 
+var northAmerica = ee.Geometry.Polygon({
+    coords: [[[-165.69002926658334, 72.44551256468144],
+          [-169.40248634956492, 65.69009098298687],
+          [-172.25893166206492, 63.826281515474996],
+          [171.35638590722195, 52.855285271231274],
+          [-159.1340353549648, 17.264443722753843],
+          [-122.14862062448367, 9.59539750905343],
+          [-79.06711256993691, 6.243890041056693],
+          [-77.03677448989225, 7.40316087095261],
+          [-76.78408894301725, 8.990725120234067],
+          [-75.7244458156751, 12.403191738791786],
+          [-71.5276684719251, 13.751533985801833],
+          [-62.8264965969251, 11.651035844929385],
+          [-62.005942990095036, 9.999896817210585],
+          [-60.791953732282536, 9.96743692413247],
+          [-55.5884807162513, 13.889226127218825],
+          [-47.99315852039507, 58.68729606716915],
+          [-66.52860968724042, 71.51769835770313],
+          [-77.86650031224042, 74.25356562488685],
+          [-89.90751593724042, 74.22969620284344],
+          [-106.04844453284761, 74.3012200035139],
+          [-114.63975312659761, 74.20581277506923],
+          [-120.18954789130242, 74.88484689543225],
+          [-136.27353226630242, 74.6772015427699]]],
+    geodesic: true
+});
+
+// Asset path.
+var wd500m = "users/treeline/North_America/CATE/500mCATE/"; // 500-m CATE.
+
+// Load the extracted new ATE.
+var newCATE = ee.Image(wd500m + "3kmBuf500mCATE_gte10kmSmdClsdFrstElvMean_10kmBufClsdFrst");
+
+// CATE projection.
+var CATEprj = newCATE.projection();
+var CATEcrs = CATEprj.crs().getInfo();
+var CATEscale = CATEprj.nominalScale().getInfo();
+
+print("CATE elevation:", newCATE.bandTypes(), 
+  CATEcrs, CATEscale);
+
+// Copernicus land cover product.
+var copernicus = ee.ImageCollection("COPERNICUS/Landcover/100m/Proba-V/Global")
+  .select('discrete_classification').first();
+
+// Snow or ice covered regions in the Copernicus dataset.
+var snowIce = copernicus.eq(70); // Lands under snow or ice cover throughout the year.
+
+
+if (true) {
+  /* Visualization. */
+  
+  Map.setOptions("hybrid");
+  Map.setCenter(-123.0695, 47.9615, 13); // Difference between overMean and overMedian.
+  
+  Map.addLayer(newCATE, {palette: "FF0000"}, "newCATE", true);
+  Map.addLayer(snowIce.selfMask(), {palette: "0000FF"}, "snowIce", true);
+}

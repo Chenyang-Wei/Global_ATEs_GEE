@@ -1,0 +1,222 @@
+/*
+  Introduction:
+  1) Extract the variables of annual maximum and average NDVIs at each sample point
+    in the year of high-resolution image sampling.
+  
+  Update:
+  11/24/2020.
+  
+  Runtime:
+  1) Drive: 2m.
+  2) Asset: 3m.
+*/
+
+
+/* Setup. */
+
+// Asset path.
+var wdNorthA = "users/treeline/NorthAmerica_GME/";
+
+// Load the combined samples within the CATE.
+var samples = ee.FeatureCollection(wdNorthA + "Pixel_Sampling/" +
+  "ManualRandomStratified_CombinedSamples_InCATE_NorthAmerica");
+
+// print("Combined samples:", samples.sort("InOut").first(), 
+//   samples.size(), 
+//   samples.geometry().projection().crs())
+
+// Load the the variables of annual maximum NDVIs from 2000 to 2019.
+var maxL5L7 = ee.Image(wdNorthA + "Annual_NDVI/" +
+  "medianSmdAnlMaxNDVI_gradMagDir_L5L7_2000to2013");
+
+var maxL8 = ee.Image(wdNorthA + "Annual_NDVI/" +
+  "medianSmdAnlMaxNDVI_gradMagDir_L8_2014to2019");
+
+var maxNDVI = maxL5L7.addBands(maxL8);
+
+// print("maxNDVI:", maxNDVI.bandNames(), 
+//   maxNDVI.projection().crs(), 
+//   maxNDVI.projection().nominalScale())
+
+// Load the the variables of annual average NDVIs from 2000 to 2019.
+var avgL5L7 = ee.Image(wdNorthA + "Annual_NDVI/" +
+  "medianSmdAnlAvgNDVI_gradMagDir_L5L7_2000to2013");
+
+var avgL8 = ee.Image(wdNorthA + "Annual_NDVI/" +
+  "medianSmdAnlAvgNDVI_gradMagDir_L8_2014to2019");
+
+var avgNDVI = avgL5L7.addBands(avgL8);
+
+// print("avgNDVI:", avgNDVI.bandNames(), 
+//   avgNDVI.projection().crs(), 
+//   avgNDVI.projection().nominalScale())
+
+// Load and rename the gradient direction of the mean-smoothed elevation.
+var elvDir = ee.Image(wdNorthA + "ATE_Detection/" +
+  "meanSmdElv_gradMagDir_ALOSv22").select(["direction"], ["elvDir"]);
+
+// print("elvDir:", elvDir.bandNames(), 
+//   elvDir.projection().crs(), 
+//   elvDir.projection().nominalScale())
+
+
+/* Extract the variables of annual maximum and average NDVIs at each sample point
+    in the year of high-resolution image sampling. */
+
+// Obtain the years of image sampling.
+var Years = samples.aggregate_array("Year").distinct().sort();
+
+// print("Years:", Years)
+
+// Generate a list of variables at all sample points
+var sampledVarList = Years.map(function(year) {
+  // When directly convert a "floating point" to a "string", 
+  // the result contains a ".", which isn't allowed in band names.
+  var yearName = ee.String(ee.Number(year).int());
+  
+  // Generate the variable names of each sampling year
+  // (shared by both the maximum and average NDVI variables).
+  var smdName = ee.String("sNDVI_").cat(yearName);
+  var magName = ee.String("mag_").cat(yearName);
+  var dirName = ee.String("dir_").cat(yearName);
+  
+  var varNames = [smdName, magName, dirName];
+  
+  // Extract and rename the maximum NDVI variables in the sampling year.
+  var annualMax = maxNDVI.select(varNames, 
+    ["smdMaxNDVI", "maxNDVImag", "maxNDVIdir"]);
+  
+  // Extract and rename the average NDVI variables in the sampling year.
+  var annualAvg = avgNDVI.select(varNames, 
+    ["smdAvgNDVI", "avgNDVImag", "avgNDVIdir"]);
+  
+  // Combine the two types of NDVI variables and 
+  // the elevation gradient direction.
+  var annualVars = annualMax.addBands(annualAvg)
+    .addBands(elvDir);
+  
+  // Select samples in the corresponding year.
+  var annualSamples = samples.filter(ee.Filter.eq("Year", year));
+  
+  // Get the annual variables at each sample.
+  var sampledVars = annualVars.reduceRegions({
+    collection: annualSamples, 
+    reducer: ee.Reducer.first(), 
+    scale: 30, 
+    crs: "EPSG:4326"
+  });
+  
+  return sampledVars;
+});
+
+// Convert the list of sampled variables to a FeatureCollection.
+var sampledVarFC = ee.FeatureCollection(sampledVarList).flatten();
+
+print ("sampledVarFC:", 
+  sampledVarFC.first().propertyNames(),
+  // sampledVarFC.first(),
+  sampledVarFC.size())
+
+
+if (false) {
+  /* Generate histograms for the sampled variables of each pixel class. */
+  
+  function generateHistogram(chartName, variable, min, max, steps) {
+    // Create fixed histograms by pixel classes.
+    var oldHist = ee.List(sampledVarFC.reduceColumns({
+      selectors: [variable, 'Class'],
+      reducer: ee.Reducer.fixedHistogram({
+        min: min, 
+        max: max, 
+        steps: steps
+      }).group({
+        groupField: 1,
+        groupName: 'Pixel_Class',
+      })
+    }).get("groups"));
+    
+    // Process the old histogram for plotting.
+    var newHist = ee.FeatureCollection(oldHist.map(function(element) {
+      // Extract the histogram of each pixel class.
+      var pixelClass = ee.Dictionary(element).get("Pixel_Class");
+      var histogram = ee.Array(ee.Dictionary(element).get("histogram")).toList();
+    
+      // Separate the value and count in each histogram.
+      histogram = ee.FeatureCollection(histogram.map(function(element) {
+        var value = ee.List(element).get(0);
+        var count = ee.List(element).get(1);
+        
+        return ee.Feature(null).set({
+          Pixel_Class: pixelClass,
+          Value: value,
+          Count: count
+        });
+      }));
+      
+      return histogram;
+    })).flatten();
+    
+    // Create a histogram chart.
+    var chart = ui.Chart.feature.groups({
+      features: newHist, 
+      xProperty: "Value", 
+      yProperty: "Count", 
+      seriesProperty: "Pixel_Class"
+    }).setChartType('AreaChart')
+      .setOptions({
+        title: chartName,
+        series: {
+          0: {color: 'blue'},
+          1: {color: 'darkgreen'},
+          2: {color: 'orange'}
+        }
+      });
+      
+    return chart;
+  }
+  
+  print(generateHistogram("Sampling year", 
+    "Year", 2002, 2020, 18));
+    
+  print(generateHistogram("Smoothed annual maximum NDVI", 
+    "smdMaxNDVI", 0, 1, 50));
+  
+  print(generateHistogram("Smoothed annual average NDVI", 
+    "smdAvgNDVI", 0, 1, 50));
+  
+  print(generateHistogram("Maximum NDVI gradient magnitude", 
+    "maxNDVImag", 0, 0.01, 50));
+  
+  print(generateHistogram("Average NDVI gradient magnitude", 
+    "avgNDVImag", 0, 0.01, 50));
+  
+  print(generateHistogram("Maximum NDVI gradient direction", 
+    "maxNDVIdir", -Math.PI, Math.PI, 63));
+  
+  print(generateHistogram("Average NDVI gradient direction", 
+    "avgNDVIdir", -Math.PI, Math.PI, 63));
+  
+  print(generateHistogram("Elevation gradient direction", 
+    "elvDir", -Math.PI, Math.PI, 63));
+
+} else {
+  /* Export the result to Asset and Drive. */
+  
+  var outputName = "maxAvgNDVIs_gradMagDir_elvDir_CombinedSamples_InCATE_NorthAmerica";
+  
+  // Asset.
+  Export.table.toAsset({
+    collection: sampledVarFC,
+    description: outputName,
+    assetId: wdNorthA + "Pixel_Sampling/" + outputName
+  });
+  
+  // Drive.
+  Export.table.toDrive({
+    collection: sampledVarFC,
+    description: outputName, 
+    folder: outputName,
+    fileFormat: "SHP"
+  }); 
+}
+

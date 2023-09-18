@@ -1,0 +1,78 @@
+/**
+ * Introduction:
+ * 1) Divide each transect centerline into two equal segments.
+ * 2) Buffer each centerline segment by 45 m.
+ * 
+ * Update: 1/5/2022.
+ * 
+ * Runtime: 21m ~ 27m.
+ */
+
+
+/* Load module(s). */
+
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var TNA = require("users/ChenyangWei/Public:Modules/Transect_NDVI_Analysis");
+
+
+/* Data and function preparation. */
+
+// Set the major working directory.
+var wd_Main = GATE.wd_NorthAmerica;
+
+// Determine the universal file path of
+//  the selected transect centerlines.
+var wd_SelectedCLs = wd_Main
+  + "Elevational_Transect_Generation/"
+  + TNA.selectedCLs_fileName
+  + "/"
+  + TNA.selectedCLs_byBasinGroup_fileName;
+
+
+/* Operations by basin group (1 ~ 5). */
+
+for (var basinGroupID = 1; basinGroupID <= 5; basinGroupID ++) {
+  
+  // Load the selected transect centerlines.
+  var selectedCLs = ee.FeatureCollection(wd_SelectedCLs
+    + basinGroupID);
+
+
+  /* Divide each transect centerline into two equal segments. */
+  
+  var CLsegments = TNA.divide_Centerlines_byBasin(selectedCLs, "CL_newID");
+  
+  
+  /* Buffer each centerline segment by 45 m. */
+  
+  var transectSegments = TNA.buffer_Centerlines_by45m(CLsegments);
+
+
+  if (false) { //// true OR false.
+  
+    print("selectedCLs:", 
+      selectedCLs.first(),
+      selectedCLs.size());
+  
+    print("transectSegments:", 
+      transectSegments.first());
+  
+  } else { //// Export the result.
+    
+    var wd_Output = wd_Main
+      + "Transect_NDVI_Analysis/"
+      + TNA.transectSegments_fileName
+      + "/";
+    
+    var fileName = TNA.transectSegments_byBasinGroup_fileName
+      + basinGroupID;
+    
+    Export.table.toAsset({
+      collection: transectSegments, 
+      description: fileName, 
+      assetId: wd_Output
+        + fileName
+    });
+  }
+}
+

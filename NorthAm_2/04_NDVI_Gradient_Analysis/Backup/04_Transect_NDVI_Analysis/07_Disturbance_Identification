@@ -1,0 +1,124 @@
+/**
+ * Introduction:
+ * 1) Calculate the temporal maximum spectral change magnitude (SCMAG)
+ *  at each 30-m pixel during 1985-2020 based on the LCMAP v1.2 product.
+ * 2) Average the maximum spectral change magnitude values within
+ *  each transect segment.
+ * 
+ * Update: 1/28/2022.
+ * 
+ * Runtime: 8m ~ 15m.
+ */
+
+
+/* Load module(s). */
+
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var TNA = require("users/ChenyangWei/Public:Modules/Transect_NDVI_Analysis");
+var FC_AP = require("users/ChenyangWei/Public:Modules/FeatureCollection_Analysis&Processing");
+var IMG = require("users/ChenyangWei/Public:Modules/Image_Analysis&Processing");
+
+
+/* Data and function preparation. */
+
+// Target projection.
+var targetPrj = IMG.WGS84_30m;
+
+// Set the major working directory.
+var wd_Main = GATE.wd_NorthAmerica;
+
+// Load the spectral change magnitude (SCMAG) data during 1985-2020.
+var SCMAG = ee.ImageCollection("projects/sat-io/open-datasets/LCMAP/SCMAG");
+
+// Determine the universal file path of lower and upper segments.
+var wd_LowerSegments = wd_Main
+  + "Transect_NDVI_Analysis/"
+  + TNA.lowerSegments_MaxNDVIsds_fileName
+  + "/"
+  + TNA.lowerSegmentsMaxNDVIsds_byBasinGroup_fileName;
+
+var wd_UpperSegments = wd_Main
+  + "Transect_NDVI_Analysis/"
+  + TNA.upperSegments_MaxNDVIsds_fileName
+  + "/"
+  + TNA.upperSegmentsMaxNDVIsds_byBasinGroup_fileName;
+
+
+/* Calculate the temporal maximum spectral change magnitude at each 30-m pixel. */
+
+var max_SCMAG = SCMAG.max()
+  .reproject(targetPrj)
+  .rename("max_SCMAG");
+
+
+/* Operations by basin group (1 ~ 5). */
+
+for (var basinGroupID = 1; basinGroupID <= 5; basinGroupID ++) {
+  
+  // Load the lower and upper segments of each basin group.
+  var lowerSegments = ee.FeatureCollection(wd_LowerSegments
+    + basinGroupID);
+  
+  var upperSegments = ee.FeatureCollection(wd_UpperSegments
+    + basinGroupID);
+  
+  
+  /* Average the maximum spectral change magnitude values within
+    each transect segment. */
+  
+  var lowerSegments_withAvgTmaxSCMAG = TNA.Compute_AvgTmaxSCMAG_perSegment_byBasin(
+    lowerSegments, max_SCMAG, targetPrj, "lower"
+  );
+  
+  var upperSegments_withAvgTmaxSCMAG = TNA.Compute_AvgTmaxSCMAG_perSegment_byBasin(
+    upperSegments, max_SCMAG, targetPrj, "upper"
+  );
+  
+  
+  /* Final output. */
+  
+  if (false) { //// true OR false.
+  
+    IMG.printImgInfo("max_SCMAG:", max_SCMAG);
+
+    FC_AP.Print_FtrColInfo("lowerSegments:", 
+      lowerSegments);
+    
+    FC_AP.Print_FtrColInfo("upperSegments:", 
+      upperSegments);
+  
+  } else { //// Export the result(s).
+    
+    var wd_Output_Lower = wd_Main
+      + "Transect_NDVI_Analysis/"
+      + TNA.lowerSegments_withAvgTmaxSCMAG_fileName
+      + "/";
+    
+    var wd_Output_Upper = wd_Main
+      + "Transect_NDVI_Analysis/"
+      + TNA.upperSegments_withAvgTmaxSCMAG_fileName
+      + "/";
+    
+    var fileName_Lower = TNA.lowerAvgTmaxSCMAG_byBasinGroup_fileName
+      + basinGroupID;
+    
+    var fileName_Upper = TNA.upperAvgTmaxSCMAG_byBasinGroup_fileName
+      + basinGroupID;
+    
+    Export.table.toAsset({
+      collection: lowerSegments_withAvgTmaxSCMAG, 
+      description: fileName_Lower, 
+      assetId: wd_Output_Lower
+        + fileName_Lower
+    });
+    
+    Export.table.toAsset({
+      collection: upperSegments_withAvgTmaxSCMAG, 
+      description: fileName_Upper, 
+      assetId: wd_Output_Upper
+        + fileName_Upper
+    });
+    
+  }
+}
+

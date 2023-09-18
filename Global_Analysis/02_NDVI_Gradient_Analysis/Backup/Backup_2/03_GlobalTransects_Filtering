@@ -1,0 +1,239 @@
+/**
+ * Introduction:
+ * 
+ * 1) Filter the global transect results based on the ratio between
+ *  the max. moving-window NDVI SD and the long-term NDVI mean.
+ * 
+ * Update: 3/7/2022.
+ * 
+ * Runtime:
+ */
+
+
+/* Load module(s). */
+
+var NGA = require("users/ChenyangWei/Public:Modules/NDVI_Gradient_Analysis.js");
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var FC_AP = require("users/ChenyangWei/Public:Modules/FeatureCollection_Analysis&Processing");
+var IMG = require("users/ChenyangWei/Public:Modules/Image_Analysis&Processing");
+var VIS = require("users/ChenyangWei/Public:Modules/Visualization");
+var TNA = require("users/ChenyangWei/Public:Modules/Transect_NDVI_Analysis");
+
+
+/* Examine the annual max. NDVI and annual Features
+  of the region of interest. */
+
+// Set the working directory of the ROI.
+var wd_ROI = GATE.wd_NorthAmerica;
+
+// Load the new CATE.
+var newCATE = ee.Image(wd_ROI
+  + "Climate-Based_ATE/" 
+  + GATE.newCATE_fileName);
+
+// Load the annual NDVIs in the new CATE as an Image.
+var rawAnnualNDVIs_newCATE = ee.Image(wd_ROI
+  + "ATEI_Estimation/"
+  + TNA.annualMaxNDVI_300mBufNewCATE_NorthAmerica_fileName)
+  .updateMask(newCATE);
+
+// Remove the annual NDVI of 1984.
+var annualNDVIs_newCATE = IMG.RemoveBands_fromImage(rawAnnualNDVIs_newCATE, 
+  ["smdNDVI_1984"]);
+
+// Determine the common file path of the annual Features.
+var wd_AnnualFeatures = wd_ROI
+  + "NDVI_Gradient_Analysis/"
+  + NGA.annualFeatures_FullName
+  + "/"
+  + NGA.annualFeatures_ShortName;
+
+var all_AnnualFeatures = ee.FeatureCollection([]);
+
+// Determine the number of transect subsets.
+var subsetNum = 20;
+
+for (var basinGroupID = 1; basinGroupID <= 5; basinGroupID ++) {
+
+  for (var subsetID = 1; subsetID <= subsetNum; subsetID ++) {
+    
+    // Load each subset of the annual Features.
+    var annualFeatures = ee.FeatureCollection(wd_AnnualFeatures
+      + "_BG" + basinGroupID
+      + "_S" + subsetID);
+    
+    all_AnnualFeatures = all_AnnualFeatures.merge(annualFeatures);
+  }
+}
+
+
+/* Load the global transects with the results of the moving-window detection 
+  and the temporal analyses. */
+
+var fileName = NGA.globalTransects_MovWinTempVars_Name;
+
+var raw_Transects = ee.FeatureCollection(GATE.wd_Global
+  + "NDVI_Gradient_Analysis/"
+  + fileName);
+
+
+/* Filter the global transect results based on the SD/mean ratio. */
+
+// Determine the threshold and property for filtering.
+var filterProperty = "movWin_MaxSDmean_Ratio";
+
+var filterThres = 0.30;
+
+var filterProperty_2 = "movWin_MaxNDVIsd";
+
+var filterThres_2 = 0.16;
+
+// // Filter the global transects.
+// var filtered_Transects = raw_Transects.filter(
+//   ee.Filter.lte(filterProperty, filterThres)
+// );
+
+
+/* Testing. */
+
+// Function to select the annual Features with a positive average NDVI and
+//  a pixel number ratio of at least 1.
+var testing_Filter_Annual_AvgNDVI_PixelNumRatio = function(annualFtrs) {
+  
+  /**
+   * "FeatureCollection": 
+   *  annualFtrs.
+   * 
+   * Result: FeatureCollection.
+  */
+
+  // Name the properties of interest.
+  var avgNDVI_name = "annualAvgNDVI";
+  
+  var pixelNumRatio_Name = "pixelNumRatio_NDVIelv";
+  
+  // Create and combine the Filter of each property.
+  var avgNDVI_Filter = ee.Filter.gte(avgNDVI_name, 0.533 * 0.5);
+  // var avgNDVI_Filter = ee.Filter.gte(avgNDVI_name, 0.533 * 0.75);
+  
+  var pixelNumRatio_Filter = ee.Filter.gte(pixelNumRatio_Name, 1);
+  
+  var combinedFilter = ee.Filter.and(
+    avgNDVI_Filter, pixelNumRatio_Filter
+  );
+  
+  // Select the qualified annual Features.
+  var selected_AnnualFtrs = annualFtrs.filter(combinedFilter);
+  
+  return selected_AnnualFtrs;
+};
+
+
+if (true) {
+  
+  // Map visualization.
+  Map.setOptions("satellite");
+  // Map.setCenter(-158.958, 64.7688, 11); // Alaska.
+  Map.setCenter(-119.5576, 53.341, 11); // Canada.
+  
+  // // Alaska.
+  // var Alaska = 
+  //   ee.Geometry.Polygon(
+  //       [[[-159.76344553493874, 65.3414361381692],
+  //         [-159.76344553493874, 64.24676999369973],
+  //         [-157.62660471462624, 64.24676999369973],
+  //         [-157.62660471462624, 65.3414361381692]]], null, false);
+
+  // Canada.
+  var Canada = 
+    ee.Geometry.Polygon(
+        [[[-124.40826823092594, 53.97570476369009],
+          [-124.40826823092594, 49.48979306556258],
+          [-115.32257487155094, 49.48979306556258],
+          [-115.32257487155094, 53.97570476369009]]], null, false);
+
+  // Display the annual NDVI and Features of the year of interest.
+  var YOI = 2000;
+  
+  var raw_AnnualFeatures = all_AnnualFeatures
+    .filter(ee.Filter.eq("Year", YOI))
+    .filterBounds(Canada);
+  
+  raw_Transects = raw_Transects
+    // .filter(ee.Filter.eq("movWin_MaxSDfirstYr", 1997))
+    .filterBounds(Canada);
+  
+  FC_AP.Examine_FtrCol_PropertyPercentiles(
+    "avgNDVI_Mean", raw_Transects, "avgNDVI_Mean", 25
+  );
+  
+  FC_AP.Examine_FtrCol_PropertyPercentiles(
+    "avgNDVI_Trend", raw_Transects, "avgNDVI_Trend", 25
+  );
+  // Check the removed transects.
+  var removed_Transects = raw_Transects.filter(
+    ee.Filter.gt(filterProperty, filterThres)
+  );
+
+  var removed_Transects_2 = raw_Transects.filter(
+    ee.Filter.gt(filterProperty_2, filterThres_2)
+  );
+
+  // Data examination.
+  FC_AP.Print_FtrColInfo("raw_Transects:", 
+    raw_Transects);
+
+  // FC_AP.Examine_FtrCol_PropertyPercentiles(
+  //   "Filtering Property", raw_Transects,
+  //   filterProperty, 5
+  // );
+  
+  // Select the annual Features with a positive average NDVI and
+  //  a pixel number ratio of at least 1.
+  var selected_AnnualFeatures = testing_Filter_Annual_AvgNDVI_PixelNumRatio(
+    raw_AnnualFeatures
+  );
+  
+  Export.table.toAsset({
+    collection: raw_AnnualFeatures, 
+    description: "raw_AnnualFeatures_Canada_2000", 
+    assetId: wd_ROI + "TESTING/raw_AnnualFeatures_Canada_2000"
+  });
+  
+  // Export.table.toAsset({
+  //   collection: selected_AnnualFeatures, 
+  //   description: "selected_AnnualFeatures_Canada_2000_75pct", 
+  //   assetId: wd_ROI + "TESTING/selected_AnnualFeatures_Canada_2000_75pct"
+  // });
+  
+  Export.table.toAsset({
+    collection: selected_AnnualFeatures, 
+    description: "selected_AnnualFeatures_Canada_2000_50pct", 
+    assetId: wd_ROI + "TESTING/selected_AnnualFeatures_Canada_2000_50pct"
+  });
+  
+  
+  Map.addLayer(annualNDVIs_newCATE.select("smdNDVI_" + YOI), 
+    VIS.NDVI_vis, 
+    "Annual NDVI in " + YOI, true);
+  
+  // Map.addLayer(filtered_Transects, {color: "FFFF00"}, 
+  //   "Filtered Transects", true);
+  
+  Map.addLayer(raw_Transects, {color: "808080"}, 
+    "Raw transects", false);
+  
+  Map.addLayer(removed_Transects_2, {color: "FF0000"}, 
+    "Absolute SD filtering", true);
+  
+  Map.addLayer(raw_AnnualFeatures, {color: "00FF00"}, 
+    "Raw annual features in " + YOI, false);
+  
+  Map.addLayer(selected_AnnualFeatures, {color: "0000FF"}, 
+    "Selected annual features in " + YOI, true);
+  
+  // Map.addLayer(removed_Transects, {color: "FF0000"}, 
+  //   "Relative SD filtering", true, 0.5);
+  
+}
+

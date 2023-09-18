@@ -1,0 +1,149 @@
+/**
+ * Introduction:
+ * 1) Select the HydroSHEDS basins with the buffered CATE.
+ * 2) Merge all geometries in the selected basins into one geometry.
+ * 
+ * Date: 11/2/2020.
+ * 
+ * Launch time: 
+ * 1) Hybas-4: 32m.
+ * 2) Hybas-5: 18m.
+ * 3) Hybas-12: 1h.
+ */
+
+
+// Define the extent of North America. 
+var northAmerica = ee.Geometry.Polygon({
+    coords: [[[-165.69002926658334, 72.44551256468144],
+          [-169.40248634956492, 65.69009098298687],
+          [-172.25893166206492, 63.826281515474996],
+          [171.35638590722195, 52.855285271231274],
+          [-159.1340353549648, 17.264443722753843],
+          [-122.14862062448367, 9.59539750905343],
+          [-79.06711256993691, 6.243890041056693],
+          [-77.03677448989225, 7.40316087095261],
+          [-76.78408894301725, 8.990725120234067],
+          [-75.7244458156751, 12.403191738791786],
+          [-71.5276684719251, 13.751533985801833],
+          [-62.8264965969251, 11.651035844929385],
+          [-62.005942990095036, 9.999896817210585],
+          [-60.791953732282536, 9.96743692413247],
+          [-55.5884807162513, 13.889226127218825],
+          [-47.99315852039507, 58.68729606716915],
+          [-66.52860968724042, 71.51769835770313],
+          [-77.86650031224042, 74.25356562488685],
+          [-89.90751593724042, 74.22969620284344],
+          [-106.04844453284761, 74.3012200035139],
+          [-114.63975312659761, 74.20581277506923],
+          [-120.18954789130242, 74.88484689543225],
+          [-136.27353226630242, 74.6772015427699]]],
+    geodesic: true
+});
+
+// Asset path.
+var wdNorthA = "users/treeline/NorthAmerica_GME/";
+
+if (false) {
+  /* Setup. */
+  
+  // HydroSHEDS basins ("hybas_12") within the study domain.
+  var basins = ee.FeatureCollection("WWF/HydroSHEDS/v1/Basins/hybas_12")
+    .filterBounds(northAmerica);
+  
+  // Load the climatic ATE with a 3-km buffer.
+  var cateBuffer = ee.Image(wdNorthA + "CATE/" + 
+    "3kmBuffered_30mReprj_500mCATE3kmBuffer_gteAvgClsdFrstElv_10kmRes10pxFocalMean_10kmClsdFrstBuffer")
+    .select("Buffered_3km")
+    .reproject({
+      crs: "EPSG:4326",
+      scale: 30
+    });
+  
+  print("cateBuffer:", cateBuffer.bandTypes(), 
+    cateBuffer.projection().crs(), 
+    cateBuffer.projection().nominalScale())
+  
+  
+  /* Select the HydroSHEDS basins with the buffered CATE. */
+  
+  // Extract the first buffered CATE pixel within each basin.
+  var basinsCATE = cateBuffer.reduceRegions({
+    collection: basins,
+    reducer: ee.Reducer.firstNonNull(), 
+    crs: "EPSG:4326",
+    scale: 30
+  });
+  
+  // print("Raw basins:", basins.size()) // Hybas-4: 254; Hybas-5: 847; Hybas-12: 165809.
+  
+  // Select basins with non-null buffered CATE pixels.
+  var selectedBasins = basinsCATE.filter({
+    filter: ee.Filter.notNull(["first"])
+  });
+  
+  // print("Selected basins:", selectedBasins.size(), selectedBasins.first())
+  
+  // Merge all geometries in the selected basins into one geometry.
+  var selectedBasinsGeo = selectedBasins.union();
+  
+  // print("selectedBasinsGeo:", selectedBasinsGeo)
+  
+  if (false) {
+    /* Visualization. */
+    
+    Map.setCenter(-113.7571, 48.829, 4);
+    Map.setOptions("hybrid");
+    
+    Map.addLayer(basins, {color: "FF0000"}, "Basins");
+    // Map.addLayer(cateBuffer, {palette: "0000FF"}, "cateBuffer", false);
+    // Map.addLayer(selectedBasinsGeo, {color: "FFFF00"}, "selectedBasinsGeo", false);
+  }
+  
+  else {
+    /* Output the result.*/
+    
+    // var fileName = "Hybas4Basins_with3kmBufferedCATE";
+    var fileName = "Hybas12Basins_with3kmBufferedCATE";
+    
+    Export.table.toAsset({
+      collection: selectedBasinsGeo, 
+      description: fileName, 
+      assetId: wdNorthA + "Annual_NDVI/" + fileName
+    });
+  }
+}
+
+else {
+  /* Check the exported result. */
+  
+  // Define a new extent of North America (no Hawaii due to the Hybas dataset).
+  var northAm = 
+    ee.Geometry.Polygon(
+        [[[178.56723676719662, 74.86477551230703],
+          [178.56723676719662, 6.128696791497288],
+          [309.1727055171967, 6.128696791497288],
+          [309.1727055171967, 74.86477551230703]]], null, false);
+  
+  // Load the climatic ATE with a 3-km buffer.
+  var cateBuffer = ee.Image(wdNorthA + "CATE/" + 
+    "3kmBuffered_30mReprj_500mCATE3kmBuffer_gteAvgClsdFrstElv_10kmRes10pxFocalMean_10kmClsdFrstBuffer")
+    .select("Buffered_3km");
+  
+  // Load the geometry of the selected "hybas_12" basins with the buffered CATE.
+  var selectedBasinsGeo = ee.FeatureCollection(wdNorthA + "Annual_NDVI/" + 
+    "Hybas12Basins_with3kmBufferedCATE").geometry();
+  
+  // HydroSHEDS basins ("hybas_12") within the study domain.
+  var basins = ee.FeatureCollection("WWF/HydroSHEDS/v1/Basins/hybas_12")
+    .filterBounds(selectedBasinsGeo);
+  
+  print("selectedBasinsGeo:", selectedBasinsGeo);
+  
+  Map.setCenter(-113.7571, 48.829, 4);
+  Map.setOptions("hybrid");
+  
+  Map.addLayer(northAm, {color: "FFFF00"}, "northAm", false);
+  Map.addLayer(basins, {color: "FF0000"}, "Basins", true);
+  Map.addLayer(cateBuffer, {palette: "0000FF"}, "cateBuffer", true);
+  Map.addLayer(selectedBasinsGeo, {color: "FF0000"}, "selectedBasinsGeo", true);
+}

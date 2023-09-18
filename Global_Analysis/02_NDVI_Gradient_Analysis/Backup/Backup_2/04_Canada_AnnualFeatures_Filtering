@@ -1,0 +1,193 @@
+/**
+ * Introduction:
+ * 
+ * 1) Check the filtering result of annual Features based on
+ *  the long-term average NDVI.
+ * 
+ * Update: 3/11/2022.
+ */
+
+
+/* Load module(s). */
+
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var VIS = require("users/ChenyangWei/Public:Modules/Visualization");
+var TNA = require("users/ChenyangWei/Public:Modules/Transect_NDVI_Analysis");
+var FC_AP = require("users/ChenyangWei/Public:Modules/FeatureCollection_Analysis&Processing");
+
+
+/* Examine the annual max. NDVI. */
+
+// Set the working directory of the ROI.
+var wd_ROI = GATE.wd_NorthAmerica;
+
+// Load the new CATE.
+var newCATE = ee.Image(wd_ROI
+  + "Climate-Based_ATE/" 
+  + GATE.newCATE_fileName);
+
+// Load the annual NDVIs in the new CATE as an Image.
+var rawAnnualNDVIs_newCATE = ee.Image(wd_ROI
+  + "ATEI_Estimation/"
+  + TNA.annualMaxNDVI_300mBufNewCATE_NorthAmerica_fileName)
+  .updateMask(newCATE);
+
+
+/* Load the annual Features of the year of interest. */
+
+// Determine the year of interest.
+var YOI = 2000;
+
+// Raw Features.
+var rawFtrs = ee.FeatureCollection(wd_ROI + "TESTING/raw_AnnualFeatures_Canada_2000");
+
+// 50 pct. of the long-term mean.
+var Ftrs_50pct = ee.FeatureCollection(wd_ROI + "TESTING/selected_AnnualFeatures_Canada_2000_50pct");
+
+// 75 pct. of the long-term mean.
+var Ftrs_75pct = ee.FeatureCollection(wd_ROI + "TESTING/selected_AnnualFeatures_Canada_2000_75pct");
+
+// Function to select the annual Features with a positive average NDVI and
+//  a pixel number ratio of at least 1.
+var testing_Filter_Annual_AvgNDVI_PixelNumRatio = function(annualFtrs) {
+  
+  /**
+   * "FeatureCollection": 
+   *  annualFtrs.
+   * 
+   * Result: FeatureCollection.
+  */
+
+  // Name the properties of interest.
+  var avgNDVI_name = "annualAvgNDVI";
+  
+  var pixelNumRatio_Name = "pixelNumRatio_NDVIelv";
+  
+  // Create and combine the Filter of each property.
+  var avgNDVI_Filter = ee.Filter.gt(avgNDVI_name, 0);
+  
+  var pixelNumRatio_Filter = ee.Filter.gte(pixelNumRatio_Name, 1);
+  
+  var combinedFilter = ee.Filter.and(
+    avgNDVI_Filter, pixelNumRatio_Filter
+  );
+  
+  // Select the qualified annual Features.
+  var selected_AnnualFtrs = annualFtrs.filter(combinedFilter);
+  
+  return selected_AnnualFtrs;
+};
+
+var Ftrs_original = testing_Filter_Annual_AvgNDVI_PixelNumRatio(
+  rawFtrs
+);
+
+
+/* Examine the LANDSAT images of YOI. */
+
+// Function to remove cloud (high confidence), cloud shadow, and NA edge pixels 
+//  in each LANDSAT image.
+var maskCloudShadow = function(image) {
+  // Get the pixel QA band.
+  var qa = image.select('pixel_qa');
+  
+  // If the cloud bit (5) is set and the cloud confidence (7) is high
+  //  or the cloud shadow bit is set (3), then it's a bad pixel.
+  var cloud_shadow = qa.bitwiseAnd(1 << 5).and(qa.bitwiseAnd(1 << 7))
+    .or(qa.bitwiseAnd(1 << 3));
+  
+  // Remove edge pixels that don't occur in all bands.
+  var removeEdge = image.mask().reduce(ee.Reducer.min());
+  
+  // Mask the unwanted pixels.
+  var masked = image.updateMask(cloud_shadow.not())
+    .updateMask(removeEdge);
+  
+  // Select the bands of surface reflectance. 
+  return masked.select('B.*');
+};
+
+
+var LT5 = ee.ImageCollection("LANDSAT/LT05/C01/T1_SR")
+  .filter(ee.Filter.calendarRange({
+    start: YOI, 
+    end: YOI, 
+    field: "year"
+  }))//.map(maskCloudShadow);
+
+var Q1 = LT5.filter(ee.Filter.calendarRange({
+  start: 1, 
+  end: 3, 
+  field: "month"
+}));
+
+var Q2 = LT5.filter(ee.Filter.calendarRange({
+  start: 4, 
+  end: 6, 
+  field: "month"
+}));
+
+var Q3 = LT5.filter(ee.Filter.calendarRange({
+  start: 7, 
+  end: 9, 
+  field: "month"
+}));
+
+var Q4 = LT5.filter(ee.Filter.calendarRange({
+  start: 10, 
+  end: 12, 
+  field: "month"
+}));
+
+var visParams = {
+  bands: ['B3', 'B2', 'B1'],
+  min: 0,
+  max: 3000,
+  gamma: 1.4,
+};
+
+
+if (true) {
+  // Map visualization.
+  Map.setOptions("satellite");
+  Map.setCenter(-118.5839, 52.4948, 8); // Canada.
+  
+  // LANDSAT.
+  Map.addLayer(Q1.median(), visParams, "LANDSAT 5 (Jan. ~ Mar.) in " + YOI);
+
+  Map.addLayer(Q2.median(), visParams, "LANDSAT 5 (Apr. ~ June) in " + YOI);
+
+  Map.addLayer(Q3.median(), visParams, "LANDSAT 5 (July ~ Sep.) in " + YOI);
+
+  Map.addLayer(Q4.median(), visParams, "LANDSAT 5 (Oct. ~ Dec.) in " + YOI);
+
+  // NDVI.
+  var yr1 = YOI - 1;
+  var yr2 = YOI + 1;
+  
+  Map.addLayer(rawAnnualNDVIs_newCATE.select("smdNDVI_" + yr1), 
+    VIS.NDVI_vis, 
+    "Annual NDVI in " + yr1, false);
+  
+  Map.addLayer(rawAnnualNDVIs_newCATE.select("smdNDVI_" + YOI), 
+    VIS.NDVI_vis, 
+    "Annual NDVI in " + YOI, true);
+  
+  Map.addLayer(rawAnnualNDVIs_newCATE.select("smdNDVI_" + yr2), 
+    VIS.NDVI_vis, 
+    "Annual NDVI in " + yr2, false);
+  
+  // Annual transect Features.
+  Map.addLayer(rawFtrs, {color: "808080"}, 
+    "Raw annual features in " + YOI, true);
+  
+  Map.addLayer(Ftrs_original, {color: "00FFFF"}, 
+    "Annual features (original filtering)", false);
+  
+  Map.addLayer(Ftrs_50pct, {color: "0000FF"}, 
+    "Annual NDVI over 50 pct. of the mean ", true);
+  
+  Map.addLayer(Ftrs_75pct, {color: "FF0000"}, 
+    "Annual NDVI over 75 pct. of the mean ", true);
+}
+

@@ -1,0 +1,228 @@
+/**
+ * Introduction:
+ * 1) Vectorize the segmented CATE.
+ * 2) Generate and buffer an elevational transect from the highest pixel to the lowest pixel within each selected polygon.
+ * 
+ * Date: 6/28/2020.
+ */
+
+
+/* Setup. */
+
+// Asset path.
+var wdGlobal = "users/treeline/Global/";
+var wdNorthA = "users/treeline/North_America/";
+var wd500m = "users/treeline/North_America/CATE/500mCATE/"; // 500-m CATE.
+
+// GMBA mountain inventory.  
+var GMBA = ee.FeatureCollection(wdGlobal +
+  "GMBA/Mountain_Inventory_v1_2-World");
+
+// Raw CATE.
+var rawCATE = ee.Image(wd500m + "3kmBuf500mCATE_gte10kmSmdClsdFrstElvMean_10kmBufClsdFrst");
+
+// Segmented CATE.
+var segCATE = ee.Image(wdNorthA + "Transects/" + 
+  "Segmented_3kmBuf500mCATEgte10kmFrstElv_distToRidges_ALOSlandformsLte14_ridgeRemoved");
+
+// Segmented CATE projection.
+var segPrj = segCATE.projection();
+var segCRS = segPrj.crs();
+var segScale = segPrj.nominalScale();
+
+print("Segmented CATE:", 
+  segCATE.bandTypes(),
+  segCRS, segScale);
+
+// ALOS elevation within the segmented CATE.
+var elvName = "segElv";
+
+var segElv = ee.Image('JAXA/ALOS/AW3D30/V2_2').select('AVE_DSM')
+  .updateMask(segCATE).rename(elvName);
+
+
+/* Select mountain ranges with the segmented CATE. */
+
+// Extract the first segmented CATE pixel within each mountain range.
+var rawMtRg = segCATE.reduceRegions({
+  collection: GMBA,
+  reducer: ee.Reducer.firstNonNull(), 
+  scale: segScale, 
+  crs: segCRS
+});
+
+// print("Raw mountain ranges:", rawMtRg.size());
+
+// Select mountain ranges with study domain pixels.
+var selectedMtRg = rawMtRg.filter({
+  filter: ee.Filter.neq("first", null)
+});
+
+// Convert the feature collection of the selected mountain ranges to a list.
+var mtRgNum = selectedMtRg.size().getInfo();
+
+var mtRgList = selectedMtRg.toList({
+  count: mtRgNum
+});
+
+// print("Selected mountain ranges:", mtRgNum, mtRgList)
+
+
+/* Determine pixel coordinates in the CATE. */
+
+// Create an image of pixel coordinates.
+var rawCoords = ee.Image.pixelLonLat();
+
+// Elevation dataset projection.
+var elvPrj = segElv.projection();
+var elvCRS = elvPrj.crs();
+var elvScale = elvPrj.nominalScale();
+
+// print("Elevation projection:", elvCRS, elvScale)
+
+// Reproject the coordinate dataset to the elevation projection system.
+var coords = rawCoords.reproject({
+  crs: elvCRS,
+  scale: elvScale
+}).updateMask(segCATE);
+
+print("Coordinate dataset projection:", 
+  coords.projection().crs(), 
+  coords.projection().nominalScale());
+
+
+/* Define a function for generating and buffering the elevational transect. */
+
+var generateBufferedTransects = function(feature) {  
+  // Get the geometry of each selected polygon.
+  var geom = feature.geometry();
+  
+  // Calculate the maximum and minimum elevation values 
+  // of ridge or valley pixels.
+  var elvMinMax = segElv.reduceRegion({
+    reducer: ee.Reducer.minMax(),
+    geometry: geom,
+    scale: elvScale, 
+    crs: elvCRS,
+    maxPixels: 1e13
+  });
+  
+  // Extract the coordinates of pixels with the maximum elevation.
+  var elvMax = elvMinMax.get(elvName + "_max");
+  var maxCoords = coords.updateMask(segElv.eq(ee.Number.parse(elvMax)));
+  
+  // Extract the coordinates of pixels with the minimum elevation.
+  var elvMin = elvMinMax.get(elvName + "_min");
+  var minCoords = coords.updateMask(segElv.eq(ee.Number.parse(elvMin)));
+  
+  // Convert the extracted coordinates to two lists.
+  var maxList = maxCoords.reduceRegion({
+    reducer: ee.Reducer.toList(),
+    geometry: geom,
+    scale: elvScale, 
+    crs: elvCRS,
+    maxPixels: 1e13
+  });
+  
+  var minList = minCoords.reduceRegion({
+    reducer: ee.Reducer.toList(),
+    geometry: geom,
+    scale: elvScale, 
+    crs: elvCRS,
+    maxPixels: 1e13
+  });
+  
+  // Choose only the coordinates of the first qualified pixel in each list.
+  var maxLon = ee.List(maxList.get('longitude')).get(0);
+  var minLon = ee.List(minList.get('longitude')).get(0);
+  
+  var maxLat = ee.List(maxList.get('latitude')).get(0);
+  var minLat = ee.List(minList.get('latitude')).get(0);
+  
+  // Merge the coordinates of the two pixels into a list.
+  var lonList = ee.List([maxLon, minLon]);
+  var latList = ee.List([maxLat, minLat]);
+  
+  var coordList = lonList.zip(latList);
+  
+  // Construct a line string between the two pixels based on the merged coordinates.
+  var lineString = ee.Algorithms.GeometryConstructors.LineString(coordList);
+  
+  // Get the length of the generated line string.
+  var lsLength = lineString.length(); // In meters.
+  
+  // Add the length property to the line string.
+  var transect = ee.Feature(lineString).set("Length_m", lsLength);
+  
+  // Create a 30-m buffer for the line string.
+  var buffered = transect.buffer(30); // If no projection is specified, the unit is meters.
+  
+  return buffered;
+};
+
+
+/* Generate and export buffered elevational transects by mountain ranges. */
+
+for (var index = 0; index < mtRgNum; index ++) {
+// for (var index = 0; index < 1; index ++) { // Testing.
+  
+  // Extract the geometry of each mountain range feature.
+  var mtRgFeature = ee.Feature(mtRgList.get(index));
+  var mtRgGeom = mtRgFeature.geometry();
+  
+  // Vectorize the segmented CATE in the mountain range.
+  var polygons = segCATE.reduceToVectors({ 
+    geometry: mtRgGeom,
+    maxPixels: 1e13,
+    scale: segScale, 
+    crs: segCRS,
+    geometryType: "polygon",
+    eightConnected: false 
+    // Only pixels that share an edge are considered adjacent.
+  });
+  
+  // print("Segmented polygons:", polygons.first(), polygons.size())
+  
+  // Generate and buffer elevational transects within each segmented polygon.
+  var bufferedTransects = ee.FeatureCollection(polygons
+    .map(generateBufferedTransects));
+  
+  // print("Buffered transects:", bufferedTransects.first(), bufferedTransects.size())
+  
+  
+  if (false) { // Testing.
+    /* Visualization. */
+    
+    var elvPalette = ['006600', '002200', 'fff700', 'ab7634', 'c4d0ff', 'ffffff'];
+    var elvVis = {min: 1000, max: 3500, palette: elvPalette};
+    
+    // Map.setCenter(-113.7571, 48.829, 10);
+    Map.centerObject(mtRgGeom, 12);
+    Map.setOptions("hybrid");
+    
+    Map.addLayer(rawCATE, {palette: "FF0000"}, "rawCATE", false);
+    
+    Map.addLayer(selectedMtRg, {color: "FFFF00"}, "selectedMtRg", true);
+    Map.addLayer(segCATE, {palette: "0000FF"}, "segCATE", true);
+    
+    
+    Map.addLayer(polygons, {color: "00FF00"}, "polygons", false);
+    Map.addLayer(segElv, elvVis, "elevation", false);
+    
+    Map.addLayer(coords.select("longitude"), {palette: "00FFFF"}, "longitude", false);
+    
+    Map.addLayer(bufferedTransects, {color: "FF0000"}, "bufferedTransects", false);
+  }
+  
+  else if (true) {
+    /* Output the result.*/
+    
+    var fileName = "MtRg_" + index;
+    
+    Export.table.toAsset({
+      collection: bufferedTransects, 
+      description: fileName, 
+      assetId: wdNorthA + "Transects/30mBufTransects_ByMtRgs/" + fileName
+    });
+  }
+}

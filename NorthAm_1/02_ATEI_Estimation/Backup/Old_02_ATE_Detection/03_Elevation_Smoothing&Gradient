@@ -1,0 +1,167 @@
+/*
+  Introduction:
+  1) Smooth the the 30-m ALOS elevation dataset by calculating its focal mean within a 10-pixel circular kernel.
+  2) Calculate the gradient direction and magnitude of the smoothed elevation.
+  3) Extract the smoothed elevation and gradient data within the study domain (i.e., the climatic ATE).
+  
+  Date: 7/26/2020.
+  
+  Launch time: 19h.
+*/
+
+
+/* Setup. */
+
+// Define the extent of North America. 
+var northAmerica = ee.Geometry.Polygon({
+    coords: [[[-165.69002926658334, 72.44551256468144],
+          [-169.40248634956492, 65.69009098298687],
+          [-172.25893166206492, 63.826281515474996],
+          [171.35638590722195, 52.855285271231274],
+          [-159.1340353549648, 17.264443722753843],
+          [-122.14862062448367, 9.59539750905343],
+          [-79.06711256993691, 6.243890041056693],
+          [-77.03677448989225, 7.40316087095261],
+          [-76.78408894301725, 8.990725120234067],
+          [-75.7244458156751, 12.403191738791786],
+          [-71.5276684719251, 13.751533985801833],
+          [-62.8264965969251, 11.651035844929385],
+          [-62.005942990095036, 9.999896817210585],
+          [-60.791953732282536, 9.96743692413247],
+          [-55.5884807162513, 13.889226127218825],
+          [-47.99315852039507, 58.68729606716915],
+          [-66.52860968724042, 71.51769835770313],
+          [-77.86650031224042, 74.25356562488685],
+          [-89.90751593724042, 74.22969620284344],
+          [-106.04844453284761, 74.3012200035139],
+          [-114.63975312659761, 74.20581277506923],
+          [-120.18954789130242, 74.88484689543225],
+          [-136.27353226630242, 74.6772015427699]]],
+    geodesic: true
+});
+
+// Asset path.
+var wdNorthA = "users/treeline/NorthAmerica_GME/";
+
+// Load the climatic ATE.
+var CATE = ee.Image(wdNorthA + "CATE/" +
+  "500mCATE_3kmSurrounding_gte10kmClsdFrstElvFocalMean_10kmClsdFrstBuffer")
+  .reproject({
+    crs: "EPSG:4326",
+    scale: 30
+  });
+
+// print("CATE:", CATE.bandTypes(), 
+//   CATE.projection().crs(), 
+//   CATE.projection().nominalScale())
+
+// Create a mask using the Hansen dataset (V 1.7) to define the area of land surface.
+var land = ee.Image('UMD/hansen/global_forest_change_2019_v1_7') // The newest version of the Hansen dataset.
+  .select('datamask')
+  .eq(1) // Select the "mapped land surface" in the Hansen dataset.
+  .reproject({
+    crs: "EPSG:4326",
+    scale: 30
+  });
+
+// ALOS elevation.
+var ALOSelv = ee.Image('JAXA/ALOS/AW3D30/V2_2').select('AVE_DSM')
+  .reproject({
+    crs: "EPSG:4326",
+    scale: 30
+  });
+
+// print("Elevation projection:", 
+//   ALOSelv.bandTypes(),
+//   ALOSelv.projection().crs(), 
+//   ALOSelv.projection().nominalScale())
+
+
+/* Smooth the elevation dataset. */
+
+// Define a circular smoothing kernel of 10 pixels.
+var Kn = ee.Kernel.circle({
+  radius: 10 // Default units: "pixels".
+}); 
+
+var smoothed = ALOSelv.reduceNeighborhood({
+  // The mean reducer is smoother than the median reducer, 
+  // which then provides a less scattered gradient direction dataset.
+  reducer: ee.Reducer.mean(),
+  kernel: Kn,
+  skipMasked: false // Do NOT mask output pixels if the corresponding input pixel is masked.
+}).reproject({
+  crs: "EPSG:4326",
+  scale: 30
+});
+
+
+/* Compute the gradient magnitude and direction of the smoothed elevation. */
+
+// Compute the image gradient in the X and Y directions.
+var gradient = smoothed.gradient()
+  .reproject({
+    crs: "EPSG:4326",
+    scale: 30
+  });
+
+// Compute the magnitude of the gradient: "hypot" calculates the magnitude of the 2D vector [x, y].
+var magnitude = gradient.select('y').hypot(gradient.select('x'))
+  .rename("magnitude");
+
+// Compute the direction of the gradient: "atan2" calculates the angle formed by the 2D vector [x, y].
+// (Gradient: -179 ~ 180 (-PI ~ PI), 
+// south: 0, north: 180 (PI), 
+// west : 90 (PI/2), east: -90 (-PI/2)).
+var direction = gradient.select('y').atan2(gradient.select('x'))
+  .rename("direction");
+
+// Combine the smoothed elevation and its gradient magnitude and direction.
+var combined = smoothed.addBands(magnitude)
+  .addBands(direction)
+  .updateMask(CATE) // Mask the result after computing the gradient to avoid missing pixels along the boundary of the study domain.
+  .updateMask(land) // Remove any remaining water-covered regions.
+  .float(); // Convert the PixelType to float.
+
+// print("Smoothed elevation and gradient:", combined.bandTypes(),
+//   combined.projection().crs(),
+//   combined.projection().nominalScale())
+
+
+if (true) {
+  /* Export the smoothed elevation. */
+  
+  var fileName = "meanSmdElv_gradMagDir_ALOSv22";
+  
+  Export.image.toAsset({
+    image: combined, 
+    description: fileName, 
+    assetId: wdNorthA + "ATE_Detection/" + fileName,
+    region: northAmerica, 
+    crs: "EPSG:4326",
+    scale: 30,
+    maxPixels: 1e13
+  });
+  
+} else {
+  /* Visualization. */
+  
+  var elvPalette = ['006600', '002200', 'fff700', 'ab7634', 'c4d0ff', 'ffffff'];
+  var elvVis = {min: 1000, max: 3500, palette: elvPalette};
+  
+  Map.setCenter(-113.7571, 48.829, 14);
+  Map.setOptions("hybrid");
+  
+  Map.addLayer(ALOSelv, elvVis, "ALOSelv", false);
+  
+  Map.addLayer(CATE, {palette: "0000FF"}, "CATE", false, 0.5);
+  
+  Map.addLayer(combined.select("AVE_DSM_mean"), elvVis, "smdElv");
+  
+  Map.addLayer(combined.select("magnitude"),
+    {min: 0, max: 2, palette: "FFFFFF, FF0000"}, "Elevation Gradient Magnitude");
+  
+  Map.addLayer(combined.select("direction"),
+    {min: -Math.PI, max: Math.PI}, "Elevation Gradient Direction");
+}
+

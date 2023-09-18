@@ -1,0 +1,169 @@
+/**
+ * Introduction:
+ * 1) Buffer the annual ATE segments.
+ * 2) Sum the ATEIs and the ATEI-weighted elevations 
+ *  within each ATE segment by subwatershed and by year.
+ * 
+ * Update: 4/19/2021.
+ * 
+ * Runtime: 6h ~ 2d.
+*/
+
+
+/* Data preparation. */
+
+// Set the 10-km buffered bounding box of the study domain.
+var AOI = ee.Geometry.Rectangle({
+  coords: [-180, 7.114761500193937, -52.095625030545534, 80.24342770493531],
+  geodesic: false
+});
+
+// A target projection system.
+var targetPrj = {
+  crs: "EPSG:4326", 
+  scale: 30
+};
+
+// Set the working directory.
+var wdNA = "users/treeline/NorthAmerica_GME/";
+
+// Function to print the image information.
+function printImgInfo(name, image) {
+  print(name,
+    image.bandTypes(),
+    image.projection().crs(),
+    image.projection().nominalScale());
+}
+
+// Annual ATEIs based on the annual maximum NDVIs (cloud masked and biome involved).
+var annualATEI = ee.Image(wdNA +
+  "ATEI_Estimation/AnnualATEI_1984to2020_Biomes356_medianSmdAnnualMaxNDVI_meanSmdElv_newCATE_AOI");
+
+// printImgInfo("annualATEI:", annualATEI)
+
+// ALOS elevation (Version 3.2, released in January 2021) in the AOI.
+var ALOSelv = ee.ImageCollection('JAXA/ALOS/AW3D30/V3_2').select('DSM')
+  .filterBounds(AOI)
+  .mosaic()
+  .reproject(targetPrj);
+
+// printImgInfo("ALOSelv:", ALOSelv)
+
+// Load the previously selected hydrobasin subwatersheds.
+var subwatersheds = ee.FeatureCollection(wdNA + 
+  "Transect_Analysis/" + 
+  "Hybas12Basins_LowerClosedForests_UpperNonForested_30mSegmentedNewCATE");
+
+// print("subwatersheds:", 
+//   subwatersheds.first(),
+//   subwatersheds.size()) // 20032.
+
+
+/* Self-defined function(s). */
+
+// Function to buffer each annual ATE segment.
+var segBuf = 45; // Equals to 1.5 pixels.
+
+function bufferATEseg(ATEseg) {
+  return ATEseg.buffer(segBuf);
+}
+
+// Function to rename the annual ATEI-weighted elevations.
+function renameWtdElv(currentYear, previousResult) {
+  // Convert the year to a String.
+  var yearString = ee.String(ee.Number(currentYear).int());
+  
+  // Rename the ATEI-weighted elevation.
+  var oldName = ee.String("ATEI_").cat(yearString);
+  var newName = ee.String("wtdElv").cat(yearString);
+  var renamedBand = ATEIwtd_Elv.select([oldName], [newName]);
+  
+  // Append the renamed band to the previous image.
+  var combinedImg = ee.Image(previousResult).addBands(renamedBand);
+  
+  return combinedImg;
+}
+
+// Function to sum the annual variables within each buffered ATE segment by subwatershed.
+function sumSegmentVarsBySubwatershed(SWS) {
+  // Acquire the buffered annual ATE segments within each subwatershed.
+  var SWSgeom = SWS.geometry();
+  var selectedBufSegs = annualBufferedSegs.filterBounds(SWSgeom);
+
+  // Sum the annual variables within each selected buffered segment.
+  var annualVarSums = annualVars.reduceRegions({
+    collection: selectedBufSegs, 
+    reducer: ee.Reducer.sum(), 
+    scale: 30, 
+    crs: "EPSG:4326"
+  });
+  
+  return annualVarSums;
+}
+
+
+/* Weight the elevation with the annual ATEIs. */
+
+// Calculate the annual ATEI-weighted elevation.
+var ATEIwtd_Elv = annualATEI.multiply(ALOSelv);
+
+// printImgInfo("ATEIwtd_Elv:", ATEIwtd_Elv)
+
+// Rename the annual ATEI-weighted elevations and append the result to the ATEI image.
+var yearList = ee.List.sequence(1984, 2020);
+
+var ATEIwtdElv_ATEI = ee.Image(yearList.iterate({
+  function: renameWtdElv, 
+  first: annualATEI
+}));
+
+// printImgInfo("ATEIwtdElv_ATEI:", ATEIwtdElv_ATEI)
+
+
+/* Sum the ATEIs and the ATEI-weighted elevations within each ATE segment by subwatershed and by year. */
+
+for (var year = 1984; year <= 2020; year ++) {
+  // Select and rename the ATEI and the ATEI-weighted elevation in each year.
+  var ATEIname = "ATEI_" + year;
+  var wtdElvName = "wtdElv" + year;
+  var annualVars = ATEIwtdElv_ATEI.select([ATEIname, wtdElvName],
+    ["ATEIsum", "wtdElvSum"]);
+  
+  // Load the annual ATE segments in the corresponding year.
+  var annualSegName = "AnnualATEsegments_" + year;
+  var annualATEsegs = ee.FeatureCollection(wdNA + 
+    "Transect_Analysis/AnnualATEsegments_CenterLines_ATEIgtPt4329/" + 
+    annualSegName);
+  
+  // print(annualSegName, 
+  //   annualATEsegs.first(),
+  //   annualATEsegs.size())
+
+  // Buffer each annual ATE segment.
+  var annualBufferedSegs = annualATEsegs.map(bufferATEseg);
+  
+  // Generate sum the annual variables within the buffered ATE segments by subwatershed.
+  var annualSegmentSums = subwatersheds.map(sumSegmentVarsBySubwatershed)
+    .flatten();
+  
+  // print(annualSegName, 
+  //   annualSegmentSums.first())
+
+  if (true) {
+    // Output the annual result to the Drive.
+    var fileName = "ATEsegmentVarSums_" + year;
+    var folderName = "AnnualATEsegments_" + 
+      segBuf + "mBuffer_" +
+      "AnnualVarSums";
+    
+    Export.table.toDrive({
+      collection: annualSegmentSums, 
+      description: fileName, 
+      folder: folderName, 
+      fileFormat: "CSV",
+      // Should have outputted the "Year" as well.
+      selectors: ["ID", "ATEIsum", "wtdElvSum"] // Only export the ID and the annual variable sums.
+    });
+  }
+}
+

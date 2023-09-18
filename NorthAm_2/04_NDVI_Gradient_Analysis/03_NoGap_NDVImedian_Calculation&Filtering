@@ -1,0 +1,103 @@
+/**
+ * Introduction:
+ * 
+ * 1) Choose the annual Features with a pixel number ratio (NDVI/elevation 
+ *  in the study domain) greater than or equal to 1 (i.e., no gap in NDVI).
+ * 
+ * 2) Calculate the long-term NDVI median for the no-gap annual Features 
+ *  of each transect.
+ * 
+ * 3) For each transect, select the no-gap annual Features with NDVI greater than 
+ *  50% of the corresponding long-term NDVI median. 
+ * 
+ * 
+ * Update: 3/31/2022.
+ * 
+ * Runtime: 11m ~ 23m.
+ */
+
+
+/* Load module(s). */
+
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var NGA = require("users/ChenyangWei/Public:Modules/NDVI_Gradient_Analysis.js");
+var FC_AP = require("users/ChenyangWei/Public:Modules/FeatureCollection_Analysis&Processing");
+
+
+/* Data loading. */
+
+// Set the major working directory.
+var wd_Main = GATE.wd_NorthAmerica; 
+
+// Determine the common file path of the annual Features.
+var wd_AnnualFeatures = wd_Main
+  + "NDVI_Gradient_Analysis/"
+  + NGA.annualFeatures_FullName
+  + "/"
+  + NGA.annualFeatures_ShortName;
+
+// Determine the number of transect subsets.
+var subsetNum = 20; 
+
+// Whether to output the result(s).
+var output = true; // true OR false.
+
+
+/* Perform the following operations for each basin group. */
+
+for (var basinGroupID = 1; basinGroupID <= 5; basinGroupID ++) {
+
+
+  /* Perform the following operations for each subset of the annual Features. */
+  
+  for (var subsetID = 1; subsetID <= subsetNum; subsetID ++) {
+    
+    // Load each subset of the annual Features.
+    var annualFeatures = ee.FeatureCollection(wd_AnnualFeatures
+      + "_BG" + basinGroupID
+      + "_S" + subsetID);
+    
+
+    /* Choose the annual Features with no gap in NDVI, and select 
+      the no-gap annual Features with NDVI > 50% of the corresponding 
+      long-term NDVI median. */
+    
+    var centerlineID = "CL_newID"; 
+    
+    var filtered_AnnualFeatures = NGA.Filter_AnnualNDVIs_NoGap_GtHalfMedian(
+      annualFeatures, centerlineID
+    );
+    
+    
+    if (output) {
+      // Export the final results.
+      
+      var wd_Output = wd_Main
+        + "NDVI_Gradient_Analysis/"
+        + NGA.filteredAnnualFeatures_FullName
+          // "filteredAnnualFeatures_NoNDVIgap_GtHalfMedian"
+        + "/";
+      
+      var fileName = NGA.filteredAnnualFeatures_ShortName
+        + "_BG" + basinGroupID
+        + "_S" + subsetID;
+      
+      Export.table.toAsset({
+        collection: filtered_AnnualFeatures, 
+        description: fileName, 
+        assetId: wd_Output
+          + fileName
+      });
+    }
+  }
+}
+
+
+if (!output) {
+  // Examine the last subset of data.
+  
+  print("annualFeatures:", annualFeatures.size());
+  
+  FC_AP.Print_FtrColInfo("filtered_AnnualFeatures:", filtered_AnnualFeatures);
+}
+

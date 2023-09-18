@@ -1,0 +1,183 @@
+/**
+ * Introduction:
+ * 
+ * 1) Filter the global transects.
+ * 2) Aggregate the filtered transects to the sub-watershed level. 
+ * 
+ * 
+ * Update: 4/22/2022.
+ * 
+ * Runtime:
+ */
+
+
+/* Load module(s). */
+
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var NGA = require("users/ChenyangWei/Public:Modules/NDVI_Gradient_Analysis.js");
+var FC_AP = require("users/ChenyangWei/Public:Modules/FeatureCollection_Analysis&Processing");
+
+var VIS = require("users/ChenyangWei/Public:Modules/Visualization");
+var palettes = require('users/gena/packages:palettes');
+
+
+/* Data loading. */
+
+// Set the major working directory.
+var wd_Main = GATE.wd_Global;
+
+// Load the raw global transects.
+var raw_Transects = ee.FeatureCollection(wd_Main
+  + "NDVI_Gradient_Analysis/"
+  + NGA.globalTransects_FileName);
+
+var filtered_Transects = raw_Transects.filter(
+  ee.Filter.and(
+    ee.Filter.gte("elvGrad_Num", 10),
+    ee.Filter.gte("avgNDVI_Num", 10),
+    ee.Filter.gte("MW_Num", 5),
+    ee.Filter.gte("avgNDVI_Mean", 0.2),
+    ee.Filter.gte("newCATE_rawElv_PNratio", 0.8),
+    ee.Filter.lte("MW_MaxNDVIsd", 0.15),
+    ee.Filter.lte("MW_MaxSDmean_Ratio", 0.25)
+  )
+);
+
+
+// var interval = 20;
+
+// FC_AP.Examine_FtrCol_PropertyPercentiles(
+//   "MW_Num", filtered_Transects, "MW_Num", interval
+// );
+
+// FC_AP.Examine_FtrCol_PropertyPercentiles(
+//   "elvGrad_Num", filtered_Transects, "elvGrad_Num", interval
+// );
+
+// FC_AP.Examine_FtrCol_PropertyPercentiles(
+//   "newCATE_rawElv_PNratio", filtered_Transects, "newCATE_rawElv_PNratio", interval
+// );
+
+// FC_AP.Examine_FtrCol_PropertyPercentiles(
+//   "MW_MaxNDVIsd", filtered_Transects, "MW_MaxNDVIsd", interval
+// );
+
+// FC_AP.Examine_FtrCol_PropertyPercentiles(
+//   "MW_MaxSDmean_Ratio", filtered_Transects, "MW_MaxSDmean_Ratio", interval
+// );
+
+// Load the raw global transects.
+var aggregatedBasins = ee.FeatureCollection(wd_Main
+  + "NDVI_Gradient_Analysis/"
+  + "Testing_aggregatedBasins");
+
+
+// Whether to output the result.
+var output = false; // true OR false.
+
+
+if (!output) {
+  // Data examination.
+
+  FC_AP.Print_FtrColInfo("raw_Transects:", 
+    raw_Transects); // 2,294,222.
+
+  FC_AP.Print_FtrColInfo("filtered_Transects:", 
+    filtered_Transects); // 2,107,632.
+  
+  FC_AP.Print_FtrColInfo("aggregatedBasins:", 
+    aggregatedBasins);
+
+  var paintFC = VIS.paintFtrCol_FillANDEdge;
+
+  Map.setOptions("satellite");
+  Map.setCenter(-117.5495, 48.9958, 3);
+  
+  
+  var gradMean_Limit = 2e-3;
+  var gradMean_Vis = {min: gradMean_Limit * -1, max: gradMean_Limit, 
+    palette: VIS.BWR_palette};
+  
+  var gradTrend_Limit = 2e-5;
+  var gradTrend_Vis = {min: gradTrend_Limit * -1, max: gradTrend_Limit, 
+    palette: VIS.BWR_palette};
+  
+  // var gradTrend_Vis = {min: -1e-5, max: 1e-5, 
+  //   palette: palettes.colorbrewer.RdYlBu[11].reverse()};
+  
+  var NDVImean_Vis = {min: 0.05, max: 0.85, 
+    palette: VIS.NDVI_palette};
+  
+  var NDVItrend_Limit = 0.015;
+  var NDVItrend_Vis = {min: NDVItrend_Limit * -1, max: NDVItrend_Limit, 
+    palette: VIS.NDVI_palette};
+  
+  
+  Map.addLayer(paintFC(
+    aggregatedBasins, "gradMean_Mean", 2), 
+    gradMean_Vis, 
+    "Gradient mean", true);
+  
+  Map.addLayer(paintFC(
+    aggregatedBasins, "gradTrend_Mean", 2), 
+    gradTrend_Vis, 
+    "Gradient trend", true);
+  
+  Map.addLayer(paintFC(
+    aggregatedBasins, "ndviMean_Mean", 2), 
+    NDVImean_Vis, 
+    "NDVI mean", true);
+  
+  Map.addLayer(paintFC(
+    aggregatedBasins, "ndviTrend_Mean", 2), 
+    NDVItrend_Vis, 
+    "NDVI trend", true);
+  
+  
+  Map.addLayer(paintFC(
+    aggregatedBasins, "absMWsd_Mean", 2), 
+    {min: 0, max: 0.15, 
+    palette: VIS.BWR_palette}, 
+    "Absolute MW SD", true);
+  
+  Map.addLayer(paintFC(
+    aggregatedBasins, "relMWsd_Mean", 2), 
+    {min: 0, max: 0.25, 
+    palette: VIS.BWR_palette}, 
+    "Relative MW SD", true);
+  
+  Map.addLayer(paintFC(
+    aggregatedBasins, "gradObs_Mean", 2), 
+    {min: 10, max: 36, 
+    palette: VIS.BWR_palette}, 
+    "Observation # (gradient)", true);
+  
+  Map.addLayer(paintFC(
+    aggregatedBasins, "startYr_Mean", 2), 
+    {min: 1985, max: 2010, 
+    palette: VIS.BWR_palette}, 
+    "Start year", true);
+  
+  
+  Map.addLayer(raw_Transects, {color: "FF0000"}, 
+    "raw_Transects", false, 1);
+  
+  Map.addLayer(filtered_Transects, {color: "0000FF"}, 
+    "filtered_Transects", false, 1);
+  
+} else {
+  // Export the final result.
+  
+  var wd_Output = wd_Main
+    + "NDVI_Gradient_Analysis/";
+  
+  var fileName = "Testing_aggregatedBasins";
+  
+  Export.table.toAsset({
+    collection: aggregatedBasins, 
+    description: fileName, 
+    assetId: wd_Output
+      + fileName
+  });
+
+}

@@ -1,0 +1,122 @@
+/**
+ * Introduction: 
+ * 1) Identify the study domain in North America.
+ * 2) Generate and buffer the bounding box of the identified study domain.
+ * 
+ * Update: 2/28/2021.
+ * 
+ * Runtime: 4m.
+*/
+
+
+if (false) {
+  /* Identify the study domain in North America. */
+  
+  // Import country features.
+  var worldCol = ee.FeatureCollection('USDOS/LSIB_SIMPLE/2017');
+  // print("worldCol:", worldCol.aggregate_array("wld_rgn").distinct())
+  
+  // North America without Greenland. 
+  var noGreenland = 
+      ee.Geometry.Polygon(
+          [[[169.6047281064102, 74.14635467896503],
+            [169.6047281064102, 12.834179279175377],
+            [301.44066560641016, 12.834179279175377],
+            [301.44066560641016, 74.14635467896503]]], null, false);
+  
+  var NA = worldCol.filterMetadata('wld_rgn', 'equals', 'North America')
+    .filterBounds(noGreenland);
+  
+  // Combine North America, Central America, and Caribbean.
+  var CA = worldCol.filterMetadata('wld_rgn', 'equals', 'Central America');
+  
+  var Cari = worldCol.filterMetadata('wld_rgn', 'equals', 'Caribbean');
+  
+  var NorthAmerica_raw = NA.merge(CA)
+    .merge(Cari);
+  
+  // Merges all geometries in the collection into one.
+  var NorthAmerica = NorthAmerica_raw.union();
+  
+  // print("NorthAmerica:", NorthAmerica.size())
+
+  if (false) {
+    // Visualization.
+    Map.setOptions("hybrid");
+    
+    Map.centerObject(NorthAmerica_raw, 2);
+    
+    Map.addLayer(NorthAmerica_raw, 
+      {color: "ff0000", opacity: 1}, "NorthAmerica_raw", true);
+
+  } else if (true) {
+    // Export the result.
+    var fileName = "NorthAmerica_LSIB_SIMPLE";
+    
+    Export.table.toAsset({
+      collection: NorthAmerica, 
+      description: fileName, 
+      assetId: "users/treeline/NorthAmerica_GME/Climate-Based_ATE/" +
+        fileName
+    });
+  }
+  
+} else if (true) {
+  /* Generate and buffer the bounding box of the identified study domain. */
+  
+  // Load the identified study domain.
+  var NorthAmerica = ee.FeatureCollection("users/treeline/NorthAmerica_GME/" +
+    "Climate-Based_ATE/NorthAmerica_LSIB_SIMPLE");
+
+  // Get the bounding box.
+  var BBox = ee.Feature(NorthAmerica.first()).bounds();
+  print("BBox:", BBox)
+  
+  // // Buffer the bounding box and then generate the bounding box of the buffer.
+  // var buffered_BBox = BBox.buffer(1e4).bounds();
+  // print("buffered_BBox:", buffered_BBox)
+  
+  // Extract the coordinates of the old bounding box.
+  var coords = ee.List(BBox.geometry().coordinates().get(0));
+  
+  // // Extract the coordinates of the buffered bounding box.
+  // var coords = ee.List(buffered_BBox.geometry().coordinates().get(0));
+  
+  // Get the min. and max. latitudes.
+  var minLat = ee.List(coords.get(0)).get(1);
+  var maxLat = ee.List(coords.get(2)).get(1);
+  
+  // The original min. longtitude is lower than -180 degrees (over the bound).
+  // var minLong = ee.Number(ee.List(coords.get(0)).get(0)).subtract(360);
+  // So set it to -180 degrees.
+  var minLong = -180;
+  
+  // Get the original max. longtitude and then convert it to a negative (west) value.
+  var maxLong = ee.Number(ee.List(coords.get(2)).get(0)).subtract(360);
+  
+  print("coordinates:", minLong, minLat, maxLong, maxLat)
+  
+  // Create a rectangle based on the obtained coordinates.
+  var rectangle = ee.Geometry.Rectangle({
+    coords: [minLong, minLat, maxLong, maxLat],
+    geodesic: false
+  });
+  
+  // print("rectangle:", rectangle)
+
+  if (false) {
+    // Vissualization.
+    Map.setOptions("hybrid");
+    
+    Map.centerObject(NorthAmerica, 2);
+    
+    Map.addLayer(NorthAmerica, {color: "FFFF00"}, "NorthAmerica", false);
+    
+    Map.addLayer(BBox, {color: "0000FF"}, "BBox");
+    
+    // Map.addLayer(buffered_BBox, {color: "0000FF"}, "buffered_BBox");
+    
+    Map.addLayer(rectangle, {color: "FF0000"}, "rectangle");
+  }
+}
+

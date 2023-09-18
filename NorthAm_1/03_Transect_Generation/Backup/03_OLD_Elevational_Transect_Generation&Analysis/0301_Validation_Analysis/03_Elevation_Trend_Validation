@@ -1,0 +1,93 @@
+/**
+ * Introduction:
+ * 1) Validate the transect elevation trend with the meta-analysis data published by Lu et al. (2020).
+ * 
+ * Update: 3/26/2021.
+ * 
+ * Runtime: 55s ~ 1m.
+*/
+
+
+/* Data preparation. */
+
+// Set the working directories.
+var wd = "users/treeline/NorthAmerica_GME/Transect_Analysis/Validation/";
+var wd2 = "users/treeline/Global/Validation/";
+
+// Load the meta-analysis samples.
+var samples = ee.FeatureCollection(wd2 +
+  "2020Lu_Meta_Analysis_Northern_Hemisphere");
+
+// Transects with the elevation trend.
+var transects = ee.FeatureCollection(wd + 
+  "TransectCenterLines_with5km_2020LuMetaAnalysis_ElvTrend");
+
+// print("transects:", transects.first(), 
+//   transects.size()) // 1216.
+
+
+/* Extract transects within 5 km to each meta-analysis sample. */
+
+// Define a spatial filter, with distance 5 km.
+var distFilter = ee.Filter.withinDistance({
+  // distance: 5e3,
+  distance: 1e3,
+  leftField: '.geo',
+  rightField: '.geo'
+});
+
+// Define a saveAll join.
+var distSaveAll = ee.Join.saveAll({
+  matchesKey: 'Transects',
+  measureKey: 'Distance'
+});
+
+// Apply the join.
+var spatialJoined = distSaveAll.apply(samples, transects, distFilter);
+
+// Print the result.
+// print("spatialJoined:", spatialJoined.first(),
+//   spatialJoined.size())
+
+
+/* Calculate the average trends of all neighboring transects of each sample. */
+
+var avgTrends = spatialJoined.map(function(sample) {
+  var neighbors = ee.FeatureCollection(ee.List(sample.get("Transects")));
+  
+  // Average the elevation trends.
+  var MaxAvg_Tnd = neighbors.aggregate_mean("MaxAvg_Tnd");
+  var Max_Tnd = neighbors.aggregate_mean("Max_Tnd");
+  var Bio_Tnd = neighbors.aggregate_mean("Bio_Tnd");
+  var BioMsk_Tnd = neighbors.aggregate_mean("BioMsk_Tnd");
+  
+  var keepProperties = sample.propertyNames().remove("Transects");
+  
+  var combined = ee.Feature(sample.geometry()).copyProperties(sample, keepProperties)
+    .set({
+      MaxAvg_Tnd: MaxAvg_Tnd,
+      Max_Tnd: Max_Tnd,
+      Bio_Tnd: Bio_Tnd,
+      BioMsk_Tnd: BioMsk_Tnd
+    });
+  
+  return combined;
+});
+
+// print("avgTrends:", avgTrends.first(),
+//   avgTrends.size())
+
+
+if (true) {
+  // Export the result.
+  // var folderName = "TransectCenterLines_with5km_2020LuMetaAnalysis_AvgElvTrend";
+  var folderName = "TransectCenterLines_with1km_2020LuMetaAnalysis_AvgElvTrend";
+  
+  Export.table.toDrive({
+    collection: avgTrends, 
+    description: "AvgElvTrend", 
+    folder: folderName, 
+    fileFormat: "SHP"
+  });
+}
+

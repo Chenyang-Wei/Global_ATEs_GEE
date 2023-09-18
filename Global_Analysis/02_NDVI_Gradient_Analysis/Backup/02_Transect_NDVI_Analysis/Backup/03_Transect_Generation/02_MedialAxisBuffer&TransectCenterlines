@@ -1,0 +1,248 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var basins = ee.FeatureCollection("WWF/HydroSHEDS/v1/Basins/hybas_12");
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+/**
+ * Introduction:
+ * 1) Visualize the buffers of the medial-axis pixel centroids and 
+ *  the raw transect centerlines in each continent.
+ * 
+ * Update: 10/3/2021.
+ */
+
+
+/* Load module(s). */
+
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var VIS = require("users/ChenyangWei/Public:Modules/Visualization");
+// var IMG = require("users/ChenyangWei/Public:Modules/Image_Analysis&Processing");
+
+
+/* New Climate-based ATE. */
+
+var readCATE = VIS.readNewCATE;
+
+// North America.
+var newCATE_NA = readCATE(GATE.wd_NorthAmerica);
+
+// South America.
+var newCATE_SA = readCATE(GATE.wd_SouthAmerica);
+
+// Africa.
+var newCATE_Af = readCATE(GATE.wd_Africa);
+
+// Oceania.
+var newCATE_Oc = readCATE(GATE.wd_Oceania);
+
+// Europe.
+var newCATE_Eu = readCATE(GATE.wd_Europe);
+
+// Asia.
+var newCATE_As = readCATE(GATE.wd_Asia);
+
+// IMG.printImgInfo("newCATE_SA:", newCATE_SA);
+
+// Global.
+var newCATE = ee.ImageCollection.fromImages([newCATE_NA,
+  newCATE_SA,
+  newCATE_Af,
+  newCATE_Oc,
+  newCATE_Eu,
+  newCATE_As]).mosaic();
+
+
+/* Medial-axis pixel centroids. */
+
+var readPxCtds = VIS.readMedialPxCtds;
+
+var pxCtds = readPxCtds(GATE.wd_NorthAmerica)
+  .merge(readPxCtds(GATE.wd_SouthAmerica))
+  .merge(readPxCtds(GATE.wd_Africa))
+  .merge(readPxCtds(GATE.wd_Oceania))
+  .merge(readPxCtds(GATE.wd_Europe));
+
+
+/* Medial-axis buffers. */
+
+var readBuffers = VIS.readMedialAxisBuffers;
+
+var buffers = readBuffers(GATE.wd_NorthAmerica)
+  .merge(readBuffers(GATE.wd_SouthAmerica))
+  .merge(readBuffers(GATE.wd_Africa))
+  .merge(readBuffers(GATE.wd_Oceania))
+  .merge(readBuffers(GATE.wd_Europe));
+
+
+/* Raw centerlines. */
+
+// North America.
+var readRawCLs_NA = VIS.readRawCLs_NorthAmerica;
+
+var rawCLs_NA = readRawCLs_NA(1)
+  .merge(readRawCLs_NA(2))
+  .merge(readRawCLs_NA(3))
+  .merge(readRawCLs_NA(4))
+  .merge(readRawCLs_NA(5));
+
+
+// Asia.
+var rawCLs_Asia = VIS.readAllRawCLs_Asia();
+
+// Other continents
+var readRawCLs = VIS.readRawCenterlines;
+
+var rawCLs = readRawCLs(GATE.wd_SouthAmerica)
+  .merge(readRawCLs(GATE.wd_Africa))
+  .merge(readRawCLs(GATE.wd_Oceania))
+  .merge(readRawCLs(GATE.wd_Europe))
+  .merge(rawCLs_NA)
+  .merge(rawCLs_Asia);
+
+// print("# of the 'raw' centerlines");
+// print("Asia:", rawCLs_Asia.size());
+// print("North America:", rawCLs_NA.size());
+// print("Europe:", readRawCLs(GATE.wd_Europe).size());
+// print("South America:", readRawCLs(GATE.wd_SouthAmerica).size());
+// print("Oceania:", readRawCLs(GATE.wd_Oceania).size());
+// print("Africa:", readRawCLs(GATE.wd_Africa).size());
+
+
+/* Locally "steepest" centerlines. */
+
+var readSteepestCLs = VIS.readSteepestCLs;
+
+var steepestCLs_Africa = readSteepestCLs(GATE.wd_Africa);
+var steepestCLs_Oceania = readSteepestCLs(GATE.wd_Oceania);
+
+var steepestCLs_45m_Oceania = ee.FeatureCollection(GATE.wd_Oceania
+  + "Elevational_Transect_Generation/"
+  + "selectSteepestCLs_45mGrouped");
+
+print("# of the 'steepest' centerlines");
+
+print("Oceania (90-m grouping):", steepestCLs_Oceania.size());
+
+print("Oceania (45-m grouping):", steepestCLs_45m_Oceania.size());
+
+var steepestCLs = steepestCLs_Africa
+  .merge(steepestCLs_Oceania);
+
+var transects = steepestCLs.map(function(CL) {
+  return CL.buffer(45);
+});
+
+var transects_45m_Oceania = steepestCLs_45m_Oceania.map(function(CL) {
+  return CL.buffer(45);
+});
+
+
+/* Mid-quarter segments. */
+
+// North America.
+var midQuarters_NorthAmerica = VIS.readAllMidQuarters_NorthAmerica();
+
+// print("midQuarters_NorthAmerica:", 
+//   midQuarters_NorthAmerica.first(),
+//   midQuarters_NorthAmerica.size());
+
+
+var readMidQuarters = VIS.readMidQuarters;
+
+var midQuarters = readMidQuarters(GATE.wd_SouthAmerica)
+  .merge(readMidQuarters(GATE.wd_Africa))
+  .merge(readMidQuarters(GATE.wd_Oceania))
+  .merge(readMidQuarters(GATE.wd_Europe))
+  .merge(midQuarters_NorthAmerica);
+
+
+/* Buffers of the mid-quarter segments. */
+
+// North America.
+var wd_NAbuffers = GATE.wd_NorthAmerica
+  + "Elevational_Transect_Generation/"
+  + GATE.midQuarterBuffers_fileName
+  + "/";
+
+var NA_buffers = ee.List([]);
+
+for (var basinGroup_ID = 1; basinGroup_ID <= 5; basinGroup_ID ++) {
+  var basinGroup_Buffers = ee.FeatureCollection(wd_NAbuffers
+    + GATE.midQuarterBuffers_byBasinGroup_fileName
+    + basinGroup_ID);
+  
+  NA_buffers = NA_buffers.add(basinGroup_Buffers);
+}
+
+NA_buffers = ee.FeatureCollection(NA_buffers).flatten();
+
+print("NA_buffers:", 
+  NA_buffers.size(), NA_buffers.first());
+
+var basinGroup_Buffers = ee.FeatureCollection(wd_NAbuffers
+  + GATE.midQuarterBuffers_byBasinGroup_fileName
+  + 3);
+
+var midQuarterBuffers = NA_buffers;
+
+
+/* Unioned buffers (MultiPolygon). */
+
+// North America.
+var wd_NA_bufferUnion = GATE.wd_NorthAmerica
+  + "Elevational_Transect_Generation/"
+  + GATE.multiPolygon_BufferUnion_fileName
+  + "/";
+
+var basinGroup_BufferUnion = ee.FeatureCollection(wd_NA_bufferUnion
+  + GATE.multiPolygon_BufferUnion_byBasinGroup_fileName
+  + 3);
+
+print("basinGroup_BufferUnion:", 
+  basinGroup_BufferUnion.size(), basinGroup_BufferUnion.first());
+
+var NA_bufferUnion = VIS.readUnionedBuffers_AllBasinGroups_NorthAmerica();
+
+var midQuarter_BufferUnion = NA_bufferUnion;
+
+print("midQuarter_BufferUnion:", midQuarter_BufferUnion.size());
+
+
+/* Visualization. */
+
+// VIS.centerNorthAmerica(13);
+VIS.centerOceania(12);
+// VIS.centerAsia(11);
+// VIS.centerSouthAmerica(13);
+// VIS.centerAfrica(13);
+
+Map.addLayer(newCATE, {palette: "FFFFFF"}, "New climatic ATE", false, 0.5);
+
+Map.addLayer(basins, {color: "FFFFFF"}, "basins", true, 1);
+
+Map.addLayer(buffers, {color: "00FFFF"}, "Buffers", false, 0.5);
+
+Map.addLayer(rawCLs, {color: "FFFF00"}, "Raw centerlines", false, 0.5);
+
+// Map.addLayer(steepestCLs_45m_Oceania, {color: "00FFFF"}, 
+//   "steepestCLs_45m_Oceania", true, 1);
+Map.addLayer(transects_45m_Oceania, {color: "00FFFF"}, 
+  "Elevational transects (45-m grouping)", false, 1);
+
+// Map.addLayer(steepestCLs, {color: "FF0000"}, "Locally 'steepest' centerlines", true, 1);
+Map.addLayer(transects, {color: "FF0000"}, "Elevational transects (90-m grouping)", false, 1);
+
+Map.addLayer(midQuarterBuffers, {color: "00FF00"}, "Mid-quarter segment buffers", false, 1);
+Map.addLayer(basinGroup_Buffers, {color: "00FFFF"}, "basinGroup_Buffers", false, 1);
+
+Map.addLayer(midQuarter_BufferUnion, {color: "228B22"}, "Segment buffer union", true, 1);
+Map.addLayer(ee.Feature(basinGroup_BufferUnion.first()), 
+  {color: "FF0000"}, "basinGroup_BufferUnion.first()", true, 1);
+
+// Map.addLayer(ee.FeatureCollection(basinGroup_BufferUnion.limit(19)), 
+//   {color: "FF0000"}, "basinGroup_BufferUnion.limit(19)", true, 1);
+// Map.addLayer(ee.FeatureCollection(basinGroup_BufferUnion.limit(18)), 
+//   {color: "FFFF00"}, "basinGroup_BufferUnion.limit(18)", true, 1);
+
+Map.addLayer(midQuarters, {color: "0000FF"}, "Mid-quarter segments", false, 1);
+
+Map.addLayer(pxCtds, {color: "00FF00"}, "Pixel centroids", false, 1);
+

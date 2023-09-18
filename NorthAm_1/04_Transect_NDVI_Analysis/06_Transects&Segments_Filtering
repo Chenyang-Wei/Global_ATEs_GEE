@@ -1,0 +1,81 @@
+/**
+ * Introduction:
+ * 1) Filter the transects with the information on the corresponding
+ *  lower and upper segments by the centerline length,
+ *  the numbers of observations, 
+ *  and the temporal NDVI standard deviations.
+ * 
+ * Update: 12/10/2021.
+ * 
+ * Runtime: 6m ~ 8m.
+ */
+
+
+/* Load module(s). */
+
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var TNA = require("users/ChenyangWei/Public:Modules/Transect_NDVI_Analysis");
+
+
+/* Data and function preparation. */
+
+// Set the major working directory.
+var wd_Main = GATE.wd_NorthAmerica;
+
+// Determine the universal file path of
+//  the transects with the information on the corresponding
+//  lower and upper segments.
+var wd_RawTLUs = wd_Main
+  + "Transect_NDVI_Analysis/"
+  + TNA.transects_LowerUpperSegments_fileName
+  + "/"
+  + TNA.TLUs_byBasinGroup_fileName;
+
+
+/* Operations by basin group (1 ~ 5). */
+
+for (var basinGroupID = 1; basinGroupID <= 5; basinGroupID ++) {
+  
+  // Load the transects with the information on the corresponding
+  //  lower and upper segments.
+  var rawTLUs = ee.FeatureCollection(wd_RawTLUs
+    + basinGroupID);
+  
+  
+  /* Filter the TLUs. */
+  
+  // Select the TLUs meeting the following criteria:
+  //  1) The centerline length is between 500m and 2km.
+  //  2) All numbers of observations are at least 10.
+  //  3) Both temporal NDVI standard deviations are NOT over 0.2.
+  var selectedTLUs = TNA.select_TLUs(rawTLUs);
+  
+  
+  if (false) { //// true OR false.
+  
+    print("rawTLUs:", 
+      rawTLUs.size());
+  
+    print("selectedTLUs:", 
+      selectedTLUs.first(),
+      selectedTLUs.size());
+  
+  } else { //// Export the result.
+    
+    var wd_Output = wd_Main
+      + "Transect_NDVI_Analysis/"
+      + TNA.selectedTLUs_fileName
+      + "/";
+    
+    var fileName = TNA.selectedTLUs_byBasinGroup_fileName
+      + basinGroupID;
+    
+    Export.table.toAsset({
+      collection: selectedTLUs, 
+      description: fileName, 
+      assetId: wd_Output
+        + fileName
+    });
+  }
+}
+

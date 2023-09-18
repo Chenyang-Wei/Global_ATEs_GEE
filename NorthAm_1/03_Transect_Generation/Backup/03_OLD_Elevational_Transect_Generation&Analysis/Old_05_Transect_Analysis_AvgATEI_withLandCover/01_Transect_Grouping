@@ -1,0 +1,69 @@
+/*
+  Introduction:
+  1) Group the elevational transects of different basins. 
+  
+  Update: 1/19/2021.
+  
+  Runtime: 
+  1) 5 basins per group: 52s ~ 26m.
+*/
+
+
+// Set the work directory.
+var wd = "users/treeline/NorthAmerica_GME/";
+
+
+/* Functions to load and combine transects. */
+
+function combineTransects(index) {
+  // Load transects in each basin.
+  var transects = ee.FeatureCollection(wd
+    + "Transects/SelectedHybas4Basins_closedForestsLowerSlopeValley_nonForestedUpperSlope/"
+    + "Basin_" + index);
+  
+  return transects;
+}
+
+
+/* Create a list of the index groups of basins. */
+
+// Create a list of indices.
+var indices = ee.List.sequence(0, 123);
+
+// Remove the failed task.
+indices = indices.remove(106).getInfo();
+
+
+/* Group and export the transects by indices. */
+
+// Number of basins in each group.
+var step = 5;
+
+for (var startIndex = 0; startIndex < 123; startIndex = startIndex + step) {
+  // Generate a subset of indices.
+  var endIndex = startIndex + step;
+  var indexSlice = indices.slice(startIndex, endIndex);
+  
+  // print("indexSlice:", indexSlice)
+  
+  // Load the transects of each group.
+  var groupedTransects = ee.FeatureCollection(indexSlice.map(combineTransects)).flatten();
+
+  // print("groupedTransects:", groupedTransects.first(),
+  //   groupedTransects.size())
+  
+  // Export the grouped transects to the Asset.
+  if (true) {
+    var fileName = "Basins_" + startIndex + "to" + endIndex;
+    
+    // print("fileName:", fileName)
+    
+    Export.table.toAsset({
+      collection: groupedTransects, 
+      description: fileName, 
+      assetId: wd + "Transects/SelectedHybas4Basins_closedForestsLowerSlopeValley_nonForestedUpperSlope/"
+        + "Grouped_Transects/" + fileName
+    });
+  }
+}
+

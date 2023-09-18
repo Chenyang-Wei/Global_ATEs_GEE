@@ -1,0 +1,258 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var sampled = ee.FeatureCollection("users/treeline/NorthAmerica_GME/Pixel_Sampling/Validation/Edited_Combined_Stratified_Sampling_noUC_centroids_6subs_anlATEIcomponents_L5_westernUS_2009to2011");
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+print("Sample size:", sampled.size())
+
+/* Preparation of the inputted feature collection of sample points. */
+
+// k folder value.
+var k = 10;
+
+// Random seeds for split the samples.
+var seeds = ee.List.sequence(1, k);
+
+
+/* Build a set of RF regressors with different numbers of trees. */
+
+// Define a range of tree numbers.
+var treeNumMin = 2;
+var treeNumMax = 20;
+var treeNums = ee.List.sequence(treeNumMin, treeNumMax);
+
+// Property to predict.
+var target = 'InOut';
+
+// Name of predicted variable.
+var predicted = ee.String(target).cat('_RFpredicted');
+
+// Calculate the average accuracy of the RF model with each number of trees.
+var RFresults_treeNums = ee.FeatureCollection(treeNums.map(function(n){
+  var treeNum = ee.Number(n);
+  
+  // Create a Random Forest classifier with custom parameters.
+  var classifier = ee.Classifier.smileRandomForest({
+    numberOfTrees: treeNum, 
+    variablesPerSplit: null, // If unspecified, uses the square root of the number of variables.
+    minLeafPopulation: 1, 
+    bagFraction: 0.5, 
+    maxNodes: null, // If unspecified, defaults to no limit.
+    seed: 23
+  });
+  
+  // K-time repeated k-fold cross-validation.
+  var RFresults_Seeds = ee.FeatureCollection(seeds.map(function(seed) {
+    
+    // // Create a Random Forest classifier with custom parameters.
+    // var classifier = ee.Classifier.smileRandomForest({
+    //   numberOfTrees: treeNum, 
+    //   variablesPerSplit: null, // If unspecified, uses the square root of the number of variables.
+    //   minLeafPopulation: 1, 
+    //   bagFraction: 0.5, 
+    //   maxNodes: null, // If unspecified, defaults to no limit.
+    //   seed: seed
+    // });
+    
+    // Randomly sort the sampled points.
+    var sorted = sampled.randomColumn('random', seed).sort('random');
+    
+    // Number of samples in each fold.
+    var size = sorted.size().divide(k);
+    
+    var folds = ee.List.sequence(0, k-1).iterate(function(n, list) {
+      n = ee.Number(n);
+      
+      // First sample and the number of samples in each fold.
+      var start = size.multiply(n).floor();
+      var count = size.multiply(n.add(1)).floor().subtract(start);
+      
+      // Extract the samples in each fold and set the corresponding fold number.
+      var partition = ee.FeatureCollection(sorted.toList(count, start)).map(function(f) {
+        return f.set('fold', n);
+      });
+      
+      // Add samples with the fold number to a list.
+      return ee.List(list).add(partition);
+    }, []);
+    
+    // print("folds:", folds, ee.List(folds).get(0))
+    
+    var collection = ee.FeatureCollection(ee.List(folds)).flatten();
+    // print("fold collection:", collection)
+    
+    // Extract the fold numbers.
+    folds = collection.distinct('fold').select('fold');
+    // print("fold numbers:", folds)
+    
+    // Define a filter to determine if samples are in or out of a fold.
+    var filter = ee.Filter.equals({leftField: 'fold', rightField: 'fold'});
+    
+    // Add the data out of the fold as the training set.
+    folds = ee.Join.saveAll('training').apply(folds, collection, filter.not());
+    
+    // Add the data in the fold as the validation set.
+    folds = ee.Join.saveAll('validation').apply(folds, collection, filter);
+    
+    // print("Splitted Folds:", folds)
+    
+    // print('Training Data Folds', folds.aggregate_array('training'))
+    // print('Validation Data Folds', folds.aggregate_array('validation'))
+  
+    // K-fold cross-validation.
+    var RFresults_CV = ee.FeatureCollection(folds.map(function(fold) {
+      var trainingFold = ee.FeatureCollection(ee.List(fold.get('training')));
+      var testingFold = ee.FeatureCollection(ee.List(fold.get('validation')));
+      
+      // Train the RF regressor.  
+      var RFregressor = classifier.setOutputMode('REGRESSION') 
+        .train({
+          features: trainingFold, 
+          classProperty: target, 
+          inputProperties: ["Orie", "Grad", "Gaus"]
+        });   
+          
+      // Perform the RF regression on the testing fold.
+      var testingResult = testingFold.classify({
+        classifier: RFregressor, 
+        outputName: predicted
+      });
+      
+      // // Correlation between the observed and predicted values. 
+      // var correlation = testingResult.reduceColumns({
+      //   reducer: ee.Reducer.pearsonsCorrelation(),
+      //   selectors: [target, predicted]
+      // });
+      
+      // Accuracy assessment.
+      var errorMatrix = testingResult.errorMatrix({
+        actual: target, 
+        predicted: predicted
+      });
+      
+      var accuracy = errorMatrix.accuracy();
+      
+      // K-fold cross-validation result.
+      var RFresult_CV = ee.Feature(null,
+      {
+        // R: correlation.get('correlation'),
+        accuracy: accuracy
+      });
+      
+      return RFresult_CV;
+    }));
+    
+    // Average the correlation and accuracy of the predicted results.
+    // var avgR = RFresults_CV.aggregate_mean('R');
+    var avgAccuracy = RFresults_CV.aggregate_mean('accuracy');
+    
+    // K-time repeated k-fold cross-validation result.
+    var RFresult_Seeds = ee.Feature(null,
+      {
+        // avgR: avgR,
+        avgAccuracy: avgAccuracy
+      });
+    
+    return RFresult_Seeds;
+  }));
+  
+  // Average the correlation and accuracy of the predicted results.
+  // var avgR = RFresults_Seeds.aggregate_mean('avgR');
+  var avgAccuracy = RFresults_Seeds.aggregate_mean('avgAccuracy');
+  
+  // Results of different numbers of trees.
+  var RFresult_treeNums = ee.Feature(null,
+    {
+      treeNum: treeNum,
+      // avgR: avgR,
+      avgAccuracy: avgAccuracy
+    });
+  
+  return RFresult_treeNums;
+}));
+
+// print("Average RF accuracy", RFresults_treeNums)
+
+
+/* Examine the accuracy value of the RF model with each number of trees. */
+
+// Scatterplot of tree number and average accuracy. 
+var x1 = RFresults_treeNums.aggregate_array('treeNum');
+var y1 = RFresults_treeNums.aggregate_array('avgAccuracy');
+
+var chart1 = ui.Chart.array.values(y1, 0, x1);
+
+chart1 = chart1.setOptions({
+  hAxis: { title: 'Tree Number', viewWindow: {min: treeNumMin, max: treeNumMax} },
+  vAxis: { title: 'Average Accuracy', viewWindow: {min: 0, max: 1} },
+  pointSize: 3,
+  legend: 'none'
+});
+
+print(chart1)
+
+// // Scatterplot of tree number and average Pearson's r. 
+// var x2 = RFresults_treeNums.aggregate_array('treeNum');
+// var y2 = RFresults_treeNums.aggregate_array('avgR');
+
+// var chart2 = ui.Chart.array.values(y2, 0, x2);
+
+// chart2 = chart2.setOptions({
+//   hAxis: { title: 'Tree Number', viewWindow: {min: treeNumMin, max: treeNumMax} },
+//   vAxis: { title: "Average Pearson's r", viewWindow: {min: -1, max: 1} },
+//   pointSize: 3,
+//   legend: 'none'
+// });
+
+// print(chart2)
+
+
+/* Build a RF model with the optimal number of trees based on all samples. */
+
+// Create a Random Forest classifier with custom parameters.
+var classifier = ee.Classifier.smileRandomForest({
+  numberOfTrees: 5, 
+  variablesPerSplit: null, // If unspecified, uses the square root of the number of variables.
+  minLeafPopulation: 1, 
+  bagFraction: 0.5, 
+  maxNodes: null, // If unspecified, defaults to no limit.
+  seed: 23
+});
+
+// Train the RF regressor.  
+var RFregressor = classifier.setOutputMode('REGRESSION') 
+  .train({
+    features: sampled, // All samples.
+    classProperty: target, 
+    inputProperties: ["Orie", "Grad", "Gaus"]
+  });   
+    
+// Perform the RF regression on the all samples.
+var allPredicted = sampled.classify({
+  classifier: RFregressor, 
+  outputName: predicted
+});
+
+// // Accuracy assessment.
+// var errorMatrix = allPredicted.errorMatrix({
+//   actual: target, 
+//   predicted: predicted
+// });
+
+// var accuracy = errorMatrix.accuracy();
+
+// Scatterplot of the RF regression result. 
+var x3 = allPredicted.aggregate_array(predicted);
+var y3 = allPredicted.aggregate_array(target);
+
+print("RF regression result (predicted vs. actual):", ee.List(x3).zip(y3))
+
+var chart3 = ui.Chart.array.values(y3, 0, x3);
+
+chart3 = chart3.setOptions({
+  hAxis: { title: 'Predicted', viewWindow: {min: 0, max: 1} },
+  vAxis: { title: "Actual", viewWindow: {min: 0, max: 1} },
+  pointSize: 3,
+  legend: 'none'
+});
+
+print(chart3)
+

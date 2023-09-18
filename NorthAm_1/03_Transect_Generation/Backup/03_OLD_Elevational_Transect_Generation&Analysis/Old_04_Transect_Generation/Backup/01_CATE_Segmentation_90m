@@ -1,0 +1,148 @@
+/**
+ * Introduction:
+ * 1) Segment the CATE based on the distance to mountain ridges in the ALOS landforms dataset.
+ * 
+ * Date: 6/28/2020.
+ * 
+ * Notes: The stripes with no data in the ALOS landforms product can cause some problematic large segmented areas.
+ */
+
+
+/* Setup. */
+
+// Define the extent of North America. 
+var northAmerica = ee.Geometry.Polygon({
+    coords: [[[-165.69002926658334, 72.44551256468144],
+          [-169.40248634956492, 65.69009098298687],
+          [-172.25893166206492, 63.826281515474996],
+          [171.35638590722195, 52.855285271231274],
+          [-159.1340353549648, 17.264443722753843],
+          [-122.14862062448367, 9.59539750905343],
+          [-79.06711256993691, 6.243890041056693],
+          [-77.03677448989225, 7.40316087095261],
+          [-76.78408894301725, 8.990725120234067],
+          [-75.7244458156751, 12.403191738791786],
+          [-71.5276684719251, 13.751533985801833],
+          [-62.8264965969251, 11.651035844929385],
+          [-62.005942990095036, 9.999896817210585],
+          [-60.791953732282536, 9.96743692413247],
+          [-55.5884807162513, 13.889226127218825],
+          [-47.99315852039507, 58.68729606716915],
+          [-66.52860968724042, 71.51769835770313],
+          [-77.86650031224042, 74.25356562488685],
+          [-89.90751593724042, 74.22969620284344],
+          [-106.04844453284761, 74.3012200035139],
+          [-114.63975312659761, 74.20581277506923],
+          [-120.18954789130242, 74.88484689543225],
+          [-136.27353226630242, 74.6772015427699]]],
+    geodesic: true
+});
+
+// Asset path.
+var wdNorthA = "users/treeline/North_America/";
+var wd500m = "users/treeline/North_America/CATE/500mCATE/"; // 500-m CATE.
+
+// Load the CATE.
+var CATE = ee.Image(wd500m + "3kmBuf500mCATE_gte10kmSmdClsdFrstElvMean_10kmBufClsdFrst");
+
+// ALOS landforms within the CATE.
+var landforms = ee.Image("CSP/ERGo/1_0/Global/ALOS_landforms")
+  .select('constant')
+  .updateMask(CATE);
+
+// Landforms projection.
+var lfPrj = landforms.projection();
+var lfCRS = lfPrj.crs().getInfo();
+var lfScale = lfPrj.nominalScale().getInfo();
+
+print("Landforms projection:", 
+  lfCRS, 
+  lfScale);
+
+
+/* Select the landform of mountain ridge: peak/ridge (warm/normal/cool) and mountain/divide. */
+
+// No cliff, because its shape is normally irregular and 
+// its distribution is more random than peak/ridge and mountain/divide.
+var ridge = landforms.lte(14);
+// var ridge2 = landforms.lte(15);
+
+
+/* Caculate the distance to ridge pixels in the study domain. */
+
+// The reason of choosing ridge pixels:
+// 1) They are mostly at the center of local study area and surrounded by valley pixels. 
+// 2) The shape of ridge is more regular than the valley.
+var ridgeDist = ridge.fastDistanceTransform({
+  neighborhood: 500,
+  units: "pixels",
+  metric: "squared_euclidean" // Get the distance in squared pixels.
+})// Request the data at the scale and projection of the landforms image.
+  .reproject({
+    crs: lfCRS,
+    scale: lfScale
+  });
+
+
+/* Segment the study area based on the distance to ridge pixels. */
+
+// Define a Laplacian, or isotropic-edge-detection kernel.
+var laplacian = ee.Kernel.laplacian8({ 
+  normalize: false 
+});
+
+// Apply the Laplacian edge-detection kernel 
+// to detect the boundary of distance.
+var edgy = ridgeDist.convolve(laplacian)
+  .reproject({
+    crs: lfCRS,
+    scale: lfScale
+  });
+
+
+// Segment the study domain based on the distance boundary.
+var segmented = edgy.gt(0).selfMask()
+  .rename("Segmented");
+
+// Remove mountain ridges from the segmentation result.
+var ridgeRemoved = segmented.updateMask(ridge.not());
+
+print("Segmented study domain:",
+  ridgeRemoved.bandTypes(),
+  ridgeRemoved.projection().crs(), 
+  ridgeRemoved.projection().nominalScale());
+
+
+/* Output the segmented study domain. */
+
+if (false) {
+  var fileName = "Segmented_3kmBuf500mCATEgte10kmFrstElv_distToRidges_ALOSlandformsLte14_ridgeRemoved"; 
+  
+  Export.image.toAsset({
+    image: ridgeRemoved, 
+    description: fileName, 
+    assetId: wdNorthA + "Transects/" + fileName,
+    region: northAmerica, 
+    crs: lfCRS,
+    scale: lfScale,
+    maxPixels: 1e13
+  });
+}
+
+
+/* Visualization. */
+
+else {
+  Map.setCenter(-113.7571, 48.829, 12);
+  Map.setOptions("hybrid");
+  
+  Map.addLayer(CATE, {palette: "FFFF00"}, "CATE", false);
+  
+  Map.addLayer(ridgeDist, {}, "ridgeDist", false);
+  Map.addLayer(edgy, {}, "edgy", false);
+  Map.addLayer(ridgeRemoved, {palette: "FF0000"}, "Segmented study domain", false);
+  
+  Map.addLayer(ridge.selfMask(), {palette: "FFFF00"}, "ridge", true);
+  // Map.addLayer(ridge2.selfMask(), {palette: "0000FF"}, "ridge2", true);
+}
+

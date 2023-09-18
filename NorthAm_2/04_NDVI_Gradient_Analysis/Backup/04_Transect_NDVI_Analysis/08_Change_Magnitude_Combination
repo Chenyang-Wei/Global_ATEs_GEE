@@ -1,0 +1,113 @@
+/**
+ * Introduction:
+ * 1) Combine the average spectral change magnitude results
+ *  of both types of transect segments into one dataset.
+ * 
+ * Update: 1/28/2022.
+ * 
+ * Runtime: 5m (shared).
+*/
+
+
+/* Load module(s). */
+
+var TNA = require("users/ChenyangWei/Public:Modules/Transect_NDVI_Analysis");
+var FC_AP = require("users/ChenyangWei/Public:Modules/FeatureCollection_Analysis&Processing");
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+
+
+/* Data preparation. */
+
+// Set the major working directory.
+var wd_Main = GATE.wd_NorthAmerica;
+
+// Load the average spectral change magnitude of transect segments.
+var lowerSegments = TNA.LoadBasinGroupData_NorthAmerica(
+  TNA.lowerSegments_withAvgTmaxSCMAG_fileName,
+  TNA.lowerAvgTmaxSCMAG_byBasinGroup_fileName);
+
+var upperSegments = TNA.LoadBasinGroupData_NorthAmerica(
+  TNA.upperSegments_withAvgTmaxSCMAG_fileName,
+  TNA.upperAvgTmaxSCMAG_byBasinGroup_fileName);
+
+
+/* Select and rename the properties of interest. */
+
+var ID_prpts = ee.List(["CL_newID", "Hybas_ID", "SegmentID"]);
+
+var SelectRename_Properties = function(oldFtrCol, segmentPre) {
+  
+  // Name the moving-window properties.
+  var firstYear = "MaxMovWin_FirstYear";
+  
+  var NDVIsd = "MaxMovWin_NDVIsd";
+  
+  var movWinNum = "MovWinNum";
+  
+  // Name the average spectral change magnitude.
+  var changeMag = "AvgTmaxSCMAG";
+  
+  // Old names of the non-ID properties.
+  var old_NonID_prpts = [
+    segmentPre + firstYear,
+    segmentPre + NDVIsd,
+    segmentPre + movWinNum,
+    segmentPre + changeMag
+  ];
+  
+  // New names of the non-ID properties.
+  var new_NonID_prpts = [
+    firstYear,
+    NDVIsd,
+    movWinNum,
+    changeMag
+  ];
+  
+  // Select and rename the properties of interest.
+  var newFtrCol = oldFtrCol.select({
+    propertySelectors: ID_prpts.cat(old_NonID_prpts), 
+    newProperties: ID_prpts.cat(new_NonID_prpts)
+  });
+  
+  return newFtrCol;
+};
+
+var lowerSegments_Renamed = SelectRename_Properties(
+  lowerSegments, "lower_"
+);
+
+var upperSegments_Renamed = SelectRename_Properties(
+  upperSegments, "upper_"
+);
+
+// Combine the two types of segments.
+var bothSegments = lowerSegments_Renamed.merge(upperSegments_Renamed);
+
+
+/* Final output. */
+
+if (false) { //// true OR false.
+
+  // FC_AP.Print_FtrColInfo("lowerSegments_Renamed:", 
+  //   lowerSegments_Renamed); // 36240.
+  
+  // FC_AP.Print_FtrColInfo("upperSegments_Renamed:", 
+  //   upperSegments_Renamed); // 31725.
+
+  FC_AP.Print_FtrColInfo("bothSegments:", 
+    bothSegments);
+
+} else { //// Export the result(s).
+  
+  var fileName = "bothSegments_withAvgTmaxSCMAG_AllBasinGroups";
+  
+  Export.table.toAsset({
+    collection: bothSegments, 
+    description: fileName, 
+    assetId: wd_Main
+      + "Transect_NDVI_Analysis/"
+      + fileName
+  });
+  
+}
+

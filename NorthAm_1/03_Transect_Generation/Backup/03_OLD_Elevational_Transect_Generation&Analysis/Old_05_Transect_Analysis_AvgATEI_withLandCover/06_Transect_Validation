@@ -1,0 +1,117 @@
+/**
+ * Introduction:
+ * 1) Validate the transect analysis result with the meta-analysis data published by Lu et al. (2020).
+ * 
+ * Update: 1/27/2021.
+*/
+
+
+/* Load datasets. */
+
+// Set the work directories.
+var wd = "users/treeline/NorthAmerica_GME/";
+var wd2 = "users/treeline/Global/Validation/";
+
+// Meta-analysis dataset.
+var metaAnalysis = ee.FeatureCollection(wd2 +
+  "2020Lu_Meta_Analysis_Northern_Hemisphere");
+
+// Buffer the point data.
+var buffered = metaAnalysis.map(function(feature) {
+  return feature.buffer(5e3);
+});
+
+// print(buffered.first())
+
+// Old transects in the western U.S.
+var oldTransects = ee.FeatureCollection("users/treeline/Dirk/Western_US/" + 
+  "transectTrend_gte10obs")
+  .filterBounds(buffered);
+
+// print(oldTransects.first())
+
+// Transects with landforms information involved.
+var newTransects = ee.FeatureCollection(wd + 
+  "Transects/SelectedHybas4Basins_closedForestsLowerSlopeValley_nonForestedUpperSlope/transectTrend_gte10obs")
+  .filterBounds(buffered);
+
+// print(newTransects.size())
+
+
+/* Extract transects within 5 km to each meta-analysis site. */
+
+// Define a spatial filter, with distance 5 km.
+var distFilter = ee.Filter.withinDistance({
+  distance: 5e3,
+  leftField: '.geo',
+  rightField: '.geo'
+});
+
+// Define a saveAll join.
+var distSaveAll = ee.Join.saveAll({
+  matchesKey: 'Transects',
+  measureKey: 'Distance'
+});
+
+// Apply the join.
+var spatialJoined = distSaveAll.apply(metaAnalysis, oldTransects, distFilter);
+
+// Print the result.
+// print(spatialJoined);
+
+
+/* Calculate the average variables of all neighboring transects of each study site. */
+
+var studySite_combined = spatialJoined.map(function(studySite) {
+  var neighbors = ee.FeatureCollection(ee.List(studySite.get("Transects")));
+  
+  // ATEI.
+  var oldATEI = neighbors.aggregate_mean("avgATEI");
+  var newATEI = neighbors.aggregate_mean("Tmean_ATEI");
+  
+  // Elevation.
+  var oldElv = neighbors.aggregate_mean("avgElv");
+  var newElv = neighbors.aggregate_mean("Tmean_Elv");
+  
+  // Trend.
+  var oldTrend = neighbors.aggregate_mean("elvTrend");
+  var newTrend = neighbors.aggregate_mean("newTrend");
+  
+  var keepProperties = studySite.propertyNames().remove("Transects");
+  
+  var combined = ee.Feature(studySite.geometry()).copyProperties(studySite, keepProperties)
+    .set({
+      oldATEI: oldATEI,
+      newATEI: newATEI,
+      oldElv: oldElv,
+      newElv: newElv,
+      oldTrend: oldTrend,
+      newTrend: newTrend
+    });
+  
+  return combined;
+});
+
+// print(studySite_combined)
+
+if (true) {
+  /* Visualization. */
+  Map.setOptions("HYBRID");
+  Map.setCenter(-105.6224, 40.5904, 12)
+  
+  Map.addLayer(buffered, {color: "FFFF00"}, "5km-buffered study sites", true, 0.5);
+  Map.addLayer(newTransects, {color: "00FFFF"}, "New transects");
+  Map.addLayer(oldTransects, {color: "0000FF"}, "Old transects");
+  Map.addLayer(metaAnalysis, {color: "FF0000"}, "Study sites (meta analysis)");
+  
+} else {
+  var fileName = "metaAnalysis_oldTransects";
+  
+  Export.table.toDrive({
+    collection: studySite_combined, 
+    description: fileName, 
+    folder: fileName, 
+    fileFormat: "SHP"
+  });
+}
+

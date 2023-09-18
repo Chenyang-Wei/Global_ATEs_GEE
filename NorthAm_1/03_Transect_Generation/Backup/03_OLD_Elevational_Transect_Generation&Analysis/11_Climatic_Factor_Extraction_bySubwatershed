@@ -1,0 +1,170 @@
+/**
+ * Introduction:
+ * 1) Generate the environmental variables at the 30-m level.
+ * 2) Calculate the average environmental variables within each unioned ATE segment.
+ * 
+ * Update: 4/29/2021.
+ * 
+ * Runtime: .
+*/
+
+
+/* Useful function(s). */
+
+// Function to print the image information.
+function printImgInfo(name, image) {
+  print(name,
+    image.bandTypes(),
+    image.projection().crs(),
+    image.projection().nominalScale());
+}
+
+// Function to print the feature collection information.
+function printFCinfo(name, featureCollection) {
+  print(name,
+    featureCollection.first(),
+    featureCollection.size());
+}
+
+
+/* Data preparation. */
+
+// Set the 10-km buffered bounding box of the study domain.
+var AOI = ee.Geometry.Rectangle({
+  coords: [-180, 7.114761500193937, -52.095625030545534, 80.24342770493531],
+  geodesic: false
+});
+
+// A target projection system.
+var targetPrj = {
+  crs: "EPSG:4326", 
+  scale: 1000
+};
+
+// Set the working directory.
+var wdNA = "users/treeline/NorthAmerica_GME/";
+
+// Load the previously selected hydrobasin subwatersheds.
+var subwatersheds = ee.FeatureCollection(wdNA + 
+  "Transect_Analysis/" + 
+  "Hybas12Basins_LowerClosedForests_UpperNonForested_30mSegmentedNewCATE");
+
+// printFCinfo("subwatersheds:", subwatersheds) // 20032.
+
+// Load the ATE segment unions.
+var ATEsegs = ee.FeatureCollection(wdNA + "Transect_Analysis/" +
+  "ATEsegmentUnion_perCenterLine");
+
+// printFCinfo("ATEsegs:", ATEsegs) // 496447.
+// print("ATEsegs:", ATEsegs.first().geometry().projection().crs()) // EPSG:4326.
+
+// Load the climatic data.
+var clim = ee.ImageCollection("NASA/ORNL/DAYMET_V4")
+  .select(["dayl", "prcp", "tmax", "tmin"])
+  .filterBounds(AOI)
+  .filterDate('1984-01-01', '2021-01-01'); // The end date is exclusive.
+
+// printImgInfo("clim.first():", clim.first())
+
+// Extract the climatic data during the growing season.
+var growingSeason = clim.filter(ee.Filter.calendarRange({
+  start: 6, 
+  end: 8, 
+  field: "month"
+}));
+
+// printImgInfo("growingSeason.first():", growingSeason.first())
+
+
+/* Self-defined function(s). */
+
+// Function to buffer each ATE segment.
+var segBuf = 45; // Equals to 1.5 pixels.
+
+function bufferATEseg(ATEseg) {
+  return ATEseg.buffer(segBuf);
+}
+
+// Function to average the climatic factors within each buffered ATE segment by subwatershed.
+function avgClimaticFactorsBySubwatershed(SWS) {
+  // Acquire the buffered ATE segments within each subwatershed.
+  var SWSgeom = SWS.geometry();
+  var selectedBufSegs = bufferedATEsegs.filterBounds(SWSgeom);
+
+  // Average the climatic factors within each buffered segment.
+  var avgClimaticFactors = climaticFactors.reduceRegions({
+    collection: selectedBufSegs, 
+    reducer: ee.Reducer.mean(), 
+    scale: 1000, 
+    crs: "EPSG:4326"
+  });
+  
+  return avgClimaticFactors;
+}
+
+
+
+/* Climatic factor calculation. */
+
+// Calculate the temporal average values.
+var avgClim = clim.mean()
+  .reproject(targetPrj);
+
+// printImgInfo("avgClim:", avgClim)
+
+// Calculate the temporal average values over the growing season.
+var avgGS = growingSeason.mean()
+  .select(["dayl", "prcp", "tmax", "tmin"], 
+    ["dayl_GS", "prcp_GS", "tmax_GS", "tmin_GS"])
+  .reproject(targetPrj);
+
+// printImgInfo("avgGS:", avgGS)
+
+
+/* Calculate the average climatic factors within each ATE segment union. */
+
+// Combine all the climatic factors.
+var climaticFactors = avgClim.addBands(avgGS);
+
+// printImgInfo("climaticFactors:", climaticFactors)
+
+// Buffer each ATE segment union.
+var bufferedATEsegs = ATEsegs.map(bufferATEseg);
+
+// Average the environmental variables by sub-watershed.
+var averageClimaticFactors = subwatersheds.map(avgClimaticFactorsBySubwatershed)
+  .flatten();
+
+// print("averageClimaticFactors:", 
+//   averageClimaticFactors.first())
+
+
+if (false) {
+  // Visualization.
+  // Load the transect center lines with ID.
+  var centerLines = ee.FeatureCollection(wdNA + 
+    "Transect_Analysis/" + 
+    "TransectCL_withID_20210405");
+
+  // printFCinfo("centerLines:", centerLines) // 703172.
+
+  Map.setOptions("hybrid");
+  // Map.setCenter(-115.48205, 50.88843, 14);
+  Map.setCenter(-115.38029, 50.82515, 13);
+  
+  Map.addLayer(centerLines, {color: "FFFF00"}, "centerLines");
+  Map.addLayer(ATEsegs, {color: "FF0000"}, "ATEsegs");
+
+} else if (true) {
+  // Output the result to the Asset.
+  var fileName = "ATEsegmentUnion_avgClimaticFactors";
+  
+  Export.table.toAsset({
+    collection: averageClimaticFactors, 
+    description: fileName, 
+    assetId: wdNA + 
+      "Transect_Analysis/" + 
+      fileName
+  });
+}
+

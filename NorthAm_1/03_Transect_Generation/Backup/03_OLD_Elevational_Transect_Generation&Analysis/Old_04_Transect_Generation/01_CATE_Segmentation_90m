@@ -1,0 +1,174 @@
+/**
+ * Introduction:
+ * 1) Segment the CATE at the 90-m level based on the distance to mountain ridges in the ALOS landforms dataset.
+ * 
+ * Date: 7/11/2020.
+ * 
+ * Launch time: 1h.
+ * 
+ * Notes: The stripes with no valid data in the ALOS landforms product can cause some problematic large segmented areas,
+ *  which need to be removed.
+ */
+
+
+/* Setup. */
+
+// Define the extent of North America. 
+var northAmerica = ee.Geometry.Polygon({
+    coords: [[[-165.69002926658334, 72.44551256468144],
+          [-169.40248634956492, 65.69009098298687],
+          [-172.25893166206492, 63.826281515474996],
+          [171.35638590722195, 52.855285271231274],
+          [-159.1340353549648, 17.264443722753843],
+          [-122.14862062448367, 9.59539750905343],
+          [-79.06711256993691, 6.243890041056693],
+          [-77.03677448989225, 7.40316087095261],
+          [-76.78408894301725, 8.990725120234067],
+          [-75.7244458156751, 12.403191738791786],
+          [-71.5276684719251, 13.751533985801833],
+          [-62.8264965969251, 11.651035844929385],
+          [-62.005942990095036, 9.999896817210585],
+          [-60.791953732282536, 9.96743692413247],
+          [-55.5884807162513, 13.889226127218825],
+          [-47.99315852039507, 58.68729606716915],
+          [-66.52860968724042, 71.51769835770313],
+          [-77.86650031224042, 74.25356562488685],
+          [-89.90751593724042, 74.22969620284344],
+          [-106.04844453284761, 74.3012200035139],
+          [-114.63975312659761, 74.20581277506923],
+          [-120.18954789130242, 74.88484689543225],
+          [-136.27353226630242, 74.6772015427699]]],
+    geodesic: true
+});
+
+// Asset path.
+var wdNorthA = "users/treeline/NorthAmerica_GME/";
+
+// Load the CATE.
+var rawCATE = ee.Image(wdNorthA + "CATE/500mCATE_3kmSurrounding_gte10kmClsdFrstElvFocalMean_10kmClsdFrstBuffer");
+
+// CATE projection.
+// print("rawCATE projection:", rawCATE.projection().crs(), 
+//   rawCATE.projection().nominalScale())
+
+// ALOS landforms: It is based on the 30m "AVE" band of JAXA's ALOS DEM (available in EE as JAXA/ALOS/AW3D30_V1_1).
+var rawLandforms = ee.Image('CSP/ERGo/1_0/Global/ALOS_landforms').select('constant'); // With gaps in the area over 60 degrees in latitude.
+
+// Landforms projection.
+var lfPrj = rawLandforms.projection();
+var lfCRS = lfPrj.crs();
+var lfScale = lfPrj.nominalScale();
+
+// print("rawLandforms projection:", lfCRS, lfScale)
+
+// Remove gaps in the landforms dataset (based on the ALOS V1.1 DEM).
+var ALOSv11 = ee.Image("JAXA/ALOS/AW3D30_V1_1").select("AVE");
+
+var landforms = rawLandforms.updateMask(ALOSv11.gte(-1e18));
+
+
+/* Extract the landform of mountain ridge: peak/ridge (warm/normal/cool) and mountain/divide. */
+
+// Landform information within the CATE.
+var landformsCATE = landforms.updateMask(rawCATE);
+
+// Ridge pixels within the CATE:
+// No cliff (15), because its shape is normally irregular and 
+// its distribution is more random than peak/ridge and mountain/divide.
+var ridgeCATE = landformsCATE.lte(14).rename("ridgeCATE");
+
+// Non-ridge pixels within the CATE.
+var nonRidgeCATE = ridgeCATE.not().rename("nonRidgeCATE");
+
+// print("ridgeCATE projection:", 
+//   ridgeCATE.projection().crs(), 
+//   ridgeCATE.projection().nominalScale())
+
+
+/* Caculate the distance to the ridge pixels in the CATE. */
+
+// The reason of choosing the ridge pixels rather than the valley:
+// 1) The ridge pixels are mostly at the center of local study area and surrounded by the valley pixels. 
+// 2) The shape of ridge is more regular than the valley.
+// 3) Most valley pixels are not included in the study area.
+var ridgeDist = ridgeCATE.fastDistanceTransform({
+  neighborhood: 1000,
+  units: "pixels",
+  metric: "squared_euclidean" // Get the distance in squared pixels.
+})// Request the data at the scale and projection of the landforms.
+  .reproject({
+    crs: lfCRS,
+    scale: lfScale
+  });
+
+
+/* Segment the study area based on the distance to the ridge pixels. */
+
+// Define a Laplacian, or isotropic-edge-detection kernel.
+var laplacian = ee.Kernel.laplacian8({ 
+  normalize: false 
+});
+
+// Apply the Laplacian edge-detection kernel to detect the boundary of the ridge distance.
+var edgy = ridgeDist.convolve(laplacian)
+  .reproject({
+    crs: lfCRS,
+    scale: lfScale
+  });
+
+// print("edgy projection:",
+//   edgy.projection().crs(), 
+//   edgy.projection().nominalScale())
+
+// Segment the study domain based on the distance boundary.
+var segmented = edgy.gt(0).selfMask()
+  .rename("Segmented");
+
+// Remove the ridge pixels from the segmentation result.
+var ridgeRemoved = segmented.updateMask(nonRidgeCATE)
+  .reproject({
+    crs: lfCRS,
+    scale: lfScale
+  }); // Reprojection for the testing visualization.
+
+print("ridgeRemoved:",
+  ridgeRemoved.bandTypes(),
+  ridgeRemoved.projection().crs(), 
+  ridgeRemoved.projection().nominalScale());
+
+
+/* Output the segmented study domain. */
+
+if (true) {
+  var fileName = "90mSegmentedCATE_distToRidgesNoCliff_NAlandformsRemoved_ridgesRemoved"; 
+  
+  Export.image.toAsset({
+    image: ridgeRemoved, 
+    description: fileName, 
+    assetId: wdNorthA + "Transects/" + fileName,
+    region: northAmerica, 
+    crs: lfCRS.getInfo(),
+    scale: lfScale.getInfo(),
+    maxPixels: 1e13
+  });
+}
+
+
+/* Visualization. */
+
+else {
+  // Map.setCenter(-113.7571, 48.829, 12);
+  Map.setCenter(-132.7445, 61.332, 11); // Area with gaps in the landforms.
+  Map.setOptions("hybrid");
+  
+  Map.addLayer(rawCATE, {palette: "00FF00"}, "rawCATE", false);
+  
+  // Map.addLayer(ridgeDist, {}, "ridgeDist", false);
+  // Map.addLayer(edgy, {}, "edgy", false);
+  Map.addLayer(segmented, {palette: "0000FF"}, "segmented", false);
+  Map.addLayer(ridgeRemoved, {palette: "FFFF00"}, "ridgeRemoved", true);
+  
+  Map.addLayer(ridgeCATE.selfMask(), {palette: "00FFFF"}, "ridgeCATE", false);
+  Map.addLayer(nonRidgeCATE.selfMask(), {palette: "FF0000"}, "nonRidgeCATE", false);
+}
+

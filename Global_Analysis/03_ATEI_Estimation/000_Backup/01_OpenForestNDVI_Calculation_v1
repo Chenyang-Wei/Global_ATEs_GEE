@@ -1,0 +1,190 @@
+/**
+ * Introduction:
+ * 
+ *  1) Calculate the median value of the smoothed annual maximum NDVIs
+ *    during 2015-2019 (i.e., the period of the Land Cover data).
+ * 
+ *  2) Identify the areas classified as open forests in all the five years
+ *    over 2015-2019 in the climatic ATE.
+ * 
+ *  3) Derive the 30-m median NDVI of the identified open forests.
+ * 
+ * Update: 11/27/2022.
+ * 
+ * Runtime: .
+*/
+
+
+/* Load module(s). */
+
+var IMG = require("users/ChenyangWei/Public:Modules/Image_Analysis&Processing");
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var TNA = require("users/ChenyangWei/Public:Modules/Transect_NDVI_Analysis");
+
+
+/* Setup. */
+
+// Determine the target projection.
+var targetPrj = IMG.WGS84_30m;
+
+// Create a list of the working directories.
+var WDs_List = [
+  GATE.wd_NorthAmerica,
+  GATE.wd_SouthAmerica,
+  GATE.wd_Africa,
+  GATE.wd_Oceania,
+  GATE.wd_Europe,
+  GATE.wd_Asia
+];
+
+// Define a list of the AOIs.
+var AOIs_List = ee.List([
+  GATE.AOI_NorthAmerica,
+  GATE.AOI_SouthAmerica,
+  GATE.AOI_Africa,
+  GATE.AOI_Oceania,
+  GATE.AOI_Europe,
+  GATE.AOI_Asia
+]);
+
+
+/* Read the climatic ATE. */
+
+// Define a function to load and reproject the new CATE of each continent.
+var Read_NewCATE = function(wd_Cont) {
+  var newCATE_Cont = ee.Image(wd_Cont
+    + "Climate-Based_ATE/" 
+    + GATE.newCATE_fileName)
+    .reproject(targetPrj);
+  
+  return newCATE_Cont;
+};
+
+// Produce a list of the new CATEs.
+var newCATEs_List = ee.List([
+  Read_NewCATE(GATE.wd_NorthAmerica),
+  Read_NewCATE(GATE.wd_SouthAmerica),
+  Read_NewCATE(GATE.wd_Africa),
+  Read_NewCATE(GATE.wd_Oceania),
+  Read_NewCATE(GATE.wd_Europe),
+  Read_NewCATE(GATE.wd_Asia)
+]);
+
+
+/* Calculate the median value of the smoothed annual maximum NDVIs 
+  during 2015-2019 in the buffered new CATE. */
+
+// Create a list of the NDVI band names for 2015-2019.
+var landCoverYears_List = ee.List.sequence(2015, 2019);
+
+var bandNames_List = landCoverYears_List.map(function(yearNum) {
+  
+  // When directly convert a "floating point" to a "string", 
+  //  the result contains a ".", which isn't allowed in band names.
+  var yearInt = ee.Number(yearNum).int();
+  var yearString = ee.String(yearInt);
+  
+  // Define the band name of each year.
+  var bandName = ee.String("smdNDVI_").cat(yearString);
+  
+  return bandName;
+});
+
+// Calculate the median NDVI in North America.
+var medianNDVI_NorthAmerica = ee.Image(GATE.wd_NorthAmerica
+  + "ATEI_Estimation/"
+  + TNA.annualMaxNDVI_300mBufNewCATE_NorthAmerica_fileName)
+  .select(bandNames_List)
+  .reduce(ee.Reducer.median())
+  .reproject(targetPrj)
+  .rename("medianNDVI");
+
+// Define a function to calculate the median NDVIs in other continents.
+var Calculate_MedianNDVI = function(wd_Cont) {
+  var medianNDVI_Cont = TNA.loadAnnualNDVIs_nonNorthAmerica(wd_Cont)
+    .select(bandNames_List)
+    .reduce(ee.Reducer.median())
+    .reproject(targetPrj)
+    .rename("medianNDVI");
+  
+  return medianNDVI_Cont;
+};
+
+// Produce a list of the median NDVIs during 2015-2019.
+var medianNDVIs_List = ee.List([
+  medianNDVI_NorthAmerica,
+  Calculate_MedianNDVI(GATE.wd_SouthAmerica),
+  Calculate_MedianNDVI(GATE.wd_Africa),
+  Calculate_MedianNDVI(GATE.wd_Oceania),
+  Calculate_MedianNDVI(GATE.wd_Europe),
+  Calculate_MedianNDVI(GATE.wd_Asia_2)
+]);
+
+
+/* Identify the areas classified as open forests in all the five years
+  over 2015-2019. */
+
+// Read the Copernicus Global Land Cover datasets.
+var landCover = GATE.readCoperLandCover15to19();
+
+// Extract and reproject the open forests 
+//  (tree canopy between 15-70 %) worldwide in 2015-2019.
+var global_OpenForests = GATE.Extract_OpenForests_inAllYears(landCover, targetPrj);
+
+
+/* Derive the 30-m median NDVI of the identified open forests by continent. */
+
+// Determine the continent ID (0 ~ 5).
+var contID = 5;
+
+// Determine the AOI of the continent.
+var contAOI = AOIs_List.get(contID);
+
+// Select the new CATE of the continent.
+var newCATE = ee.Image(newCATEs_List.get(contID));
+
+// Extract the median NDVI of the continent.
+var medianNDVI = ee.Image(medianNDVIs_List.get(contID));
+
+// Identify open forests within the new CATE.
+var openForests_NewCATE = global_OpenForests.updateMask(newCATE);
+
+// Derive the median NDVI of the identified open forests.
+var medianNDVI_OpenForests_NewCATE = medianNDVI.updateMask(openForests_NewCATE);
+
+// Determine the working directory of the output.
+var contWD = WDs_List[contID];
+
+var outputWD = contWD + "ATEI_Estimation/OpenForestNDVI/";
+
+
+if (false) {
+  
+  // Check the produced Images.
+  IMG.printImgInfo("newCATE", newCATE);
+  IMG.printImgInfo("medianNDVI", medianNDVI);
+  IMG.printImgInfo("openForests_NewCATE", openForests_NewCATE);
+  IMG.printImgInfo("medianNDVI_OpenForests_NewCATE", medianNDVI_OpenForests_NewCATE);
+
+  // Check the AOI.
+  print("contAOI:", contAOI);
+  
+  // Check the working directory.
+  print("outputWD:", outputWD);
+  
+} else {
+  
+  // Export the result.
+  var fileName = GATE.rawMedianNDVI_OpenForests_FileName;
+  
+  Export.image.toAsset({
+    image: medianNDVI_OpenForests_NewCATE,
+    description: fileName, 
+    assetId: outputWD + fileName, 
+    crs: targetPrj.crs,
+    scale: targetPrj.scale,
+    region: contAOI,
+    maxPixels: IMG.maxPxNum
+  }); 
+}
+

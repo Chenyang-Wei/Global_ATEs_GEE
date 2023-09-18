@@ -1,0 +1,159 @@
+/**
+ * Introduction:
+ * 
+ *  1) Calculate the 30-m temporal median of the smoothed annual maximum NDVIs
+ *    of the non-forested areas in the climatic ATE during 2015-2019 
+ *    (i.e., the period of the Copernicus Land Cover data).
+ * 
+ * Runtime: 39m ~ 1h (shared).
+ * 
+ * Update: 1/16/2023.
+*/
+
+
+/* Load module(s). */
+
+var IMG = require("users/ChenyangWei/Public:Modules/General/Image_Analysis&Processing.js");
+var ATEI_EA = require("users/ChenyangWei/Public:Modules/Treeline/ATEI_Estimation&Analysis.js");
+var GATE = require("users/ChenyangWei/Public:Modules/Treeline/Global_ATE.js");
+var TNA = require("users/ChenyangWei/Public:Modules/Treeline/Transect_NDVI_Analysis.js");
+var VIS = require("users/ChenyangWei/Public:Modules/General/Visualization.js");
+
+
+/* Object definition. */
+
+// Determine the target projection.
+var targetPrj = IMG.WGS84_30m;
+
+// Create a list of the working directories.
+var WDs_List = ATEI_EA.WDs_AllContinents_List;
+
+// Define a list of the AOIs.
+var AOIs_List = ATEI_EA.AOIs_AllContinents_List;
+
+// Generate a median reducer.
+var medianReducer = ee.Reducer.median();
+
+// Create a list of the NDVI band names for 2015-2019.
+var landCoverYears_List = ee.List.sequence(2015, 2019);
+
+var bandNames_List = landCoverYears_List.map(function(yearNum) {
+  
+  // When directly convert a "floating point" to a "string", 
+  //  the result contains a ".", which isn't allowed in band names.
+  var yearInt = ee.Number(yearNum).int();
+  var yearString = ee.String(yearInt);
+  
+  // Define the band name of each year.
+  var bandName = ee.String("smdNDVI_").cat(yearString);
+  
+  return bandName;
+});
+
+
+/* Function definition. */
+
+// Define a function to load and reproject the non-forested areas 
+//  in the new CATE of each continent.
+var Read_NonForested = function(wd_Cont) {
+  var nonForested_Cont = ee.Image(wd_Cont
+    + "ATEI_Estimation/NonForestedNDVI/" 
+    + "30mNonForested_NewCATE_2015to2019")
+    .reproject(targetPrj);
+  
+  return nonForested_Cont;
+};
+
+// Define a function to calculate the temporal median NDVIs of 
+//  the non-forested areas in continents other than North America.
+var Calculate_NonForestedNDVI = function(wd_Cont, nonForested_Cont) {
+  var nonForestedNDVI_Cont = TNA.loadAnnualNDVIs_nonNorthAmerica(wd_Cont)
+    .select(bandNames_List)
+    .updateMask(nonForested_Cont)
+    .reduce(medianReducer)
+    .reproject(targetPrj)
+    .rename("nonForestedNDVI");
+  
+  return nonForestedNDVI_Cont;
+};
+
+
+/* Acquire the information of the continent. */
+
+// Determine the continent ID (0 ~ 5).
+var contID = 5;   /* Need to update. */
+
+// Determine the working directory of the continent.
+var contWD = WDs_List[contID];
+
+// Determine the AOI of the continent.
+var contAOI = AOIs_List[contID];
+
+
+/* Read the non-forested areas in the new CATE. */
+
+var nonForested = Read_NonForested(contWD);
+
+
+/* Calculate the temporal median NDVI of 
+  the non-forested areas during 2015-2019 . */
+
+if (contID === 0) {
+  // Calculate the non-forested NDVI in North America.
+  var nonForestedNDVI = ee.Image(GATE.wd_NorthAmerica
+    + "ATEI_Estimation/"
+    + TNA.annualMaxNDVI_300mBufNewCATE_NorthAmerica_fileName)
+    .select(bandNames_List)
+    .updateMask(nonForested)
+    .reduce(medianReducer)
+    .reproject(targetPrj)
+    .rename("nonForestedNDVI");
+
+} else if (contID === 5) {
+  // Calculate the open forest NDVI in Asia 
+  //  (using a different working directory).
+  var nonForestedNDVI = Calculate_NonForestedNDVI(GATE.wd_Asia_2, nonForested);
+  
+} else {
+  // Calculate the open forest NDVI in other continents.
+  var nonForestedNDVI = Calculate_NonForestedNDVI(contWD, nonForested);
+}
+
+
+if (false) {
+  
+  // Check the working directory.
+  print("contWD:", contWD);
+  
+  // Check the result.
+  IMG.printImgInfo("nonForestedNDVI:", 
+    nonForestedNDVI);
+  
+  // Visualize the datasets.
+  Map.setOptions("satellite");
+  Map.centerObject(contAOI, 6);
+  
+  Map.addLayer(contAOI, {color: "FFFFFF"}, "contAOI", true);
+  
+  Map.addLayer(nonForestedNDVI, VIS.NDVI_vis, 
+    "nonForestedNDVI", true);
+  
+} else {
+  
+  // Determine the output directory.
+  var outputWD = contWD + "ATEI_Estimation/NonForestedNDVI/";
+
+  // Export the result.
+  var fileName = "30mTemporalMedianNDVI_NonForested_NewCATE";
+  
+  Export.image.toAsset({
+    image: nonForestedNDVI,
+    description: fileName, 
+    assetId: outputWD + fileName, 
+    crs: targetPrj.crs,
+    scale: targetPrj.scale,
+    region: contAOI,
+    maxPixels: IMG.maxPxNum
+  }); 
+}
+

@@ -1,0 +1,135 @@
+/**
+ * Introduction:
+ * 1) Extract the elevations of the two endpoints of 
+ *  the identified ATE segment in each year within each transect.
+ * 
+ * Update: 2/24/2021.
+ * 
+ * Runtime: 
+ * 1) To Drive (.CSV): 5m ~ 3h.
+*/
+
+
+/* Load and preprocess the required datasets. */
+
+// Set the work directory.
+var wd = "users/treeline/NorthAmerica_GME/";
+
+// Target projection system.
+var targetPrj = {
+    crs: "EPSG:4326",
+    scale: 30
+  };
+
+// ALOS elevation.
+var ALOSelv = ee.Image('JAXA/ALOS/AW3D30/V2_2').select('AVE_DSM')
+  .reproject(targetPrj);
+
+// ATE segments file path.
+var segmentsPath = wd
+  + "Transects/SelectedHybas4Basins_closedForestsLowerSlopeValley_nonForestedUpperSlope/"
+  + "CenterLines/"
+  + "AnnualDivides_AnnualATEI_Pt307toPt507/"
+  + "AnnualDivides_";
+
+
+/* Extract the elevations of the two ATE endpoints of each segment in each year. */
+
+// Set the number of segment groups.
+var groupNo = 100;
+
+// Create a list of group IDs.
+var groupIDlist = ee.List.sequence(1, groupNo);
+
+// Function to annually extract the endpoints elevations of each ATE segment.
+function extractSegmentElv(segment) {
+  // Generate a geometry of the endpoints.
+  var dvd1Lat = segment.get("dvd1Lat");
+  var dvd1Long = segment.get("dvd1Long");
+  
+  var dvd2Lat = segment.get("dvd2Lat");
+  var dvd2Long = segment.get("dvd2Long");
+  
+  var endPoints = ee.Geometry.MultiPoint([[dvd1Long, dvd1Lat], [dvd2Long, dvd2Lat]]);
+  
+  // Extract the ATE endpoints elevations.
+  var endPtsElvs = ALOSelv.reduceRegion({
+    reducer: ee.Reducer.toList(), 
+    geometry: endPoints, 
+    scale: 30, 
+    crs: "EPSG:4326"
+  }).get("AVE_DSM");
+  
+  // Sort the extracted elevations.
+  var sortedElvs = ee.List(endPtsElvs).sort();
+  
+  // Extract the length of the elevation list.
+  var elvLength = sortedElvs.length();
+  
+  // Get the low endpoint and high endpoint elevations, respectively.
+  var lowElv = sortedElvs.get(0);
+  var highElv = sortedElvs.get(ee.Number(elvLength).subtract(1));
+  
+  return segment.set({
+    lowElv: lowElv,
+    highElv: highElv
+  });
+}
+
+// Function to annually extract the endpoints elevations of all ATE segments in each group.
+function extractGroupElv(groupID) {
+  var lowerLimit = groupSize.multiply(ee.Number(groupID).subtract(1));
+  var upperLimit = groupSize.multiply(groupID);
+  
+  // Select the ATE segments in each group.
+  var groupedSegments = ee.FeatureCollection(annualSegList.slice(lowerLimit, upperLimit));
+  
+  // Extract the ATE endpoints elevations of each segment.
+  var extractedElv = groupedSegments.map(extractSegmentElv);
+  
+  return extractedElv;
+}
+
+// A list of the failed years.
+var failedYears = [1985, 1986, 1988, 1992, 2004, 2011, 2012, 2014, 2017, 2018, 2019];
+// print(failedYears.length)
+
+// Annually extract the elevations of the two ATE endpoints.
+for (var i = 0; i < failedYears.length; i ++) { // Re-run the failed tasks.
+// for (var year = 1984; year <= 2019; year ++) {
+// for (var year = 1984; year <= 1985; year ++) { // Testing.
+  // The failed year.
+  var year = failedYears[i];
+  // print(year)
+  
+  // Read the ATE segments in each year.
+  var annualSegments = ee.FeatureCollection(segmentsPath + year);
+  
+  // Convert the annual segments to a list.
+  var segmentsNo = annualSegments.size();
+  var annualSegList = annualSegments.toList(segmentsNo);
+  // print(segmentsNo)
+  
+  // Number of segments in each group.
+  var groupSize = segmentsNo.divide(groupNo).ceil();
+  // print(groupSize)
+  
+  // Extract the annual endpoints elevations.
+  var annualEndPtsElv = ee.FeatureCollection(groupIDlist.map(extractGroupElv)).flatten();
+  
+  // print(annualEndPtsElv.limit(3),
+  //   annualEndPtsElv.size())
+  
+  // Export the annual results to the Drive.
+  if (true) {
+    var fileName = "annualEndPtsElv_" + year;
+    
+    Export.table.toDrive({
+      collection: annualEndPtsElv, 
+      description: fileName, 
+      folder: "annualEndPtsElv", 
+      fileFormat: "CSV"
+    });
+  }
+}
+

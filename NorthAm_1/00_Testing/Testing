@@ -1,0 +1,50 @@
+
+// Set the working directory.
+var wdNA = "users/treeline/NorthAmerica_GME/";
+
+// Set the distance of buffer.
+var bufDist = 45;
+
+// Function to buffer the transect center lines.
+function buffering(lineString) {
+  return lineString.buffer(bufDist);
+}
+
+var CL = ee.FeatureCollection(wdNA + "Transect_Analysis/Validation/"
+    + "TransectCenterLines_with5km_2020LuMetaAnalysis")
+    .map(buffering);
+
+// Load the annual ATE segments.
+var ATEsegs = ee.FeatureCollection(wdNA + "Transect_Analysis/Validation/"
+  + "TransectCenterLines_annualSegments_ATEIgtPt4329")
+  .map(buffering);
+
+// Annual ATEIs based on the annual maximum NDVIs (cloud masked and biome involved).
+var ATEI = ee.Image(wdNA +
+  "ATEI_Estimation/AnnualATEI_1984to2020_Biomes356_medianSmdAnnualMaxNDVI_meanSmdElv_newCATE_AOI");
+
+var elevationPalette = ['006600', '002200', 'fff700', 'ab7634', 'c4d0ff', 'ffffff'];
+// "0000FF, FFFFFF, FF0000"
+
+function displayATEIseg(yr, color) {
+  Map.addLayer(ATEI.select("ATEI_" + yr).gt(0.4329).selfMask(), 
+    {palette: color},
+    "ATE in " + yr, 
+    true, 0.5);
+  
+  Map.addLayer(ATEsegs.filter(ee.Filter.eq("Year", yr)), 
+    {color: color}, 
+    "ATE segment in " + yr);
+}
+
+if (true) {
+  // Visualize the result.
+  Map.setOptions("HYBRID");
+  Map.setCenter(-113.66176, 48.92193, 15);
+  
+  Map.addLayer(CL, {color: "FFFFFF"}, "Transects");
+  
+  displayATEIseg(1984, "FF0000");
+  displayATEIseg(2000, "FFFF00");
+  displayATEIseg(2020, "0000FF");
+}

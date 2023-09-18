@@ -1,0 +1,104 @@
+/**
+ * Introduction:
+ * 1) Validate the transect analysis result with the meta-analysis data published by Lu et al. (2020).
+ * 
+ * Update: 1/27/2021.
+*/
+
+
+/* Load datasets. */
+
+// Set the work directories.
+var wd = "users/treeline/NorthAmerica_GME/";
+var wd2 = "users/treeline/Global/Validation/";
+
+// Meta-analysis dataset.
+var metaAnalysis = ee.FeatureCollection(wd2 +
+  "2020Lu_Meta_Analysis_Northern_Hemisphere");
+
+// Buffer the point data.
+var buffered = metaAnalysis.map(function(feature) {
+  return feature.buffer(10e3);
+});
+
+// print(buffered.first())
+
+// Transects with landforms information involved.
+var transects = ee.FeatureCollection(wd + 
+  "Transects/SelectedHybas4Basins_closedForestsLowerSlopeValley_nonForestedUpperSlope/transectTrend_gte10obs")
+  .filterBounds(buffered);
+
+// print(transects.first(), 
+//   transects.size()) // 2183.
+
+
+/* Extract transects within 5 km to each meta-analysis site. */
+
+// Define a spatial filter, with distance 5 km.
+var distFilter = ee.Filter.withinDistance({
+  distance: 5e3,
+  leftField: '.geo',
+  rightField: '.geo'
+});
+
+// Define a saveAll join.
+var distSaveAll = ee.Join.saveAll({
+  matchesKey: 'Transects',
+  measureKey: 'Distance'
+});
+
+// Apply the join.
+var spatialJoined = distSaveAll.apply(metaAnalysis, transects, distFilter);
+
+// Print the result.
+// print(spatialJoined);
+
+
+/* Calculate the average variables of all neighboring transects of each study site. */
+
+var studySite_combined = spatialJoined.map(function(studySite) {
+  var neighbors = ee.FeatureCollection(ee.List(studySite.get("Transects")));
+  
+  // ATEI.
+  var avgATEI = neighbors.aggregate_mean("st_ATEI");
+  
+  // Elevation.
+  var avgElv = neighbors.aggregate_mean("Tmn_wAE");
+  
+  // Trend.
+  var elvTrend = neighbors.aggregate_mean("elvTrnd");
+  
+  var keepProperties = studySite.propertyNames().remove("Transects");
+  
+  var combined = ee.Feature(studySite.geometry()).copyProperties(studySite, keepProperties)
+    .set({
+      avgATEI: avgATEI,
+      avgElv: avgElv,
+      elvTrend: elvTrend
+    });
+  
+  return combined;
+});
+
+// print(studySite_combined)
+
+
+if (false) {
+  /* Visualization. */
+  Map.setOptions("HYBRID");
+  
+  Map.addLayer(buffered, {color: "FFFF00"}, "buffered");
+  Map.addLayer(transects, {color: "0000FF"}, "transects");
+  Map.addLayer(metaAnalysis, {color: "FF0000"}, "metaAnalysis");
+  
+} else if (true) {
+  var fileName = "metaAnalysis_newTransectsWithLandforms_within5km";
+  
+  Export.table.toDrive({
+    collection: studySite_combined, 
+    description: fileName, 
+    folder: fileName, 
+    fileFormat: "SHP"
+  });
+}
+

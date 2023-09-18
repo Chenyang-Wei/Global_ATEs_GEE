@@ -1,0 +1,60 @@
+/**
+ * Introduction:
+ * 1) Buffer the mid-quarter segments of all transect centerlines. 
+ * 
+ * Update: 10/13/2021.
+ * 
+ * Total update number: 2.
+ * 
+ * Runtime: 5h.
+ */
+
+
+/* Load module(s). */
+
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var VIS = require("users/ChenyangWei/Public:Modules/Visualization");
+
+
+/* Data and function preparation. */
+
+// Set the major working directory.
+var wd_Main = GATE.wd_NorthAmerica
+  + "Elevational_Transect_Generation/"; /**** 1) Need to update. ****/
+
+// Load the mid-quarter segments.
+var midQuarters = ee.FeatureCollection(wd_Main
+  + GATE.midQuarters_AllRawCLs_fileName);
+
+
+/* Buffer the mid-quarter segments. */
+
+var buffered_MidQuarters = GATE.bufferMidSegments(midQuarters);
+
+
+if (false) { // true OR false.
+  print("midQuarters:", 
+    midQuarters.size(),
+    midQuarters.first());
+  
+  print("buffered_MidQuarters:", 
+    buffered_MidQuarters.size(),
+    buffered_MidQuarters.first());
+  
+  VIS.centerNorthAmerica(12); /**** 2) Need to update. ****/
+  
+  Map.addLayer(midQuarters, {color: "FF0000"}, "midQuarters");
+  
+  Map.addLayer(buffered_MidQuarters, {color: "FFFF00"}, "buffered_MidQuarters");
+
+} else {
+  //// Export the result.
+  var fileName = GATE.midQuarterBuffers_AllRawCLs_fileName;
+  
+  Export.table.toAsset({
+    collection: buffered_MidQuarters, 
+    description: fileName, 
+    assetId: wd_Main + fileName
+  });
+}
+

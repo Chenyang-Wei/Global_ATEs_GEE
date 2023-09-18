@@ -1,0 +1,159 @@
+/**
+ * Introduction: 
+ * 1) Reproject the new CATE from 1 arc-second to 30 m and mask the water body.
+ * 2) Create a 100-px (3-km) buffer zone around the water-removed and reprojected CATE.
+ * 
+ * Date: 8/1/2020.
+ * 
+ * Launch time: 1h.
+ */
+
+
+/* Setup. */
+
+// Define the extent of North America. 
+var northAmerica = ee.Geometry.Polygon({
+    coords: [[[-165.69002926658334, 72.44551256468144],
+          [-169.40248634956492, 65.69009098298687],
+          [-172.25893166206492, 63.826281515474996],
+          [171.35638590722195, 52.855285271231274],
+          [-159.1340353549648, 17.264443722753843],
+          [-122.14862062448367, 9.59539750905343],
+          [-79.06711256993691, 6.243890041056693],
+          [-77.03677448989225, 7.40316087095261],
+          [-76.78408894301725, 8.990725120234067],
+          [-75.7244458156751, 12.403191738791786],
+          [-71.5276684719251, 13.751533985801833],
+          [-62.8264965969251, 11.651035844929385],
+          [-62.005942990095036, 9.999896817210585],
+          [-60.791953732282536, 9.96743692413247],
+          [-55.5884807162513, 13.889226127218825],
+          [-47.99315852039507, 58.68729606716915],
+          [-66.52860968724042, 71.51769835770313],
+          [-77.86650031224042, 74.25356562488685],
+          [-89.90751593724042, 74.22969620284344],
+          [-106.04844453284761, 74.3012200035139],
+          [-114.63975312659761, 74.20581277506923],
+          [-120.18954789130242, 74.88484689543225],
+          [-136.27353226630242, 74.6772015427699]]],
+    geodesic: true
+});
+
+// Asset path.
+var wdNorthA = "users/treeline/NorthAmerica_GME/";
+
+// Load the climatic ATE.
+var CATE = ee.Image(wdNorthA + "CATE/" +
+  "500mCATE_3kmSurrounding_gte10kmClsdFrstElvFocalMean_10kmClsdFrstBuffer");
+
+// print("CATE:", CATE.bandTypes(), 
+//   CATE.projection().crs(), 
+//   CATE.projection().nominalScale())
+
+// Create a mask using the Hansen dataset (V 1.7) to define the area of land surface.
+var land = ee.Image('UMD/hansen/global_forest_change_2019_v1_7') // The newest version of the Hansen dataset.
+  .select('datamask')
+  .eq(1); // Select the "mapped land surface" in the Hansen dataset.
+
+// print("Water mask:", land.bandTypes(), 
+//   land.projection().crs(), 
+//   land.projection().nominalScale())
+
+
+/* Reproject the new CATE from 1 arc-second to 30 m and mask the water body based on the Hansen product. */
+
+// Define the 30-m projection system.
+var newPrj = {
+  crs: "EPSG:4326",
+  scale: 30
+};
+
+// Reproject the new CATE and the water mask.
+var reprjCATE = CATE.reproject(newPrj);
+var reprjLand = land.reproject(newPrj);
+
+// print("Reprojected CATE:", reprjCATE.bandTypes(), 
+//   reprjCATE.projection().crs(), 
+//   reprjCATE.projection().nominalScale())
+
+// print("Reprojected water mask:", reprjLand.bandTypes(), 
+//   reprjLand.projection().crs(), 
+//   reprjLand.projection().nominalScale())
+
+// Mask the water body.
+var reprjCATE_waterMasked = reprjCATE.updateMask(reprjLand)
+  .rename("gteFocalMean_30mReprj");
+
+// print("Water-masked CATE:", reprjCATE_waterMasked.bandTypes(), 
+//   reprjCATE_waterMasked.projection().crs(), 
+//   reprjCATE_waterMasked.projection().nominalScale())
+
+
+/* Create a 100-px (3-km) buffer zone around the water-masked and reprojected CATE. */
+
+// Determine the size of neighborhood.
+var neighborhood = 200; // Number of 30-m pixels.
+
+// Calculate the distance to the nearest non-zero valued pixel.
+var bufferDist = reprjCATE_waterMasked.fastDistanceTransform({
+  neighborhood: neighborhood,
+  units: "pixels",
+  metric: "squared_euclidean"
+}).sqrt() // Get the distance in pixels.
+  .reproject(newPrj); // Request the data at the 30-m projection system.
+
+// Threshold of the horizontal distance for the buffer area.
+var bufferThres = 100; // Number of 30-m pixels.
+
+var bufferArea = bufferDist.lte(bufferThres).selfMask()
+  .rename("Buffered_3km");
+
+// print("Buffer area:", bufferArea.bandTypes(),
+//   bufferArea.projection().crs(), 
+//   bufferArea.projection().nominalScale())
+
+// Combine the CATE and buffer datasets.
+var combined = reprjCATE_waterMasked.addBands(bufferArea);
+
+// print("Combined:", combined.bandTypes(),
+//   combined.projection().crs(), 
+//   combined.projection().nominalScale())
+
+
+if (false) {
+  /* Visualization. */
+  
+  Map.setOptions("hybrid");
+  Map.setCenter(-113.7827, 48.8259, 10);
+  
+  Map.addLayer(CATE, {palette: "FF00FF"}, "CATE", true);
+  
+  // Map.addLayer(land.selfMask(), {palette: "00FF00"}, "land", false);
+  
+  // Map.addLayer(reprjCATE, {palette: "FFFF00"}, "reprjCATE", false);
+  
+  // Map.addLayer(reprjLand.selfMask(), {palette: "0000FF"}, "reprjLand", false);
+  
+  Map.addLayer(bufferDist, {min: 0, max: 100}, "bufferDist", false);
+  
+  Map.addLayer(combined.select("Buffered_3km"), {palette: "FFFF00"}, "Buffered_3km", true);
+  
+  Map.addLayer(combined.select("gteFocalMean_30mReprj"), {palette: "FF0000"}, "reprjCATE_waterMasked", true);
+}
+
+else {
+  /* Output the results. */
+  
+  var fileName = "3kmBuffered_30mReprj_500mCATE3kmBuffer_gteAvgClsdFrstElv_10kmRes10pxFocalMean_10kmClsdFrstBuffer";
+  
+  Export.image.toAsset({
+    image: combined, 
+    description: fileName, 
+    assetId: wdNorthA + "CATE/" + fileName,
+    region: northAmerica, 
+    crs: "EPSG:4326",
+    scale: 30,
+    maxPixels: 1e13
+  });
+}
+

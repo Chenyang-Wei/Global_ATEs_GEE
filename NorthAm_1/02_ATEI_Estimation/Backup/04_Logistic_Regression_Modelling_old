@@ -1,0 +1,476 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var testing = 
+    /* color: #d63000 */
+    /* displayProperties: [
+      {
+        "type": "rectangle"
+      },
+      {
+        "type": "rectangle"
+      },
+      {
+        "type": "rectangle"
+      },
+      {
+        "type": "rectangle"
+      }
+    ] */
+    ee.Geometry.MultiPolygon(
+        [[[[-114.71145050663952, 49.40345546758991],
+           [-114.71145050663952, 48.23893112098382],
+           [-113.10744660038952, 48.23893112098382],
+           [-113.10744660038952, 49.40345546758991]]],
+         [[[-145.4015160129729, 61.63236665197577],
+           [-145.4015160129729, 60.95163360650333],
+           [-143.9073753879729, 60.95163360650333],
+           [-143.9073753879729, 61.63236665197577]]],
+         [[[-106.75497461822555, 40.979007489891764],
+           [-106.75497461822555, 38.46987011793939],
+           [-105.43661524322555, 38.46987011793939],
+           [-105.43661524322555, 40.979007489891764]]],
+         [[[-125.60660986867123, 58.479550244962475],
+           [-125.60660986867123, 57.74249870968218],
+           [-123.80485205617123, 57.74249870968218],
+           [-123.80485205617123, 58.479550244962475]]]], null, false);
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+/*
+  Introduction:
+    1) Estimate the ATEI with an established logistic regression model.
+  
+  Update:
+    9/30/2020.
+*/
+
+
+/* Setup. */
+
+// Asset path.
+var wdNorthA = "users/treeline/NorthAmerica_GME/";
+
+// ALOS elevation.
+var ALOSelv = ee.Image('JAXA/ALOS/AW3D30/V2_2').select('AVE_DSM')
+  .reproject({
+    crs: "EPSG:4326",
+    scale: 30
+  });
+
+// Load the climatic ATE.
+var CATE = ee.Image(wdNorthA + "CATE/" + 
+  "3kmBuffered_30mReprj_500mCATE3kmBuffer_gteAvgClsdFrstElv_10kmRes10pxFocalMean_10kmClsdFrstBuffer")
+  .select("gteFocalMean_30mReprj")
+  .reproject({
+    crs: "EPSG:4326",
+    scale: 30
+  });
+
+// Create a mask using the Hansen dataset (V 1.7) to define the area of land surface.
+var land = ee.Image('UMD/hansen/global_forest_change_2019_v1_7') // The newest version of the Hansen dataset.
+  .select('datamask')
+  .eq(1) // Select the "mapped land surface" in the Hansen dataset.
+  .reproject({
+    crs: "EPSG:4326",
+    scale: 30
+  });
+
+
+/* Image processing function definition. */
+
+// This function removes invalid pixels.
+var removeInvalid_L8 = function(img) {
+  // Remove edge pixels that don't occur in all bands
+  var noNA = img.mask().reduce(ee.Reducer.min());
+  
+  // Identify pixels with all the surface reflectance bands within the valid range: 0-10000.
+  var lowerLimit = img.gt(0).reduce(ee.Reducer.min());
+  var upperLimit = img.lt(1e4).reduce(ee.Reducer.min());
+  
+  var maskedB4B5 = img.updateMask(noNA)
+    .updateMask(lowerLimit)
+    .updateMask(upperLimit)
+    .select(["B4", "B5"]); // Select "B4" and "B5" for further calculating the NDVI.
+  
+  return maskedB4B5;
+};
+
+// This function calculates NDVI of Landsat imagery.
+var calNDVI_L8 = function(i) {
+  var ndvi = i.addBands(i.normalizedDifference(['B5', 'B4'])
+    .rename('OLI_NDVI'))
+    .select('OLI_NDVI');
+  
+  return ndvi;
+};
+
+// This function Convert the OLI NDVI to the ETM+ NDVI.
+// ETM+ = 0.0029 + 0.9589 OLI
+var ETM_NDVI = function(i) {
+  var ETM = i.addBands(i.select("OLI_NDVI")
+    .multiply(0.9589).add(0.0029)
+    .rename("ETM_NDVI"))
+    .select("ETM_NDVI");
+  
+  var postiveNDVI = ETM.updateMask(ETM.gt(0))
+    .rename("postiveNDVI");
+  
+  return ETM.addBands(postiveNDVI);
+};
+
+// This function combine all the processing steps.
+function imageProcessing(image) {
+  var invalidRemoved = removeInvalid_L8(image);
+  var ndviCalculated = calNDVI_L8(invalidRemoved);
+  var ndviConverted = ETM_NDVI(ndviCalculated);
+  
+  // Remove water-covered regions.
+  var waterRemoved = ndviConverted.updateMask(land);
+  
+  return waterRemoved;
+}
+
+
+/* Import the Landsat-8 Surface Reflectance dataset. */
+
+// Bands of surface reflectance.
+var bands = ["B[1-7]"];
+
+// Landsat 8 data in 2019.
+var L8_2019 = ee.ImageCollection("LANDSAT/LC08/C01/T1_SR")
+  .select(bands)
+  .filterBounds(testing)
+  .filterDate('2019-01-01', '2020-01-01'); // The end date is exclusive.
+
+
+/* Image processing and analysis. */
+
+// Image pre-processing and NDVI calculation.
+var ndvi2019 = L8_2019.map(imageProcessing);
+
+// Annual max. NDVI in 2019.
+var maxNDVI2019 = ndvi2019.select("ETM_NDVI").max()
+  .rename("maxNDVI2019")
+  .reproject({
+    crs: "EPSG:4326",
+    scale: 30
+  });
+
+// Annual average NDVI in 2019.
+var avgNDVI2019 = ndvi2019.select("ETM_NDVI").mean()
+  .rename("avgNDVI2019")
+  .reproject({
+    crs: "EPSG:4326",
+    scale: 30
+  });
+
+// Annual average NDVI in 2019.
+var avgPostNDVI2019 = ndvi2019.select("postiveNDVI").mean()
+  .rename("avgPostNDVI2019")
+  .reproject({
+    crs: "EPSG:4326",
+    scale: 30
+  });
+
+
+/* Image smoothing. */
+
+if (true) {
+  // Define a circular smoothing kernel of 10 pixels.
+  var Kn = ee.Kernel.circle({
+    radius: 10 // Default units: "pixels".
+  }); 
+  
+  maxNDVI2019 = maxNDVI2019.reduceNeighborhood({
+    // The median reducer is less smooth than the mean reducer, 
+    // but the former one makes the spatial variation of NDVI more abrupt (i.e., less gradual),
+    // which then provides a sharper gradient (i.e., with larger magnitude).
+    reducer: ee.Reducer.median(),
+    kernel: Kn,
+    skipMasked: false // Do NOT mask output pixels if the corresponding input pixel is masked.
+  }).reproject({
+    crs: "EPSG:4326",
+    scale: 30
+  }).rename("maxNDVI2019");
+  
+  avgNDVI2019 = avgNDVI2019.reduceNeighborhood({
+    // The median reducer is less smooth than the mean reducer, 
+    // but the former one makes the spatial variation of NDVI more abrupt (i.e., less gradual),
+    // which then provides a sharper gradient (i.e., with larger magnitude).
+    reducer: ee.Reducer.median(),
+    kernel: Kn,
+    skipMasked: false // Do NOT mask output pixels if the corresponding input pixel is masked.
+  }).reproject({
+    crs: "EPSG:4326",
+    scale: 30
+  }).rename("avgNDVI2019");
+  
+  avgPostNDVI2019 = avgPostNDVI2019.reduceNeighborhood({
+    // The median reducer is less smooth than the mean reducer, 
+    // but the former one makes the spatial variation of NDVI more abrupt (i.e., less gradual),
+    // which then provides a sharper gradient (i.e., with larger magnitude).
+    reducer: ee.Reducer.median(),
+    kernel: Kn,
+    skipMasked: false // Do NOT mask output pixels if the corresponding input pixel is masked.
+  }).reproject({
+    crs: "EPSG:4326",
+    scale: 30
+  }).rename("avgPostNDVI2019");
+  
+  ALOSelv = ALOSelv.reduceNeighborhood({
+    // The mean reducer is smoother than the median reducer, 
+    // which then provides a less scattered gradient direction dataset.
+    reducer: ee.Reducer.mean(),
+    kernel: Kn,
+    skipMasked: false // Do NOT mask output pixels if the corresponding input pixel is masked.
+  }).reproject({
+    crs: "EPSG:4326",
+    scale: 30
+  }).rename("AVE_DSM");
+}
+
+
+/* Compute the gradient magnitude and direction of NDVI and elevation. */
+
+// Compute the image gradient in the X and Y directions.
+var maxNDVIgrad = maxNDVI2019.gradient()
+  .reproject({
+    crs: "EPSG:4326",
+    scale: 30
+  });
+
+var avgNDVIgrad = avgNDVI2019.gradient()
+  .reproject({
+    crs: "EPSG:4326",
+    scale: 30
+  });
+
+var avgPostGrad = avgPostNDVI2019.gradient()
+  .reproject({
+    crs: "EPSG:4326",
+    scale: 30
+  });
+
+var elvGrad = ALOSelv.gradient()
+  .reproject({
+    crs: "EPSG:4326",
+    scale: 30
+  });
+
+// Compute the magnitude of the gradient: "hypot" calculates the magnitude of the 2D vector [x, y].
+var maxNDVImag = maxNDVIgrad.select('y').hypot(maxNDVIgrad.select('x'))
+  .rename("maxNDVImag");
+
+var avgNDVImag = avgNDVIgrad.select('y').hypot(avgNDVIgrad.select('x'))
+  .rename("avgNDVImag");
+
+var avgPostMag = avgPostGrad.select('y').hypot(avgPostGrad.select('x'))
+  .rename("avgPostMag");
+
+var elvMag = elvGrad.select('y').hypot(elvGrad.select('x'))
+  .rename("elvMag");
+
+// Compute the direction of the gradient: "atan2" calculates the angle formed by the 2D vector [x, y].
+var maxNDVIdir = maxNDVIgrad.select('y').atan2(maxNDVIgrad.select('x'))
+  .rename("maxNDVIdir");
+
+var avgNDVIdir = avgNDVIgrad.select('y').atan2(avgNDVIgrad.select('x'))
+  .rename("avgNDVIdir");
+
+var avgPostDir = avgPostGrad.select('y').atan2(avgPostGrad.select('x'))
+  .rename("avgPostDir");
+
+var elvDir = elvGrad.select('y').atan2(elvGrad.select('x'))
+  .rename("elvDir");
+
+
+/* Generate the orientation and gaussian components of ATEI. */
+
+// Calculate the orientation component of ATEI. 
+// ***Need to be updated.
+// Max. Orien.
+var maxAngle = maxNDVIdir.subtract(elvDir).abs()
+  .reproject({
+    crs: "EPSG:4326",
+    scale: 30
+  }).rename("maxNDVIelvAngle");
+
+var center = 3.0309;
+
+var determinedN = 14.7240;
+
+var cos = maxAngle.subtract(center).add(Math.PI);
+
+var base = ee.Image(1).subtract(cos.cos()).divide(2);
+
+var maxOrien = base.pow(determinedN)
+  .rename("maxOrien");
+
+// Avg. Orien.
+var avgAngle = avgNDVIdir.subtract(elvDir).abs()
+  .reproject({
+    crs: "EPSG:4326",
+    scale: 30
+  }).rename("avgNDVIelvAngle");
+
+var center = 3.0576;
+
+var determinedN = 14.8532;
+
+var cos = avgAngle.subtract(center).add(Math.PI);
+
+var base = ee.Image(1).subtract(cos.cos()).divide(2);
+
+var avgOrien = base.pow(determinedN)
+  .rename("avgOrien");
+
+// Avg. postive Orien.
+var postAngle = avgPostDir.subtract(elvDir).abs()
+  .reproject({
+    crs: "EPSG:4326",
+    scale: 30
+  }).rename("avgPostElvAngle");
+
+var center = 2.9955;
+
+var determinedN = 7.6109;
+
+var cos = postAngle.subtract(center).add(Math.PI);
+
+var base = ee.Image(1).subtract(cos.cos()).divide(2);
+
+var postOrien = base.pow(determinedN)
+  .rename("postOrien");
+
+
+// Calculate the Gaussian component of ATEI.
+// ***Need to be updated.
+// Max. Gaus.
+var b = 0.5070;
+
+var denominator = -0.01605632;
+
+var maxNDVIGau = maxNDVI2019.subtract(b).pow(2)
+                    .divide(denominator)
+                    .exp()
+                    .rename("maxNDVIGau");
+
+// Avg. Gaus.
+var b = 0.0982;
+
+var denominator = -0.00155682;
+
+var avgNDVIGau = avgNDVI2019.subtract(b).pow(2)
+                    .divide(denominator)
+                    .exp()
+                    .rename("avgNDVIGau");
+
+// Post. Gaus.
+var b = 0.1458;
+
+var denominator = -0.0017405;
+
+var postNDVIGau = avgPostNDVI2019.subtract(b).pow(2)
+                    .divide(denominator)
+                    .exp()
+                    .rename("postNDVIGau");
+
+
+/* Variable Extraction. */
+
+// Combine the variables of interest.
+var variables = maxNDVImag.addBands(avgNDVImag)
+  .addBands(avgPostMag)
+  .addBands(maxOrien)
+  .addBands(avgOrien)
+  .addBands(postOrien)
+  .addBands(maxNDVIGau)
+  .addBands(avgNDVIGau)
+  .addBands(postNDVIGau)
+  .updateMask(CATE) // Mask the result after computing the gradient to avoid missing pixels along the boundary of the study domain.
+  .updateMask(land) // Remove any remaining water-covered regions.
+  // .float();
+
+// print(variables)
+
+
+/* LR Modelling. */
+
+// Fit the logistic regression model based on all data.
+// Perform the RF regression on the testing data.
+
+// Raw average NDVI.
+var LR_logit_Raw = variables.expression({
+  expression: '-2.70943 + 1577.94752 * maxMag + 0.47197 * maxOrien + 0.01736 * maxGaus ' + 
+    '+ 2205.36385 * avgMag + 1.28471 * avgOrien + 1.92666 * avgGaus', 
+  map: {
+    'maxMag': variables.select('maxNDVImag'),
+    'maxOrien': variables.select('maxOrien'),
+    'maxGaus': variables.select('maxNDVIGau'),
+    'avgMag': variables.select('avgNDVImag'),
+    'avgOrien': variables.select('avgOrien'),
+    'avgGaus': variables.select('avgNDVIGau')
+  }
+}); // Cross-validation accuracy: 0.8558972.
+
+var LR_logitE_Raw = LR_logit_Raw.exp();
+
+// Calculate the ATEI.
+var LRpredictedImg_Raw = LR_logitE_Raw.divide(LR_logitE_Raw.add(1))
+  .rename("Raw_NDVI");
+
+// print(LRpredictedImg_Raw.projection().nominalScale())
+// print(LRpredictedImg_Raw.bandTypes())
+
+// Average positive NDVI.
+var LR_logit_Post = variables.expression({
+  expression: '-2.33408 + 2342.71080 * maxMag + 0.89330 * maxOrien + 0.05594 * maxGaus ' + 
+    '- 387.07364 * avgMag + 0.46284 * avgOrien + 1.41500 * avgGaus', 
+  map: {
+    'maxMag': variables.select('maxNDVImag'),
+    'maxOrien': variables.select('maxOrien'),
+    'maxGaus': variables.select('maxNDVIGau'),
+    'avgMag': variables.select('avgPostMag'),
+    'avgOrien': variables.select('postOrien'),
+    'avgGaus': variables.select('postNDVIGau')
+  }
+}); // Cross-validation accuracy: 0.8389243.
+
+var LR_logitE_Post = LR_logit_Post.exp();
+
+// Calculate the ATEI.
+var LRpredictedImg_Post = LR_logitE_Post.divide(LR_logitE_Post.add(1))
+  .rename("Positive_NDVI");
+
+// print(LRpredictedImg_Post.projection().nominalScale())
+// print(LRpredictedImg_Post.bandTypes())
+
+// Combine the two results.
+var LRpredictedImg = LRpredictedImg_Raw.addBands(LRpredictedImg_Post)
+  .float();
+
+// print(LRpredictedImg.bandTypes())
+
+
+/* Visualization. */
+
+if (false) {
+  var point = ee.Geometry.Point([-113.49153672863031, 48.74125005784002]); // GNP.
+  
+  Map.setOptions("hybrid");
+  Map.centerObject(point, 12);
+  
+  Map.addLayer(LRpredictedImg_Raw, {min: 0.5, max: 1, palette: "FFFFFF, FF0000"}, "LR predicted result (raw NDVI)");
+  Map.addLayer(LRpredictedImg_Post, {min: 0.5, max: 1, palette: "FFFFFF, 0000FF"}, "LR predicted result (positive NDVI)");
+  
+} else if (true) {
+  
+  var outputName = "LR_predictedResult_rawVSpositive_2";
+  
+  Export.image.toAsset({
+    image: LRpredictedImg, 
+    description: outputName, 
+    assetId: wdNorthA + "Pixel_Sampling/Random/" + outputName,
+    region: testing, 
+    scale: 30, 
+    crs: "EPSG:4326", 
+    maxPixels: 1e13
+  });
+}

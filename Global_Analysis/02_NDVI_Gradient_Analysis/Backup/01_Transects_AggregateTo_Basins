@@ -1,0 +1,211 @@
+var NGA = require("users/ChenyangWei/Public:Modules/NDVI_Gradient_Analysis.js");
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var FC_AP = require("users/ChenyangWei/Public:Modules/FeatureCollection_Analysis&Processing");
+
+var loadingTransects = function(wd_Root) {
+  var transects = ee.FeatureCollection(wd_Root
+    + "NDVI_Gradient_Analysis/"
+    + NGA.allTransects_MovWinTempVars_Name);
+  
+  return transects;
+};
+
+var globalTransects = ee.FeatureCollection([
+  loadingTransects(GATE.wd_Asia),
+  loadingTransects(GATE.wd_NorthAmerica),
+  loadingTransects(GATE.wd_SouthAmerica),
+  loadingTransects(GATE.wd_Europe),
+  loadingTransects(GATE.wd_Oceania),
+  loadingTransects(GATE.wd_Africa)
+]).flatten();
+
+FC_AP.Print_FtrColInfo("globalTransects:", 
+  globalTransects);
+
+var filteredTransects = globalTransects.filter(
+  ee.Filter.and(
+    ee.Filter.gte("elvGrad_Num", 10),
+    ee.Filter.gte("avgNDVI_Num", 10),
+    ee.Filter.gte("movWin_Num", 5)
+  )
+);
+
+// FC_AP.Examine_FtrCol_PropertyPercentiles(
+//   "filteredTransects:", filteredTransects, 
+//   "movWin_Num", 5);
+
+// FC_AP.Print_FtrColInfo("filteredTransects:", 
+//   filteredTransects);
+
+var NDVIsd_Name = "movWin_MaxNDVIsd";
+
+FC_AP.Examine_FtrCol_PropertyPercentiles(
+  "filteredTransects:", filteredTransects, 
+  NDVIsd_Name, 5);
+
+var filteredTransects_1 = filteredTransects.filter(
+  ee.Filter.lt(NDVIsd_Name, 0.1631) // p75.
+);
+
+FC_AP.Print_FtrColInfo("filteredTransects_1:", 
+  filteredTransects_1);
+
+// FC_AP.Examine_FtrCol_PropertyPercentiles(
+//   "filteredTransects:", filteredTransects, 
+//   NDVIsd_Name, 5); // p100: 0.16309970722484932.
+
+var filteredTransects_2 = filteredTransects.filter(
+  ee.Filter.lt(NDVIsd_Name, 0.2)
+);
+
+FC_AP.Print_FtrColInfo("filteredTransects_2:", 
+  filteredTransects_2);
+
+// FC_AP.Examine_FtrCol_PropertyPercentiles(
+//   "filteredTransects:", filteredTransects, 
+//   NDVIsd_Name, 5);
+
+Map.addLayer(globalTransects, {color: "FF0000"}, "globalTransects");
+Map.addLayer(filteredTransects_2, {color: "0000FF"}, "filteredTransects_2");
+Map.addLayer(filteredTransects_1, {color: "FFFF00"}, "filteredTransects_1");
+
+
+var aggregate_Transects_byBasin = 
+  function(rawTransects, rawBasins) {
+    
+    var reducer_Name = "Median";
+    
+    // ElvGrad.
+    var gradTrend_Name = "gradTrend_" + reducer_Name;
+    
+    var gradMean_Name = "gradMean_" + reducer_Name;
+    
+    // AvgNDVI.
+    var ndviTrend_Name = "ndviTrend_" + reducer_Name;
+    
+    var ndviMean_Name = "ndviMean_" + reducer_Name;
+    
+    // Reducer.
+    var aggregation_Reducer = ee.Reducer.median();
+    
+    var gradTrend_Reducer = aggregation_Reducer.setOutputs([gradTrend_Name]);
+    var gradMean_Reducer = aggregation_Reducer.setOutputs([gradMean_Name]);
+    
+    var ndviTrend_Reducer = aggregation_Reducer.setOutputs([ndviTrend_Name]);
+    var ndviMean_Reducer = aggregation_Reducer.setOutputs([ndviMean_Name]);
+    
+    var final_Reducer = gradTrend_Reducer.combine({
+      reducer2: gradMean_Reducer, 
+      sharedInputs: false
+    }).combine({
+      reducer2: ndviTrend_Reducer, 
+      sharedInputs: false
+    }).combine({
+      reducer2: ndviMean_Reducer, 
+      sharedInputs: false
+    });
+    
+    // Determine the names of other properties of interest.
+    var HybasID_rawName = "HYBAS_ID";
+    
+    var HybasID_name = "Hybas_ID";
+    
+    var basinResults_List = ee.List(rawTransects.reduceColumns({
+      selectors: ["elvGrad_Trend", "elvGrad_Mean",
+                  "avgNDVI_Trend", "avgNDVI_Mean", 
+                  HybasID_name],
+      reducer: final_Reducer.group({
+        groupField: 4,
+        groupName: HybasID_name,
+      })
+    }).get("groups"));
+    
+    // Convert the generated List to a FeatureCollection.
+    var basinResults_FtrCol = ee.FeatureCollection(basinResults_List.map(
+      function(listElement) {
+        
+        // Create a Feature with NULL geometry.
+        return ee.Feature(null).set(listElement);
+      }));
+  
+    // Combine each aggregated Feature with the corresponding basin geometry.
+    var basinResults_withGeometries = FC_AP.combine_twoFtrCols_primaryGeometriesANDsecondaryProperties(
+      rawBasins, basinResults_FtrCol, HybasID_rawName, HybasID_name
+    );
+  
+    // Return a FeatureCollection.
+    return basinResults_withGeometries;
+  };
+
+
+var raw_Basins = ee.FeatureCollection("WWF/HydroSHEDS/v1/Basins/hybas_12");
+
+var aggregationResults_1 = aggregate_Transects_byBasin(
+  filteredTransects_1, raw_Basins
+);
+
+var aggregationResults_2 = aggregate_Transects_byBasin(
+  filteredTransects_2, raw_Basins
+);
+
+// FC_AP.Print_FtrColInfo("aggregationResults_1:", 
+//   aggregationResults_1);
+
+
+
+
+// Export the final result.
+var wd_Output = GATE.wd_Europe
+  + "NDVI_Gradient_Analysis/";
+
+
+// var fileName = "Testing_GlobalAllTransects";
+
+// Export.table.toAsset({
+//   collection: globalTransects, 
+//   description: fileName, 
+//   assetId: wd_Output
+//     + fileName
+// });
+
+
+// var fileName = "Testing_GlobalFilteredTransects";
+
+// Export.table.toAsset({
+//   collection: filteredTransects, 
+//   description: fileName, 
+//   assetId: wd_Output
+//     + fileName
+// });
+
+
+// var fileName = "Testing_GlobalFilteredTransects_ndviSD_lt_Pt2";
+
+// Export.table.toAsset({
+//   collection: filteredTransects, 
+//   description: fileName, 
+//   assetId: wd_Output
+//     + fileName
+// });
+
+
+// Basins.
+var fileName = "Testing_BasinResults_1";
+
+Export.table.toAsset({
+  collection: aggregationResults_1, 
+  description: fileName, 
+  assetId: wd_Output
+    + fileName
+});
+
+
+var fileName = "Testing_BasinResults_2";
+
+Export.table.toAsset({
+  collection: aggregationResults_2, 
+  description: fileName, 
+  assetId: wd_Output
+    + fileName
+});
+

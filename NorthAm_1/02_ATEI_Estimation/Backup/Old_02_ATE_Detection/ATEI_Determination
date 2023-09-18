@@ -1,0 +1,120 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var sampled = ee.FeatureCollection("users/treeline/NorthAmerica_GME/Pixel_Sampling/Validation/Edited_Combined_Stratified_Sampling_noUC_centroids_6subs_anlATEIcomponents_L5_westernUS_2009to2011");
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+print("Samples:", sampled.size(), sampled.first());
+
+// Holdout split.
+var split = 0.5;
+
+// Define a range of tree numbers.
+var treeNumMin = 5;
+var treeNumMax = 50;
+var treeNums = ee.List.sequence(treeNumMin, treeNumMax);
+
+// Random seeds for split the samples.
+var seeds = ee.List.sequence(1, 100);
+
+// Try different number of trees and different splits of the samples.
+var avgRFresults = ee.FeatureCollection(treeNums.map(function(n){
+  var treeNum = ee.Number(n);
+  
+  // Variable of predict property
+  var old_rf = 'InOut';
+  
+  // variable for the newly predicted 
+  var new_rf = ee.String(old_rf).cat('_rf');
+  
+  // Create a Random Forest classifier with custom parameters.
+  var classifier = ee.Classifier.smileRandomForest({
+    numberOfTrees: treeNum, 
+    variablesPerSplit: null, // If unspecified, uses the square root of the number of variables.
+    minLeafPopulation: 1, 
+    bagFraction: 0.5, 
+    maxNodes: null, // If unspecified, defaults to no limit.
+    seed: 17
+  });
+  
+  
+  var RFresults = ee.FeatureCollection(seeds.map(function(seed) {
+    // Randomly split the data into training and testing datasets.
+    var samples = sampled.randomColumn('RAND', seed);
+    var training = samples.filter(ee.Filter.lt('RAND', split));
+    var testing = samples.filter(ee.Filter.gte('RAND', split));
+    
+    // Train the classifier.  
+    var RFtrain = classifier.setOutputMode('REGRESSION') 
+      .train({
+        features: training, 
+        classProperty: old_rf, 
+        inputProperties: ["Orie", "Grad", "Gaus"]
+      });   
+        
+    // Perform the RF regression on the testing set
+    var RFtest = testing.classify({
+      classifier: RFtrain, 
+      outputName: new_rf
+    });
+    
+    // Correlation between observation and predict 
+    var correlation = RFtest.reduceColumns({
+      reducer: ee.Reducer.pearsonsCorrelation(),
+      selectors: [old_rf, new_rf]
+    });
+    
+    // Accuracy assessment.
+    var errorMatrix = RFtest.errorMatrix({
+      actual: old_rf, 
+      predicted: new_rf
+    });
+    
+    var accuracy = errorMatrix.accuracy();
+    
+    var RFresult = ee.Feature(null,
+    {
+      R: correlation.get('correlation'),
+      accuracy: accuracy
+    });
+  
+    return RFresult;
+  }));
+  
+  // Average correlation and accuracy of the RFresults.
+  var avgR = RFresults.aggregate_mean('R');
+  var avgAccuracy = RFresults.aggregate_mean('accuracy');
+  
+  var avgRFresult = ee.Feature(null,
+    {
+      treeNum: treeNum,
+      avgR: avgR,
+      avgAccuracy: avgAccuracy
+    });
+  
+  return avgRFresult;
+}));
+
+print("Average RF results", avgRFresults);
+
+// Scatterplot of treeNum  &  R 
+var x = avgRFresults.aggregate_array('treeNum');
+var y = avgRFresults.aggregate_array('avgR');
+var chart = ui.Chart.array.values(y, 0, x);
+chart = chart.setOptions({
+  hAxis: { title: 'Tree Number', viewWindow: {min:treeNumMin, max:treeNumMax} },
+  vAxis: { title: 'Average R', viewWindow: {min:-1, max:1} },
+  pointSize: 1,
+  legend: 'none'
+});
+print(chart);
+
+// Scatterplot of treeNum  &  accuracy. 
+var x = avgRFresults.aggregate_array('treeNum');
+var y = avgRFresults.aggregate_array('avgAccuracy');
+var chart = ui.Chart.array.values(y, 0, x);
+chart = chart.setOptions({
+  hAxis: { title: 'Tree Number', viewWindow: {min:treeNumMin, max:treeNumMax} },
+  vAxis: { title: 'Average Accuracy', viewWindow: {min:0, max:1} },
+  pointSize: 1,
+  legend: 'none'
+});
+print(chart);
+

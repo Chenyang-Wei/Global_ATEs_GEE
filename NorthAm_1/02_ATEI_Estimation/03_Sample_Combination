@@ -1,0 +1,99 @@
+/**
+ * Introduction:
+ * 1) Combine the previously sampled points in the western U.S. 
+ *  (random and stratified samplings) and 
+ *  the 1000 new samples manually collected in North America.
+ * 2) Extract the samples within the climatic ATE 
+ *  from the combination result.
+ * 
+ * Update: 3/12/2021.
+ * 
+ * Runtime: 51s.
+*/
+
+
+/* Load the required datasets. */
+
+// Set the working directory.
+var wdNA = "users/treeline/NorthAmerica_GME/";
+
+// Load the two types of sampled points.
+var nonManual = ee.FeatureCollection(wdNA + "Pixel_Sampling/" +
+  "Combined_RandomANDStratified_Sampling_noUC_centroids_westernUS_2009to2011");
+
+// print("nonManual:", nonManual.first(), 
+//   nonManual.size(), 
+//   nonManual.geometry().projection().crs())
+
+var manual = ee.FeatureCollection(wdNA + "Pixel_Sampling/" +
+  "manuallySampled_1000points_NorthAmerica");
+
+// print("manual:", manual.first(), 
+//   manual.size(), 
+//   manual.geometry().projection().crs())
+
+// Load the new CATE.
+var newCATE = ee.Image(wdNA + "Climate-Based_ATE/" +
+  "30mNewCATE_gteSmd10kmCForestElv_3kmCForestBuffer_BufRawCATEclosedForests_AOI");
+
+print("newCATE:", newCATE.bandTypes(),
+  newCATE.projection().crs(),
+  newCATE.projection().nominalScale())
+
+
+/* Combine the previously sampled points in the western U.S. 
+  (random and stratified samplings) and 
+  the 1000 new samples manually collected in North America. */
+
+var combined = manual.merge(nonManual);
+
+// print("combined:", combined.first(), 
+//   combined.size(), 
+//   combined.geometry().projection().crs())
+
+
+/* Add a new property about whether a sample is located within the ATE. */
+
+var within = combined.filter(ee.Filter.eq("Class", "Within")).map(function(feature) {
+  return feature.set({
+    withinATE: 1
+  });
+});
+
+var outside = combined.filter(ee.Filter.neq("Class", "Within")).map(function(feature) {
+  return feature.set({
+    withinATE: 0
+  });
+});
+
+var newSamples = within.merge(outside);
+
+
+/* Extract the samples within the new CATE. */
+
+var samples_newCATE = newCATE.reduceRegions({
+  collection: newSamples, 
+  reducer: ee.Reducer.first().setOutputs(["InNewCATE"]), 
+  scale: 30, 
+  crs: "EPSG:4326"
+});
+
+var samplesInCATE = samples_newCATE.filter(ee.Filter.notNull(["InNewCATE"]));
+
+print("samplesInCATE:", samplesInCATE.first(), 
+  samplesInCATE.size(), 
+  samplesInCATE.geometry().projection().crs())
+
+
+// Export the result.
+if (true) {
+  var fileName = "ManualRandomStratified_CombinedSamples_In30mNewCATE";
+  
+  Export.table.toAsset({
+    collection: samplesInCATE, 
+    description: fileName, 
+    assetId: wdNA + "ATEI_Estimation/" 
+      + fileName
+  });
+}
+

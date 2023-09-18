@@ -1,0 +1,112 @@
+/**
+ * Introduction: 
+ * 1) Aggregate the surrounding forest elevation of the extracted CATE from 500-m to 10-km grids.  
+ * 
+ * Date: 7/11/2020.
+ * 
+ * Launch time: 2m.
+ */
+
+
+/* Setup. */
+
+// Define the extent of North America. 
+var northAmerica = ee.Geometry.Polygon({
+    coords: [[[-165.69002926658334, 72.44551256468144],
+          [-169.40248634956492, 65.69009098298687],
+          [-172.25893166206492, 63.826281515474996],
+          [171.35638590722195, 52.855285271231274],
+          [-159.1340353549648, 17.264443722753843],
+          [-122.14862062448367, 9.59539750905343],
+          [-79.06711256993691, 6.243890041056693],
+          [-77.03677448989225, 7.40316087095261],
+          [-76.78408894301725, 8.990725120234067],
+          [-75.7244458156751, 12.403191738791786],
+          [-71.5276684719251, 13.751533985801833],
+          [-62.8264965969251, 11.651035844929385],
+          [-62.005942990095036, 9.999896817210585],
+          [-60.791953732282536, 9.96743692413247],
+          [-55.5884807162513, 13.889226127218825],
+          [-47.99315852039507, 58.68729606716915],
+          [-66.52860968724042, 71.51769835770313],
+          [-77.86650031224042, 74.25356562488685],
+          [-89.90751593724042, 74.22969620284344],
+          [-106.04844453284761, 74.3012200035139],
+          [-114.63975312659761, 74.20581277506923],
+          [-120.18954789130242, 74.88484689543225],
+          [-136.27353226630242, 74.6772015427699]]],
+    geodesic: true
+});
+
+// Asset path.
+var wdNorthA = "users/treeline/NorthAmerica_GME/CATE/";
+
+// Load the elevation dataset at the 500-m level.
+var rawElv = ee.Image(wdNorthA + "500mCATE_3kmSurroundingCopernicusClsdFrstElv_500mMean");
+
+// print("Raw elevation:", rawElv.bandTypes(), 
+//   rawElv.projection().crs(), 
+//   rawElv.projection().nominalScale())
+
+
+/* Aggregate the forest elevation to the 10-km level. */
+
+// Determine the new resolution.
+var newScale = 1e4; // In meters.
+
+// Factor of the resolution scaling of each axis based on the 500-m dataset.
+var factor = Math.ceil(newScale / 500);
+
+// Generate a mean reducer.
+var meanRd = ee.Reducer.mean();
+
+// Elevation aggregation.
+var aggrElv = rawElv.reduceResolution({ 
+  reducer: meanRd,
+  maxPixels: factor * factor
+}).reproject({ 
+  crs: "EPSG:4326",
+  scale: newScale
+});
+
+// Set the mask of each valid pixel to 1.
+var nomaskElv = aggrElv.updateMask(aggrElv.gte(-1e18));
+
+// Set dataset to the float type.
+var floatElv = nomaskElv.float();
+
+print("Aggregated elevation:", floatElv.bandTypes(), 
+  floatElv.projection().crs(), 
+  floatElv.projection().nominalScale());
+
+
+if (false) {
+  /* Visualization. */
+  
+  var elvPalette = ['006600', '002200', 'fff700', 'ab7634', 'c4d0ff', 'ffffff'];
+  var elvVis = {min: 1000, max: 3500, palette: elvPalette};
+  
+  Map.setOptions("hybrid");
+  
+  Map.setCenter(-113.655, 48.734, 12);
+  
+  Map.addLayer(rawElv, elvVis, "500m forest elevation", true);
+  Map.addLayer(floatElv, elvVis, "10km forest elevation", true);
+}
+
+else {
+  /* Output the result. */
+  
+  var fileName = "500mCATE_3kmSurroundingCopernicusClsdFrstElv_10kmMean";
+  
+  Export.image.toAsset({
+    image: floatElv, 
+    description: fileName, 
+    assetId: wdNorthA + fileName,
+    region: northAmerica, 
+    crs: "EPSG:4326",
+    scale: newScale,
+    maxPixels: 1e13
+  });
+}
+

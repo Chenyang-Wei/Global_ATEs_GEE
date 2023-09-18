@@ -1,0 +1,129 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var Test = 
+    /* color: #d63000 */
+    /* displayProperties: [
+      {
+        "type": "rectangle"
+      }
+    ] */
+    ee.Geometry.Polygon(
+        [[[-122.00637238163952, 49.09867748385324],
+          [-122.00637238163952, 48.57077986125027],
+          [-121.20986359257702, 48.57077986125027],
+          [-121.20986359257702, 49.09867748385324]]], null, false);
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+/*
+  Introduction:
+    1) Compare the modeling results of random forest and logistic regression in Glacier National Park.
+  
+  Update:
+    10/21/2020.
+*/
+
+
+/* Setup. */
+
+// Asset path.
+var wd = "users/treeline/NorthAmerica_GME/Pixel_Sampling/Random/";
+
+// Predictions of 1984 and 2019.
+var pred1984 = ee.Image(wd + "LRvsRF_predictedImg_1984");
+var pred2019 = ee.Image(wd + "LRvsRF_predictedImg_2019");
+
+
+/* Visualize the prediction results. */
+
+// Define visualization arguments.
+var palette = ["a50026","d73027","f46d43","fdae61","fee090",
+  "ffffbf","e0f3f8","abd9e9","74add1","4575b4","313695"]
+  .reverse();
+
+var visArgs = {min: 0, max: 1, palette: palette};
+
+// RF modeling result.
+var RF_1984 = pred1984.select("RFpredictedImg_Raw")
+  .visualize(visArgs);
+var RF_2019 = pred2019.select("RFpredictedImg_Raw")
+  .visualize(visArgs);
+
+// LR modeling result.
+var LR_1984 = pred1984.select("LRpredictedImg_Raw")
+  .visualize(visArgs);
+var LR_2019 = pred2019.select("LRpredictedImg_Raw")
+  .visualize(visArgs);
+
+
+/* Fading visualization. */
+
+// Define a sequence of decreasing opacity increments. Note that opacity cannot
+// be 0, so near 1 and 0 are used. Near 1 is needed because a compliment is
+// calculated in a following step that can result in 0 if 1 is an element of the
+// list.
+var opacityList = ee.List.sequence({start: 0.99999, end: 0.00001, count: 20});
+
+// Map over the list of opacity increments to iteratively adjust the opacity of
+// the two solstice images. Returns a list of images.
+var RF_imgList = opacityList.map(function(opacity) {
+  var opacityCompliment = ee.Number(1).subtract(ee.Number(opacity));
+  var RF1984_fade = RF_1984.visualize({opacity: opacity});
+  var RF2019_fade = RF_2019.visualize({opacity: opacityCompliment});
+  return RF2019_fade.blend(RF1984_fade).set('opacity', opacity);
+});
+
+var LR_imgList = opacityList.map(function(opacity) {
+  var opacityCompliment = ee.Number(1).subtract(ee.Number(opacity));
+  var LR1984_fade = LR_1984.visualize({opacity: opacity});
+  var LR2019_fade = LR_2019.visualize({opacity: opacityCompliment});
+  return LR2019_fade.blend(LR1984_fade).set('opacity', opacity);
+});
+
+// Convert the image list to an image collection; the forward phase.
+var RF_fadeForward = ee.ImageCollection.fromImages(RF_imgList);
+var LR_fadeForward = ee.ImageCollection.fromImages(LR_imgList);
+
+// Make a copy of the collection that is sorted by ascending opacity to
+// represent the reverse phase.
+var RF_fadeBackward = RF_fadeForward.sort({property: 'opacity'});
+var LR_fadeBackward = LR_fadeForward.sort({property: 'opacity'});
+
+// Merge the forward and reverse phase frame collections.
+var RF_fadeCol = RF_fadeForward.merge(RF_fadeBackward);
+var LR_fadeCol = LR_fadeForward.merge(LR_fadeBackward);
+
+// Define animation arguments.
+var videoArgs = {
+  dimensions: 768,
+  region: Test,
+  framesPerSecond: 10,
+  crs: 'EPSG:3857'
+};
+
+// Display the animation.
+print("Random forest predictions (1984 vs. 2019):", ui.Thumbnail(RF_fadeCol, videoArgs));
+print("Logistic regression predictions (1984 vs. 2019):", ui.Thumbnail(LR_fadeCol, videoArgs));
+
+
+/* Show the results on the map. */
+
+if (true) {
+  // var palettes = require('users/gena/packages:palettes');
+  // var palette = palettes.colorbrewer.RdYlBu[11].reverse();
+  
+  // var point = ee.Geometry.Point([-113.49153672863031, 48.74125005784002]); // GNP.
+  
+  Map.setOptions("hybrid");
+  Map.centerObject(Test, 10);
+  
+  Map.addLayer(RF_1984, 
+    null, "RF prediction (1984)");
+  
+  Map.addLayer(LR_1984, 
+    null, "LR prediction (1984)");
+  
+  Map.addLayer(RF_2019, 
+    null, "RF prediction (2019)");
+  
+  Map.addLayer(LR_2019, 
+    null, "LR prediction (2019)");
+}
+

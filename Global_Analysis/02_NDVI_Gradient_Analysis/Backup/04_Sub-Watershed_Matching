@@ -1,0 +1,72 @@
+/**
+ * Introduction:
+ * 
+ * 1) Merge the aggregated variables with the corresponding sub-watersheds.
+ * 2) Output the variables with geometries to Google Drive and GEE Asset.
+ * 
+ * Runtime: 11m (shared).
+ * 
+ * Update: 5/6/2022.
+ */
+
+
+/* Load module(s). */
+
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var FC_AP = require("users/ChenyangWei/Public:Modules/FeatureCollection_Analysis&Processing");
+var NGA = require("users/ChenyangWei/Public:Modules/NDVI_Gradient_Analysis.js");
+
+
+/* Data loading. */
+
+// Set the major working directory.
+var wd_Main = GATE.wd_Global;
+
+// Load the aggregated variables without geometries.
+var HybasMeans = ee.FeatureCollection(wd_Main
+  + "NDVI_Gradient_Analysis/"
+  + "HybasMeans_GMBAv2br300");
+
+
+/* 1) Merge the aggregated variables with the corresponding sub-watersheds. */
+
+var HybasMeans_withGeoms = NGA.Merge_BasinsANDaggregatedVars(HybasMeans);
+
+
+// Whether to output the result.
+var output = true; // true OR false.
+
+
+if (!output) {
+  
+  // Data examination.
+  FC_AP.Print_FtrColInfo("HybasMeans_withGeoms:", 
+    HybasMeans_withGeoms);
+
+} else {
+  
+  /* 2) Output the variables with geometries to Google Drive and GEE Asset. */
+  
+  var fileName = "HybasMeans_GMBAv2br300_withGeoms";
+  
+  // Google Drive.
+  Export.table.toDrive({
+    collection: HybasMeans_withGeoms, 
+    description: fileName + "_SHP", 
+    folder: fileName + "_SHP", 
+    fileFormat: "SHP"
+  });
+  
+  
+  // GEE Asset.
+  var wd_Output = wd_Main
+    + "NDVI_Gradient_Analysis/";
+  
+  Export.table.toAsset({
+    collection: HybasMeans_withGeoms, 
+    description: fileName, 
+    assetId: wd_Output
+      + fileName
+  });
+}
+

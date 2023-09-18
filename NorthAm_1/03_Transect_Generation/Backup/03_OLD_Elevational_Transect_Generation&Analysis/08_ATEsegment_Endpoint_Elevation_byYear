@@ -1,0 +1,117 @@
+/**
+ * Introduction:
+ * 1) Extract the endpoint elevations of each ATE segment by year.
+ * 
+ * Update: 4/20/2021.
+ * 
+ * Runtime: 4h ~ 16h.
+*/
+
+
+/* Data preparation. */
+
+// Set the 10-km buffered bounding box of the study domain.
+var AOI = ee.Geometry.Rectangle({
+  coords: [-180, 7.114761500193937, -52.095625030545534, 80.24342770493531],
+  geodesic: false
+});
+
+// A target projection system.
+var targetPrj = {
+  crs: "EPSG:4326", 
+  scale: 30
+};
+
+// Set the working directory.
+var wdNA = "users/treeline/NorthAmerica_GME/";
+
+// Function to print the image information.
+function printImgInfo(name, image) {
+  print(name,
+    image.bandTypes(),
+    image.projection().crs(),
+    image.projection().nominalScale());
+}
+
+// ALOS elevation (Version 3.2, released in January 2021) in the AOI.
+var ALOSelv = ee.ImageCollection('JAXA/ALOS/AW3D30/V3_2').select('DSM')
+  .filterBounds(AOI)
+  .mosaic()
+  .reproject(targetPrj);
+
+// printImgInfo("ALOSelv:", ALOSelv)
+
+
+/* Self-defined function(s). */
+
+// Function to extract the endpoint elevations of each annual ATE segment.
+function extractEndPtElvs(ATEseg) {
+  // Generate a geometry for the two endpoints.
+  var endPt1Long = ATEseg.get("endPt1Long");
+  var endPt1Lat = ATEseg.get("endPt1Lat");
+  
+  var endPt2Long = ATEseg.get("endPt2Long");
+  var endPt2Lat = ATEseg.get("endPt2Lat");
+  
+  var endPoints = ee.Geometry.MultiPoint([[endPt1Long, endPt1Lat], [endPt2Long, endPt2Lat]]);
+  
+  // Extract the endpoint elevations.
+  var endPtElvs = ALOSelv.reduceRegion({
+    reducer: ee.Reducer.toList(), 
+    geometry: endPoints, 
+    scale: 30, 
+    crs: "EPSG:4326"
+  }).get("DSM");
+  
+  // Sort the extracted elevations.
+  var sortedElvs = ee.List(endPtElvs).sort();
+  
+  // Extract the number of elevation values.
+  //  (Note: There might be only one value in some case.)
+  var elv_num = sortedElvs.size();
+  
+  // Get the lower endpoint and upper endpoint elevations, respectively.
+  var lowerPtElv = sortedElvs.get(0);
+  var upperPtElv = sortedElvs.get(ee.Number(elv_num).subtract(1));
+  
+  return ATEseg.set({
+    lowerPtElv: lowerPtElv,
+    upperPtElv: upperPtElv
+  });
+}
+
+
+/* Extract the endpoint elevations of each ATE segment by year. */
+
+for (var year = 1984; year <= 2020; year ++) {
+  // Load the annual ATE segments in the corresponding year.
+  var annualSegName = "AnnualATEsegments_" + year;
+  var annualATEsegs = ee.FeatureCollection(wdNA + 
+    "Transect_Analysis/AnnualATEsegments_CenterLines_ATEIgtPt4329/" + 
+    annualSegName);
+  
+  // print(annualSegName, 
+  //   annualATEsegs.first(), // 1984: 157270; 2020: 187252.
+  //   annualATEsegs.size()) // 16 properties.
+  
+  // Extract the endpoint elevations of each annual ATE segment.
+  var annualEndPtElvs = annualATEsegs.map(extractEndPtElvs);
+  
+  // print(annualSegName, 
+  //   annualEndPtElvs.size(), // 1984: 157270; 2020: 187252.
+  //   annualEndPtElvs.first()) // 18 properties.
+
+  if (true) {
+    // Output the annual result to the Drive.
+    var fileName = "AnnualEndPtElvs_" + year;
+    var folderName = "Annual_ATEsegment_EndPtElvs";
+    
+    Export.table.toDrive({
+      collection: annualEndPtElvs, 
+      description: fileName, 
+      folder: folderName, 
+      fileFormat: "CSV"
+    });
+  }
+}
+

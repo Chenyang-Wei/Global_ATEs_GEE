@@ -1,0 +1,70 @@
+/*
+  Introduction:
+  1) Combine and export the grouped transects with the annual sums of the ATEI and the ATEI-weighted elevation.
+  
+  Update:
+  1/19/2021.
+  
+  Runtime: 
+  To Drive: 34m ("SHP").
+*/
+
+
+// Set the work directory.
+var wd = "users/treeline/NorthAmerica_GME/";
+
+// Create a list of start indices.
+var startIndices = ee.List.sequence(0, 120, 5).getInfo();
+
+
+/* Combine the grouped transects. */
+
+// Combine the grouped transects.
+var combinedTransects = ee.FeatureCollection(startIndices.map(function(startIndex) {
+  var endIndex = startIndex + 5;
+  var fileName = "Basins_" + startIndex + "to" + endIndex;
+  var transects = ee.FeatureCollection(wd + 
+    "Transects/SelectedHybas4Basins_closedForestsLowerSlopeValley_nonForestedUpperSlope/" +
+    "ATEIwtdElv_ATEI_transectSum/" + fileName);
+  
+  return transects;
+})).flatten();
+
+// print("combinedTransects:", 
+//   combinedTransects.size(), // 469998.
+//   combinedTransects.first())
+
+
+/* Export the combined transects. */
+
+var fileName = "ATEIwtdElv_ATEI_transectSum_closedForestsLowerSlopeValley_nonForestedUpperSlope";
+
+if (false) {
+  // Output the result to the Asset.
+  Export.table.toAsset({
+    collection: combinedTransects, 
+    description: fileName, 
+    assetId: wd + 
+      "Transects/ATEI_analysis/" + 
+      fileName
+  });
+
+} else if (false) {
+  // Output a CSV file to the Drive.
+  Export.table.toDrive({
+    collection: combinedTransects, 
+    description: fileName, 
+    folder: fileName, 
+    fileFormat: "CSV"
+  });
+  
+} else if (true) {
+  // Output a SHP file to the Drive.
+  Export.table.toDrive({
+    collection: combinedTransects, 
+    description: fileName, 
+    folder: fileName, 
+    fileFormat: "SHP"
+  });
+}
+

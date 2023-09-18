@@ -1,0 +1,549 @@
+/**
+ * Introduction:
+ * 1) Merge the annual divides with the combined center lines.
+ * 
+ * Update: 2/16/2021.
+ * 
+ * Runtime: 1m ~ 26m.
+*/
+
+
+/* Load datasets. */
+
+// Set the work directory.
+var wd = "users/treeline/NorthAmerica_GME/";
+
+// Combined center lines.
+var combined = ee.FeatureCollection(wd
+  + "Transects/SelectedHybas4Basins_closedForestsLowerSlopeValley_nonForestedUpperSlope/"
+  + "CenterLines/"
+  + "Combined_CenterLines");
+// print(combined.first(), combined.size())
+
+// Buffer the center lines.
+var bufDist = 45;
+
+var bufferedCL = combined.map(function(CL) {
+  return CL.buffer(bufDist);
+});
+
+/* Merge the divides with the combined center lines in each year. */
+
+var years = ee.List.sequence(1984, 2019).getInfo();
+
+var filePath = wd
+  + "Transects/SelectedHybas4Basins_closedForestsLowerSlopeValley_nonForestedUpperSlope/"
+  + "CenterLines/"
+  + "AnnualDivides_AnnualATEI_Pt307toPt507/"
+  + "AnnualDivides_";
+
+var divides = ee.List(years.map(function(year) {
+  // Get the divides in each year.
+  var dividesPath = filePath + year;
+  var annualDivides = ee.FeatureCollection(dividesPath).map(function(feature) {
+    return feature.buffer(bufDist);
+  });
+  
+  return annualDivides.set("Year", year);
+}));
+// print(divides)
+
+
+/* Merge the annual divides with the combined center lines. */
+
+// var merged = ee.FeatureCollection(years.map(function(year) {
+var merged = ee.FeatureCollection(divides.map(function(annualDivides) {
+  // Get the divides in each year.
+  // var dividesPath = filePath + year;
+  // var annualDivides = ee.FeatureCollection(dividesPath);
+  annualDivides = ee.FeatureCollection(annualDivides);
+  var year = annualDivides.get("Year");
+  
+  // Annually merge the divides with each center line.
+  var annuallyMerged = combined.map(function(centerLine) {
+    // Select the divides intersecting with each center line.
+    var intersectedDivides = annualDivides.filterBounds(centerLine.geometry());
+    
+    // Get the properties of interest.
+    var mergedCenterLine = centerLine.set({
+      intersectedDivides: intersectedDivides,
+      intersectedDividesNo: intersectedDivides.size(), // Number of the intersected divides.
+      Year: year
+    });
+    
+    return mergedCenterLine;
+  });
+  
+  // Extract the center lines with one set of intersected divides (two cuts).
+  var annuallyMerged_filtered = annuallyMerged.filter(
+    ee.Filter.eq("intersectedDividesNo", 1));
+  
+  // Get the properties of interest from the intersected divides.
+  annuallyMerged_filtered = annuallyMerged_filtered.map(function(centerLine) {
+    var intersectedDivides = ee.FeatureCollection(centerLine.get("intersectedDivides"));
+    
+    var propertiesCopied = centerLine.copyProperties({
+      source: intersectedDivides.first(), 
+      properties: ["ATElen", "divideCount",
+        "dvd1Lat", "dvd1Long",
+        "dvd2Lat", "dvd2Long",
+        "pxCount"]
+    });
+    
+    // Remove the FeatureCollection-type property: intersectedDivides.
+    propertiesCopied = ee.Feature(propertiesCopied).select(propertiesCopied.propertyNames()
+      .remove("intersectedDivides"));
+    
+    return ee.Feature(propertiesCopied)//.buffer(bufDist);
+  });
+  
+  return annuallyMerged_filtered;
+})).flatten();
+
+// print(merged.first(), merged.size()) // 16941348.
+// print(merged.first())
+
+// // Create a filter to define a match as overlapping endpoints.
+// var sameEndpoints = ee.Filter.and(
+//   ee.Filter.equals({
+//     leftField: "maxLat", 
+//     rightField: "maxLat"
+//   }),
+//   ee.Filter.equals({
+//     leftField: "maxLong", 
+//     rightField: "maxLong"
+//   }),
+//   ee.Filter.equals({
+//     leftField: "minLat", 
+//     rightField: "minLat"
+//   }),
+//   ee.Filter.equals({
+//     leftField: "minLong", 
+//     rightField: "minLong"
+//   })
+// );
+
+// // Define the join.
+// var saveAllJoin = ee.Join.saveAll({
+//   matchesKey: "annualDivides", 
+//   ordering: "Year", 
+//   ascending: true, 
+//   measureKey: "sameEndpoints"
+// });
+
+// // Apply the join.
+// var joined = saveAllJoin.apply(bufferedCL, merged, sameEndpoints);
+
+// print(joined.first(), joined.size())
+
+// Annually merge the divides with each center line.
+var intersectedCLs = bufferedCL.map(function(centerLine) {
+  // Select the divides intersecting with the centroid of each center line.
+  // var intersectedMerged = ee.FeatureCollection(merged.filterBounds(centerLine.geometry()))
+  var intersectedMerged = ee.FeatureCollection(merged.filterBounds(centerLine.geometry().centroid()))
+    .toList(36);
+  // var intersectedMerged = merged.filterBounds(centerLine.geometry());
+  
+  // Get the properties of interest.
+  var intersectedCenterLine = centerLine.set({
+    AnnualATE: intersectedMerged,
+    ATEno: intersectedMerged.size(), // Number of the intersected divides.
+  });
+  
+  return intersectedCenterLine;
+});
+
+// print(intersectedCLs.first(), intersectedCLs.size())
+
+// Extract the center lines with at least 10 years with divides.
+intersectedCLs = intersectedCLs.filter(
+  ee.Filter.gte("ATEno", 10));
+// print(intersectedCLs.first(), intersectedCLs.size())
+print(intersectedCLs.first())
+
+/* Click a transect and get the local information. */
+
+// var clicked = merged.filterBounds(geometry);
+// print(clicked.size())
+
+Map.setOptions("hybrid");
+Map.setCenter(-113.9881, 48.9362, 13);
+Map.addLayer(bufferedCL, {color: "FF0000"}, "Original Transects");
+// Map.addLayer(merged, {color: "0000FF"}, "merged", false);
+
+// var empty = ee.Image().byte();
+
+for (var i = 0; i <= 35; i = i + 5) {
+  var year = i + 1984;
+  var annualATE = ee.FeatureCollection(divides.get(i));
+  Map.addLayer(annualATE, {color: "FFFF00"}, "ATE in " + year, true);
+  // Map.addLayer(empty.paint(annualATE, 1, 3).randomVisualizer(), {}, "ATE in " + year, true);
+}
+
+Map.addLayer(intersectedCLs, {color: "0000FF"}, "ATEs >= 10 yr", false);
+
+
+// /* Functions to group center lines. */
+
+// function groupCL(index) {
+//   // Load center lines in each basin.
+//   var CL = ee.FeatureCollection(wd
+//     + "Transects/SelectedHybas4Basins_closedForestsLowerSlopeValley_nonForestedUpperSlope/"
+//     + "CenterLines/"
+//     + "Basin_" + index);
+  
+//   return CL;
+// }
+
+
+// /* Create annual masks of ATEI. */
+
+// // A target projection system.
+// var targetPrj = {
+//   crs: "EPSG:4326", 
+//   scale: 30
+// };
+
+// // Get the annual ATEIs.
+// var ATEI = ATEI_1.addBands(ATEI_2)
+//   .reproject(targetPrj);
+// // print(ATEI.projection().crs(), ATEI.projection().nominalScale())
+
+// // An optimal cut with the highest Youden Index of the validation dataset (over 1000 samples).
+// var cut = 0.407;
+// var halfRange = 0.1;
+
+// // Create a mask of ATEIs around the optimal cut.
+// var ATEIdiff = ATEI.subtract(cut).abs();
+// var ATEImask = ATEIdiff.lte(halfRange);
+// // print(ATEImask)
+
+
+// /* Extract the qualified pixel coordinates in each year. */
+
+// // An image of coordinates.
+// var coords = ee.Image.pixelLonLat()
+//   .reproject(targetPrj);
+
+// // Function to extract the qualified pixels.
+// function extractCoords(year, previous) {
+//   year = ee.Number(year).int();
+  
+//   // Get the mask of annual ATEI.
+//   var bandName = ee.String("ATEI_").cat(year);
+//   var annualATEImask = ATEImask.select(bandName);
+  
+//   // Rename the bands of coordinates. 
+//   var longName = ee.String("long_").cat(year);
+//   var latName = ee.String("lat_").cat(year);
+//   var renamedCoords = coords.select(["longitude", "latitude"], 
+//     [longName, latName]);
+  
+//   // Annually extract the qualified pixel coordinates. 
+//   var annuallyMaskedCoords = renamedCoords.updateMask(annualATEImask);
+  
+//   return ee.Image(previous).addBands(annuallyMaskedCoords);
+// }
+
+// var yearList = ee.List.sequence(1984, 2019);
+
+// var maskedCoords = ee.Image(yearList.iterate(extractCoords, ee.Image()))
+//   .select(ee.List.sequence(1, 72));
+// // print(maskedCoords)
+
+
+// /* Create a list of the index groups of basins. */
+
+// // Create a list of indices.
+// var indices = ee.List.sequence(0, 123);
+
+// // Remove the failed task.
+// indices = indices.remove(106).getInfo();
+
+
+// /* Group and export the center lines by indices. */
+
+// // Number of basins in each group.
+// var step = 3;
+
+// for (var startIndex = 0; startIndex < 123; startIndex = startIndex + step) {
+//   // Generate a subset of indices.
+//   var endIndex = startIndex + step;
+//   var indexSlice = indices.slice(startIndex, endIndex);
+//   // print("indexSlice:", indexSlice)
+  
+//   // Load the center lines in each group.
+//   var groupedCL = ee.FeatureCollection(indexSlice.map(groupCL)).flatten();
+  
+//   // Extract the annual qualified pixel coordinates along each transect.
+//   var coordsExtracted = maskedCoords.reduceRegions({
+//     collection: groupedCL, 
+//     reducer: ee.Reducer.toList(), 
+//     scale: 30,
+//     crs: "EPSG:4326"
+//   });
+//   print(coordsExtracted.first())
+  
+//   // Export the result to the Asset.
+//   if (false) {
+//     var fileName = "Basins_" + startIndex + "to" + endIndex;
+//     // print("fileName:", fileName)
+    
+//     Export.table.toAsset({
+//       collection: coordsExtracted, 
+//       description: fileName, 
+//       assetId: wd + "Transects/SelectedHybas4Basins_closedForestsLowerSlopeValley_nonForestedUpperSlope/"
+//         + "CenterLines/"
+//         + "ExtractedCoords_AnnualATEI_Pt307toPt507/" + fileName
+//     });
+//   }
+// }
+
+
+
+/**
+ * Introduction:
+ * 1) Extract the center line of each transect.
+ * 2) Locate pixels with ATEI = 0.5 along the center line in each year. 
+ * 3) Select transects with only two qualified pixels in each year.
+ * 4) Divide the center line with the two pixels.
+ * 5) Buffer the center-line segments and copy the variables of interest from the original transect.
+ * 
+ * Update: 2/1/2021.
+*/
+
+/* Load datasets. */
+
+// Set the work directory.
+var wd = "users/treeline/NorthAmerica_GME/";
+
+// Transects with landforms information involved.
+var allTransects = ee.FeatureCollection(wd + 
+  "Transects/SelectedHybas4Basins_closedForestsLowerSlopeValley_nonForestedUpperSlope/transectTrend_gte10obs");
+  // .limit(1e3) // Testing.
+
+// print(allTransects.first(), 
+//   allTransects.size()) // 469947.
+
+// Segmented CATE.
+var segCATE_raw = ee.Image(wd + "Transects/" + 
+  "90mSegmentedCATE_distToRidgesNoCliff_NAlandformsRemoved_ridgesRemoved");
+
+// ALOS elevation (V 2.2).
+var elv_raw = ee.Image('JAXA/ALOS/AW3D30/V2_2').select('AVE_DSM');
+
+// Copernicus land cover product.
+var landCover_raw = ee.ImageCollection("COPERNICUS/Landcover/100m/Proba-V/Global")
+  .select('discrete_classification').first();
+
+// ALOS landforms.
+var landforms_raw = ee.Image('CSP/ERGo/1_0/Global/ALOS_landforms').select('constant');
+
+// Annual ATEIs.
+var ATEI_1 = ee.Image(wd +
+  "Annual_ATEI/ATEI_medianSmdAnlMaxAvgNDVIs_1984to1999");
+var ATEI_2 = ee.Image(wd +
+  "Annual_ATEI/ATEI_medianSmdAnlMaxAvgNDVIs_2000to2019");
+
+var ATEI = ATEI_1.addBands(ATEI_2);
+
+// print(ATEI.projection().crs(), ATEI.projection().nominalScale())
+
+
+/* Generate the average ATEIs over time within each transect. */
+
+var avgATEI = ATEI.reduce(ee.Reducer.mean());
+
+// print(avgATEI)
+
+
+/* Reproject datasets. */
+
+var targetPrj = {
+    crs: "EPSG:4326",
+    scale: 30
+  };
+
+var elv_reprj = elv_raw
+  .reproject(targetPrj);
+
+var segCATE_reprj = segCATE_raw
+  .reproject(targetPrj);
+
+var landCover_reprj = landCover_raw
+  .reproject(targetPrj);
+
+var landforms_reprj = landforms_raw
+  .reproject(targetPrj);
+
+
+/* Extract the upper slope, lower slope, and valley. */
+
+// Upper slope.
+var upperSlope = landforms_reprj.gte(21).and(landforms_reprj.lte(24))
+  .rename("upperSlope");
+
+// Lower slope and valley.
+var lowerSlope_valley = landforms_reprj.gte(31).and(landforms_reprj.lte(42))
+  .rename("lowerSlope_valley");
+
+
+/* Extract the qualified closed forests and non-forested areas within the segmented CATE. */
+
+// Closed forests on the lower slope or in the valley.
+var closedForests = landCover_reprj.gte(111).and(landCover_reprj.lte(116))
+  .updateMask(lowerSlope_valley)
+  .updateMask(segCATE_reprj)
+  .rename("closedForests");
+
+// Non-forested areas in the Copernicus dataset.
+// From "Shrubs" to "Moss and lichen".
+var nonForested = landCover_reprj.gte(20).and(landCover_reprj.lte(100))
+  .updateMask(upperSlope)
+  .updateMask(segCATE_reprj)
+  .rename("nonForested");
+
+
+/* Combine the segmented CATE with the elevations of the extracted land-cover datasets. */
+
+// Get the ALOS elevation of the extracted land-cover datasets.
+var closedForestsElv = elv_reprj.updateMask(closedForests)
+  .rename("closedForestsElv");
+
+var nonForestedElv = elv_reprj.updateMask(nonForested)
+  .rename("nonForestedElv");
+
+// Combine the segmented CATE with the elevations of the qualified land-cover pixels
+// for further extracting the elevational extremes within each vectorized CATE segment.
+var segCATEelv = closedForestsElv
+  .addBands(nonForestedElv);
+
+// print("segCATEelv:", 
+//   segCATEelv.bandTypes(),
+//   segCATEelv.projection().crs(),
+//   segCATEelv.projection().nominalScale())
+
+
+/* Determine the pixel coordinates. */
+
+var coords = ee.Image.pixelLonLat()
+  .reproject(targetPrj)
+  .updateMask(segCATE_reprj);
+
+
+/* Define a function for generating a center line of each transect. */
+
+var generateCenterLine = function(feature) {  
+  // Get the geometry of each selected transect.
+  var geom = feature.geometry();
+  
+  // Extract the coordinates of pixels with the maximum non-forest elevation.
+  var elvMax = feature.get("nonForestedElv_max");
+  var maxCoords = coords.updateMask(segCATEelv.select("nonForestedElv")
+    .eq(ee.Number.parse(elvMax)))
+    .select(["latitude", "longitude"], ["maxLat", "maxLong"]);
+  
+  // Extract the coordinates of pixels with the minimum forest elevation.
+  var elvMin = feature.get("closedForestsElv_min");
+  var minCoords = coords.updateMask(segCATEelv.select("closedForestsElv")
+    .eq(ee.Number.parse(elvMin)))
+    .select(["latitude", "longitude"], ["minLat", "minLong"]);
+  
+  // Convert the extracted coordinates within the geometry to lists.
+  var maxMin_coordLists = maxCoords.addBands(minCoords).reduceRegion({
+    reducer: ee.Reducer.toList(),
+    geometry: geom,
+    scale: 30,
+    crs: "EPSG:4326",
+    maxPixels: 1e13
+  });
+  
+  // Choose only the coordinates of the first highest/lowest qualified pixel.
+  var maxLong = ee.List(maxMin_coordLists.get('maxLong')).get(0);
+  var minLong = ee.List(maxMin_coordLists.get('minLong')).get(0);
+  
+  var maxLat = ee.List(maxMin_coordLists.get('maxLat')).get(0);
+  var minLat = ee.List(maxMin_coordLists.get('minLat')).get(0);
+  
+  // Merge the coordinates of the two pixels into a list of two-element (longitude and latitude) lists.
+  var longList = ee.List([maxLong, minLong]);
+  var latList = ee.List([maxLat, minLat]);
+  
+  var coordList = longList.zip(latList);
+  
+  // var coordMin = ee.List([minLong, minLat]);
+  // var coordMax = ee.List([maxLong, maxLat]);
+  
+  // Construct a line string between the two pixels based on the merged coordinate list.
+  var lineString = ee.Algorithms.GeometryConstructors.LineString(coordList);
+  
+  // Copy the variables of interest.
+  var transect = ee.Feature(lineString).copyProperties({
+    source: feature, 
+    properties: ["ID", "Lngth_m", "Tmn_wAE", "elvTrnd", "nonNA", "st_ATEI", "stat", "stdErr"]
+  });
+  
+  transect = transect.set({
+    minLong: minLong,
+    minLat: minLat,
+    maxLong: maxLong,
+    maxLat: maxLat
+  });
+  
+  return transect;
+};
+
+
+/* Generate center lines by groups. */
+
+
+var allTransectsList = allTransects.toList(470000);
+
+// print(allTransectsList)
+
+var step = 5000;
+
+for (var start = 0; start < 470000; start = start + step) {
+  var end = start + step;
+  var transects = ee.FeatureCollection(allTransectsList.slice(start, end));
+  
+  var transectElvMinMax = segCATEelv.reduceRegions({
+    collection: transects, 
+    reducer: ee.Reducer.minMax(),
+    scale: 30,
+    crs: "EPSG:4326"
+  });
+  
+  // print(transectElvMinMax.first())
+  
+  // // Select transects with both the min. forest elevation and the max. non-forest elevation.
+  // // The max. non-forest elevation should be higher than the min. forest elevation.
+  // var selectedTransects = transectElvMinMax.filter(ee.Filter.and(
+  //   ee.Filter.neq("nonForestedElv_max", null),
+  //   ee.Filter.neq("closedForestsElv_min", null),
+  //   ee.Filter.greaterThan({
+  //     leftField: "nonForestedElv_max", 
+  //     rightField: "closedForestsElv_min"
+  //   })));
+  
+  // Generate a center line of each selected transect.
+  var centerLines = ee.FeatureCollection(transectElvMinMax
+    .map(generateCenterLine));
+  
+  // print(centerLines.first())
+  
+  if (true) {
+    var group = start / step;
+    var fileName = "centerLines_" + group;
+    
+    // print(fileName)
+    
+    Export.table.toAsset({
+      collection: centerLines, 
+      description: fileName, 
+      assetId: wd + "Transects/SelectedHybas4Basins_closedForestsLowerSlopeValley_nonForestedUpperSlope/"
+        + "CenterLines/" + fileName
+    });
+  }
+}
+

@@ -1,0 +1,56 @@
+/**
+ * Introduction:
+ * 
+ *  1) Aggregate the calculated temporal median of the annual open-forest NDVIs
+ *    during 2015-2019 from 30 m to 3 km.
+ * 
+ * Update: 11/27/2022.
+ * 
+ * Runtime: .
+*/
+
+
+/* Load module(s). */
+
+var IMG = require("users/ChenyangWei/Public:Modules/Image_Analysis&Processing");
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+
+
+/* Setup. */
+
+// Determine the target projection.
+var targetPrj = IMG.WGS84_3km;
+
+// Calculate the resolution-scaling factor of each axis.
+var factor = Math.ceil(targetPrj.scale / 30);
+
+// Determine a mean reducer.
+var meanReducer = ee.Reducer.mean();
+
+
+/* Define a function to aggregate the open-forest NDVI. */
+
+var Aggregate_OpenForestNDVI = function(oldNDVI_Img) {
+  
+  // Aggregate the raw NDVI.
+  var newNDVI_Img = oldNDVI_Img.reduceResolution({ 
+    reducer: meanReducer,
+    maxPixels: factor * factor
+  }).reproject(targetPrj);
+
+  // Set the mask of each valid pixel to 1.
+  var newNDVI_NoMask_Img = newNDVI_Img.updateMask(newNDVI_Img.gte(-1e18));
+
+  return newNDVI_NoMask_Img;
+};
+
+
+
+// Set the dataset to the float type.
+// var floatElv = nomaskElv.float();
+
+print("factor:", factor)
+
+
+
+

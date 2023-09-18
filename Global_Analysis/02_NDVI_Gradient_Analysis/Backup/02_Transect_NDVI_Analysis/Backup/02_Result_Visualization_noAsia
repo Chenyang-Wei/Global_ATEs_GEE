@@ -1,0 +1,469 @@
+
+/* Load module(s). */
+
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var TNA = require("users/ChenyangWei/Public:Modules/Transect_NDVI_Analysis");
+var VIS = require("users/ChenyangWei/Public:Modules/Visualization");
+var FC_AP = require("users/ChenyangWei/Public:Modules/FeatureCollection_Analysis&Processing");
+
+
+/* Get the major working directories. */
+
+var wd_NA = GATE.wd_NorthAmerica;
+var wd_SA = GATE.wd_SouthAmerica;
+var wd_Eu = GATE.wd_Europe;
+var wd_Af = GATE.wd_Africa;
+var wd_Oc = GATE.wd_Oceania;
+
+var sampleSize = 1e4;
+
+
+/* Read the NDVI-gradient trend datasets. */
+
+// Continents except North America.
+var readNDVIgradTrend = function(wd) {
+  var fileName = TNA.elvNDVIgradientTrends_fileName;
+  
+  return ee.FeatureCollection(wd
+    + "Transect_NDVI_Analysis/"
+    + fileName)
+    .filter(ee.Filter.and(ee.Filter.gte("gradTrend", -1e-5),
+      ee.Filter.lte("gradTrend", 1e-5)))
+    .limit(sampleSize, "CL_ID");
+};
+
+var gradTrend_SA = readNDVIgradTrend(wd_SA);
+var gradTrend_Eu = readNDVIgradTrend(wd_Eu);
+var gradTrend_Af = readNDVIgradTrend(wd_Af);
+var gradTrend_Oc = readNDVIgradTrend(wd_Oc);
+
+// North America.
+var readNDVIgradTrend_NorthAmerica = function(basinGroupID) {
+  
+  var wd_Output = GATE.wd_NorthAmerica
+    + "Transect_NDVI_Analysis/"
+    + TNA.elvNDVIgradientTrends_fileName
+    + "/";
+  
+  var fileName = TNA.gradientTrends_byBasinGroup_fileName
+    + basinGroupID;
+  
+  return ee.FeatureCollection(wd_Output + fileName);
+};
+
+var gradTrend_NAm = ee.FeatureCollection([
+  readNDVIgradTrend_NorthAmerica(1),
+  readNDVIgradTrend_NorthAmerica(2),
+  readNDVIgradTrend_NorthAmerica(3),
+  readNDVIgradTrend_NorthAmerica(4),
+  readNDVIgradTrend_NorthAmerica(5)
+]).flatten()
+  .filter(ee.Filter.and(ee.Filter.gte("gradTrend", -1e-5),
+      ee.Filter.lte("gradTrend", 1e-5)))
+  .limit(sampleSize, "CL_newID");
+
+// Global.
+var gradTrend_Global = ee.FeatureCollection(wd_Af
+  + "Testing/"
+  + "NDVIgradTrend_noAsia");
+
+
+/* Load the transect segments with NDVI trends. */
+
+// Continents except North America.
+var read_LowerSegmentsNDVItrends = function(wd) {
+  var lowerSegmentsNDVItrends = ee.FeatureCollection(wd
+    + "Transect_NDVI_Analysis/"
+    + TNA.lowerSegmentsNDVItrends_fileName);
+
+  return lowerSegmentsNDVItrends
+    .limit(sampleSize, "CL_ID");
+};
+
+var read_UpperSegmentsNDVItrends = function(wd) {
+  var upperSegmentsNDVItrends = ee.FeatureCollection(wd
+    + "Transect_NDVI_Analysis/"
+    + TNA.upperSegmentsNDVItrends_fileName);
+
+  return upperSegmentsNDVItrends
+    .limit(sampleSize, "CL_ID");
+};
+
+var lowerSeg_Af = read_LowerSegmentsNDVItrends(wd_Af);
+var lowerSeg_Oc = read_LowerSegmentsNDVItrends(wd_Oc);
+var lowerSeg_SA = read_LowerSegmentsNDVItrends(wd_SA);
+var lowerSeg_Eu = read_LowerSegmentsNDVItrends(wd_Eu);
+
+var upperSeg_Af = read_UpperSegmentsNDVItrends(wd_Af);
+var upperSeg_Oc = read_UpperSegmentsNDVItrends(wd_Oc);
+var upperSeg_SA = read_UpperSegmentsNDVItrends(wd_SA);
+var upperSeg_Eu = read_UpperSegmentsNDVItrends(wd_Eu);
+
+// North America.
+var read_LowerSegmentsNDVItrends_NAm = function(basinGroupID) {
+  
+  var wd_Output = GATE.wd_NorthAmerica
+    + "Transect_NDVI_Analysis/"
+    + TNA.lowerSegmentsNDVItrends_fileName
+    + "/";
+  
+  var fileName = TNA.lowerSegmentsNDVItrends_byBasinGroup_fileName
+    + basinGroupID;
+  
+  return ee.FeatureCollection(wd_Output + fileName);
+};
+
+var read_UpperSegmentsNDVItrends_NAm = function(basinGroupID) {
+  
+  var wd_Output = GATE.wd_NorthAmerica
+    + "Transect_NDVI_Analysis/"
+    + TNA.upperSegmentsNDVItrends_fileName
+    + "/";
+  
+  var fileName = TNA.upperSegmentsNDVItrends_byBasinGroup_fileName
+    + basinGroupID;
+  
+  return ee.FeatureCollection(wd_Output + fileName);
+};
+
+var lowerSeg_NAm = ee.FeatureCollection([
+  read_LowerSegmentsNDVItrends_NAm(1),
+  read_LowerSegmentsNDVItrends_NAm(2),
+  read_LowerSegmentsNDVItrends_NAm(3),
+  read_LowerSegmentsNDVItrends_NAm(4),
+  read_LowerSegmentsNDVItrends_NAm(5)
+]).flatten()
+  .limit(sampleSize, "CL_newID");
+
+var upperSeg_NAm = ee.FeatureCollection([
+  read_UpperSegmentsNDVItrends_NAm(1),
+  read_UpperSegmentsNDVItrends_NAm(2),
+  read_UpperSegmentsNDVItrends_NAm(3),
+  read_UpperSegmentsNDVItrends_NAm(4),
+  read_UpperSegmentsNDVItrends_NAm(5)
+]).flatten()
+  .limit(sampleSize, "CL_newID");
+
+// Global.
+var lowerSeg_withNDVItrends = ee.FeatureCollection(wd_Af
+  + "Testing/"
+  + "lowerSeg_withNDVItrends_noAsia");
+
+var upperSeg_withNDVItrends = ee.FeatureCollection(wd_Af
+  + "Testing/"
+  + "upperSeg_withNDVItrends_noAsia");
+
+// print(upperSeg_withNDVItrends.first());
+
+
+/* Read the aggregated NDVI-gradient trends of basins. */
+
+var readBasinGradTrends = function(wd) {
+  var fileName = TNA.basinGradientTrends_fileName;
+  
+  return ee.FeatureCollection(wd
+    + "Transect_NDVI_Analysis/"
+    + fileName);
+};
+
+var BasinGradTrends_SA = readBasinGradTrends(wd_SA);
+var BasinGradTrends_Eu = readBasinGradTrends(wd_Eu);
+var BasinGradTrends_Af = readBasinGradTrends(wd_Af);
+var BasinGradTrends_Oc = readBasinGradTrends(wd_Oc);
+
+// North America.
+var readBasinGradTrends_NAm = function(basinGroupID) {
+  
+  var wd_Output = GATE.wd_NorthAmerica
+    + "Transect_NDVI_Analysis/"
+    + TNA.basinGradientTrends_fileName
+    + "/";
+  
+  var fileName = TNA.basinGradientTrends_byBasinGroup_fileName
+    + basinGroupID;
+  
+  return ee.FeatureCollection(wd_Output + fileName);
+};
+
+var BasinGradTrends_NAm = ee.FeatureCollection([
+  readBasinGradTrends_NAm(1),
+  readBasinGradTrends_NAm(2),
+  readBasinGradTrends_NAm(3),
+  readBasinGradTrends_NAm(4),
+  readBasinGradTrends_NAm(5)
+]).flatten();
+
+var BasinGradTrends_Global = BasinGradTrends_SA.merge(BasinGradTrends_Eu)
+  .merge(BasinGradTrends_Af)
+  .merge(BasinGradTrends_Oc)
+  .merge(BasinGradTrends_NAm);
+
+// Filter basins based on the number of transects.
+// var filteredBasins = BasinGradTrends_Global.filter(ee.Filter.gte("Transect_Number", 5));
+var filteredBasins = BasinGradTrends_Global.filter(ee.Filter.lte("gradTrend_stdDev", 1e-5));
+
+// print("BasinGradTrends_Global:",
+//   BasinGradTrends_Global.reduceColumns(ee.Reducer.mean(), ["Transect_Number"]),
+//   BasinGradTrends_Global.reduceColumns(ee.Reducer.percentile(ee.List.sequence(0, 100, 10)), ["Transect_Number"]),
+//   BasinGradTrends_Global.reduceColumns(ee.Reducer.percentile(ee.List.sequence(0, 100, 10)), ["gradTrend_stdDev"]))
+
+// print("BasinGradTrends_Global:",
+//   BasinGradTrends_Global.size(), // 30,543.
+//   filteredBasins.size(),
+//   BasinGradTrends_Global.first(),
+//   filteredBasins.first())
+
+
+/* Chart generation. */
+
+if (false) {
+  
+  // Function to generate scatter plots.
+  var generate_ScatterPlots = 
+    function(xAxis, yAxis, mainTitle, hTitle, vTitle) {
+      var scatterPlot = ui.Chart.array.values({
+        array: ee.Array.cat([yAxis, xAxis], 1),
+        axis: 0,
+        xLabels: xAxis})
+        .setChartType("ScatterChart")
+        .setOptions({
+          legend: {position: "none"},
+          title: mainTitle,
+          hAxis: {title: hTitle},
+          vAxis: {title: vTitle},
+          series: {
+            0: {
+              pointSize: 0.2,
+              dataOpacity: 0.2,
+            },
+            1: {
+              pointSize: 0,
+              lineWidth: 2,
+            }
+          }
+        });
+      
+      return scatterPlot;
+    }; 
+  
+  
+  // Function to generate histograms.
+  var generate_Histograms = 
+    function(gradTrend_FtrCol, mainTitle) {
+      var scatterPlot = ui.Chart.feature.histogram({
+        features: gradTrend_FtrCol, 
+        property: "gradTrend", 
+        maxBuckets: 100
+      }).setOptions({
+          legend: {position: "none"},
+          title: mainTitle,
+          hAxis: {title: "NDVI-gradient trend"},
+          vAxis: {title: "Frequency"},
+          series: {
+            0: {
+              pointSize: 0.2,
+              dataOpacity: 0.2,
+            },
+            1: {
+              pointSize: 0,
+              lineWidth: 2,
+            }
+          }
+        });
+      
+      return scatterPlot;
+    }; 
+  
+  // Function to generate histograms.
+  var generate_Histograms_2 = 
+    function(BasinGradTrend_FtrCol, mainTitle) {
+      var scatterPlot = ui.Chart.feature.histogram({
+        features: BasinGradTrend_FtrCol, 
+        property: "gradTrend_mean", 
+        maxBuckets: 100
+      }).setOptions({
+          legend: {position: "none"},
+          title: mainTitle,
+          hAxis: {title: "Basin average NDVI-gradient trend"},
+          vAxis: {title: "Frequency"},
+          series: {
+            0: {
+              pointSize: 0.2,
+              dataOpacity: 0.2,
+            },
+            1: {
+              pointSize: 0,
+              lineWidth: 2,
+            }
+          }
+        });
+      
+      return scatterPlot;
+    }; 
+  
+  var lowerTitle = "Average NDVI trend (lower segments)";
+  
+  var upperTitle = "Average NDVI trend (upper segments)";
+  
+  
+  var Af_LowerUpperTrends = generate_ScatterPlots(
+    lowerSeg_Af.aggregate_array("lower_Trend"), 
+    upperSeg_Af.aggregate_array("upper_Trend"), 
+    "Africa", lowerTitle, upperTitle);
+  
+  
+  var Oc_LowerUpperTrends = generate_ScatterPlots(
+    lowerSeg_Oc.aggregate_array("lower_Trend"), 
+    upperSeg_Oc.aggregate_array("upper_Trend"), 
+    "Oceania", lowerTitle, upperTitle);
+  
+  
+  var SA_LowerUpperTrends = generate_ScatterPlots(
+    lowerSeg_SA.aggregate_array("lower_Trend"), 
+    upperSeg_SA.aggregate_array("upper_Trend"), 
+    "South America", lowerTitle, upperTitle);
+  
+  
+  var Eu_LowerUpperTrends = generate_ScatterPlots(
+    lowerSeg_Eu.aggregate_array("lower_Trend"), 
+    upperSeg_Eu.aggregate_array("upper_Trend"), 
+    "Europe", lowerTitle, upperTitle);
+  
+  
+  var NAm_LowerUpperTrends = generate_ScatterPlots(
+    lowerSeg_NAm.aggregate_array("lower_Trend"), 
+    upperSeg_NAm.aggregate_array("upper_Trend"), 
+    "North America", lowerTitle, upperTitle);
+
+
+  // Function to filter the aggregated gradient trends.
+  var filterBasinGradTrends = function(BasinGradTrends) {
+    return BasinGradTrends.filter(ee.Filter.and(
+      ee.Filter.gte("gradTrend_mean", -1e-5),
+      ee.Filter.lte("gradTrend_mean", 1e-5)));
+  };
+
+  
+  // print(Af_LowerUpperTrends);
+
+  print(generate_Histograms(gradTrend_Af, "Africa"));
+  
+  print(generate_Histograms_2(filterBasinGradTrends(BasinGradTrends_Af), "Africa"));
+  
+  // print(Oc_LowerUpperTrends);
+  
+  print(generate_Histograms(gradTrend_Oc, "Oceania"));
+  
+  print(generate_Histograms_2(filterBasinGradTrends(BasinGradTrends_Oc), "Oceania"));
+  
+  // print(SA_LowerUpperTrends);
+  
+  print(generate_Histograms(gradTrend_SA, "South America"));
+  
+  print(generate_Histograms_2(filterBasinGradTrends(BasinGradTrends_SA), "South America"));
+  
+  // print(Eu_LowerUpperTrends);
+  
+  print(generate_Histograms(gradTrend_Eu, "Europe"));
+  
+  print(generate_Histograms_2(filterBasinGradTrends(BasinGradTrends_Eu), "Europe"));
+  
+  // print(NAm_LowerUpperTrends);
+  
+  print(generate_Histograms(gradTrend_NAm, "North America"));
+  
+  print(generate_Histograms_2(filterBasinGradTrends(BasinGradTrends_NAm), 
+    "North America"));
+}
+
+
+if (true) { // true OR false.
+  
+  // VIS.centerNorthAmerica(11);
+  // VIS.centerEurope(10);
+  // VIS.centerOceania(10);
+  
+  
+  Map.addLayer(gradTrend_Global, {color: "FFFFFF"}, "Transects", false); 
+  
+  
+  var vis = false;
+
+  var absMax = 5e-3;
+  
+  Map.addLayer(VIS.paintFtrCol_FillANDEdge(lowerSeg_withNDVItrends, "lower_Trend", 2), 
+    {min: absMax * -1, max: absMax, palette: VIS.BWR_palette}, 
+    "Average NDVI trend (lower segments)", vis);
+  
+  Map.addLayer(VIS.paintFtrCol_FillANDEdge(upperSeg_withNDVItrends, "upper_Trend", 2), 
+    {min: absMax * -1, max: absMax, palette: VIS.BWR_palette}, 
+    "Average NDVI trend (upper segments)", vis);
+  
+  
+  Map.addLayer(VIS.paintFtrCol_FillANDEdge(gradTrend_Global, "yearCount", 2), 
+    {min: 10, max: 37, palette: VIS.BWR_palette}, 
+    "Observation #", false);
+
+
+  var absMax = 100;
+  
+  Map.addLayer(VIS.paintFtrCol_FillANDEdge(BasinGradTrends_Global, "Transect_Number", 2), 
+    {min: 1, max: absMax, palette: VIS.BWR_palette}, 
+    "Aggregated gradient trend (observations)", false);
+  
+  
+  var absMax = 1e-5;
+  
+  Map.addLayer(VIS.paintFtrCol_FillANDEdge(BasinGradTrends_Global, "gradTrend_stdDev", 2), 
+    {min: 0, max: absMax, palette: VIS.BWR_palette}, 
+    "Aggregated gradient trend (SD)", false);
+  
+  
+  var absMax = 1e-5;
+  
+  Map.addLayer(VIS.paintFtrCol_FillANDEdge(BasinGradTrends_Global, "gradTrend_mean", 2), 
+    {min: absMax * -1, max: absMax, palette: VIS.BWR_palette}, 
+    "Aggregated gradient trend (mean)", true);
+  
+  Map.addLayer(BasinGradTrends_Global, 
+    {color: "00FFFF"}, 
+    "BasinGradTrends_Global", true);
+  
+  Map.addLayer(filteredBasins, 
+    {color: "FFFFFF"}, 
+    "filteredBasins", true);
+  
+  Map.addLayer(gradTrend_Global, 
+    {color: "FF0000"}, 
+    "gradTrend_Global", true);
+  
+  Map.addLayer(ee.Image(0), {palette: "FFFFFF"}, "Empty", false, 0.5); 
+  
+  Map.addLayer(VIS.paintFtrCol_FillANDEdge(gradTrend_Global, "gradTrend", 2), 
+    {min: absMax * -1, max: absMax, palette: VIS.BWR_palette}, 
+    "Elevational gradient trend", false);
+  
+  
+} else {
+  
+  var fileName_lowerSeg = "lowerSeg_withNDVItrends_noAsia";
+  
+  Export.table.toAsset({
+    collection: lowerSeg_withNDVItrends, 
+    description: fileName_lowerSeg, 
+    assetId: wd_Af
+      + "Testing/"
+      + fileName_lowerSeg
+  });
+  
+  var fileName_upperSeg = "upperSeg_withNDVItrends_noAsia";
+  
+  Export.table.toAsset({
+    collection: upperSeg_withNDVItrends, 
+    description: fileName_upperSeg, 
+    assetId: wd_Af
+      + "Testing/"
+      + fileName_upperSeg
+  });
+}
+

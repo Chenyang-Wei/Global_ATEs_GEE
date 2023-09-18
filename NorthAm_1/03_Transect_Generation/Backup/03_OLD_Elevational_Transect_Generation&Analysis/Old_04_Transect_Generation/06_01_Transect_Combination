@@ -1,0 +1,150 @@
+/**
+ * Introduction:
+ * 1) Load the elevational transects of the succeed basins ("hybas_4") in the first round of transect generation.
+ * 2) Load the elevational transects of the first-round failed basins at a finer level ("hybas_5").
+ * 3) Combine all the generated elevational transects.
+ * 
+ * Date: 7/20/2020.
+ * 
+ * Launch time: 3h.
+ */
+
+
+/* Setup. */
+
+// Asset path.
+var wdNorthA = "users/treeline/NorthAmerica_GME/";
+
+if (false) {
+  /* Read the elevational transects of the succeed basins ("hybas_4") in the first round of transect generation. */
+  
+  // Create a list of indices.
+  var indices = ee.List.sequence(0, 126);
+  
+  // Remove the failed task.
+  indices = indices.remove(23).getInfo();
+  
+  var succeeded = ee.FeatureCollection(indices.map(function(index) {
+    // Load transects in each basin.
+    var transects = ee.FeatureCollection(wdNorthA + "Transects/30mBufTransects30mRes_90mSegmentedCATE_Hybas4/Basin_" 
+      + index);
+    
+    return transects;
+  })).flatten();
+  
+  
+  /* Read the elevational transects of the first-round failed basins at a finer level ("hybas_5"). */
+  
+  // Create a list of indices.
+  var indices2 = ee.List.sequence(0, 7).getInfo();
+  
+  var failed = ee.FeatureCollection(indices2.map(function(index) {
+    // Load transects in each basin.
+    var transects = ee.FeatureCollection(wdNorthA + "Transects/30mBufTransects30mRes_90mSegmentedCATE_Hybas4/Basin23_Hybas5/Basin23_" 
+      + index);
+    
+    return transects;
+  })).flatten();
+  
+  var combined = succeeded.merge(failed);
+} 
+
+else {
+  /* Read the previously combined transects. */
+  
+  var combined = ee.FeatureCollection(wdNorthA + "Transects/30mBufTransects30mRes_90mSegmentedCATE_Hybas4_5_combined");
+  
+  // Remove transects either too short or too long.
+  var lowerLimit = 500;
+  var upperLimit = 3e3;
+  
+  var filtered = combined.filter({
+    filter: ee.Filter.and(
+      ee.Filter.gte("Length_m", lowerLimit),
+      ee.Filter.lte("Length_m", upperLimit)
+    )
+  });
+}
+
+
+// print("# of transects:", combined.size()) // 2301249.
+// print("Transects:", combined.limit(10))
+
+if (true) {
+  print("# of filtered transects (500m ~ 3km):", filtered.size()) // 1153928.
+  
+  /* Load the basins at the two levels. */
+  
+  // HydroSHEDS basins ("hybas_4") with the segmented CATE pixels.
+  var basins = ee.FeatureCollection(wdNorthA + "Transects/" + 
+    "90mSegmentedCATE_selectedBasins_Hybas4");
+  
+  // Failed basins at a finer level with the segmented CATE pixels ("hybas_5").
+  var finerFailed = ee.FeatureCollection(wdNorthA + "Transects/" + 
+    "90mSegmentedCATE_failedFinerBasins_Hybas5");
+  
+  // Segmented CATE.
+  var segCATE = ee.Image(wdNorthA + "Transects/" + 
+    "90mSegmentedCATE_distToRidgesNoCliff_NAlandformsRemoved_ridgesRemoved");
+
+
+  /* Extract the failed HydroSHEDS ("hybas_4") basins. */
+  
+  var basinNum = basins.size();
+  
+  var basinList = basins.toList({
+    count: basinNum
+  });
+  
+  // print("HydroSHEDS basins:", basinNum, basinList) // 127.
+
+  var failed = ee.Feature(basinList.get(23));
+  
+  // Daymet dataset.
+  var Daymet = ee.ImageCollection('NASA/ORNL/DAYMET_V3')
+    .filter(ee.Filter.date('2017-04-01', '2017-04-30'));
+  
+  var maximumTemperature = Daymet.select('tmax');
+  
+  // print("maximumTemperature:", 
+  //   maximumTemperature.first().projection().crs(),
+  //   maximumTemperature.first().projection().nominalScale())
+  
+  var maximumTemperatureVis = {
+    min: -40.0,
+    max: 30.0,
+    palette: ['1621A2', 'white', 'cyan', 'green', 'yellow', 'orange', 'red'],
+  };
+  
+  // Map.setCenter(-113.7571, 48.829, 10); // GNP.
+  Map.setCenter(-129.2425, 64.8198, 10); // North-western Canada.
+  // Map.centerObject(failed, 10); // Failed basin.
+  
+  Map.setOptions("hybrid");
+  
+  Map.addLayer(basins, {color: "FFFFFF"}, "Basins (Hybas 4)", true);
+  
+  Map.addLayer(failed, {color: "FFFF00"}, "Failed Basin (Hybas 4)", false);
+  
+  Map.addLayer(finerFailed, {color: "00FF00"}, "Failed Basins (Hybas 5)", false);
+  
+  Map.addLayer(maximumTemperature, maximumTemperatureVis, 'Daymet Maximum Temperature');
+  
+  Map.addLayer(segCATE, {palette: "0000FF"}, "Segmented CATE", false);
+  
+  // Map.addLayer(combined, {color: "FF0000"}, "Combined transects", true);
+  Map.addLayer(filtered, {color: "FF0000"}, "Filtered Transects", true);
+}
+
+else {
+  /* Output the combined transects.*/
+  
+  var fileName = "30mBufTransects30mRes_90mSegmentedCATE_Hybas4_5_combined";
+  
+  Export.table.toAsset({
+    collection: combined, 
+    description: fileName, 
+    assetId: wdNorthA + "Transects/" + fileName
+  });
+}
+

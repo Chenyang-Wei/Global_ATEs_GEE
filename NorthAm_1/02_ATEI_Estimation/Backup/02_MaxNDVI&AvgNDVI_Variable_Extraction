@@ -1,0 +1,428 @@
+/*
+  Introduction:
+  1) Extract the variables based on the annual maximum NDVI and the annual average NDVI at each sampled point.
+  
+  Date:
+  9/16/2020.
+*/
+
+
+/* Setup. */
+
+// North America.
+var northAmerica = ee.Geometry.Polygon({
+      coords: [[[-165.69002926658334, 72.44551256468144],
+            [-169.40248634956492, 65.69009098298687],
+            [-172.25893166206492, 63.826281515474996],
+            [171.35638590722195, 52.855285271231274],
+            [-159.1340353549648, 17.264443722753843],
+            [-122.14862062448367, 9.59539750905343],
+            [-79.06711256993691, 6.243890041056693],
+            [-77.03677448989225, 7.40316087095261],
+            [-76.78408894301725, 8.990725120234067],
+            [-75.7244458156751, 12.403191738791786],
+            [-71.5276684719251, 13.751533985801833],
+            [-62.8264965969251, 11.651035844929385],
+            [-62.005942990095036, 9.999896817210585],
+            [-60.791953732282536, 9.96743692413247],
+            [-55.5884807162513, 13.889226127218825],
+            [-47.99315852039507, 58.68729606716915],
+            [-66.52860968724042, 71.51769835770313],
+            [-77.86650031224042, 74.25356562488685],
+            [-89.90751593724042, 74.22969620284344],
+            [-106.04844453284761, 74.3012200035139],
+            [-114.63975312659761, 74.20581277506923],
+            [-120.18954789130242, 74.88484689543225],
+            [-136.27353226630242, 74.6772015427699]]],
+      geodesic: true
+  });
+
+// Asset path.
+var wdNorthA = "users/treeline/NorthAmerica_GME/";
+
+// Load the sampled points.
+var nonRandom = ee.FeatureCollection(wdNorthA + "Pixel_Sampling/" +
+  "Combined_RandomANDStratified_Sampling_noUC_centroids_westernUS_2009to2011");
+
+// print("nonRandom:", nonRandom.first(), nonRandom.size(), nonRandom.geometry().projection().crs())
+
+var random = ee.FeatureCollection(wdNorthA + "Pixel_Sampling/Random/" +
+  "randomlySampled_920Points_NorthAmerica");
+
+// print("random:", random.first(), random.size(), random.geometry().projection().crs())
+
+var samples = nonRandom.merge(random);
+
+print("samples:", samples.first(), samples.size(), samples.geometry().projection().crs())
+
+// ALOS elevation.
+var ALOSelv = ee.Image('JAXA/ALOS/AW3D30/V2_2').select('AVE_DSM')
+  .reproject({
+    crs: "EPSG:4326",
+    scale: 30
+  });
+
+// Load the climatic ATE.
+var CATE = ee.Image(wdNorthA + "CATE/" + 
+  "3kmBuffered_30mReprj_500mCATE3kmBuffer_gteAvgClsdFrstElv_10kmRes10pxFocalMean_10kmClsdFrstBuffer")
+  .select("gteFocalMean_30mReprj")
+  .reproject({
+    crs: "EPSG:4326",
+    scale: 30
+  });
+
+// Create a mask using the Hansen dataset (V 1.7) to define the area of land surface.
+var land = ee.Image('UMD/hansen/global_forest_change_2019_v1_7') // The newest version of the Hansen dataset.
+  .select('datamask')
+  .eq(1) // Select the "mapped land surface" in the Hansen dataset.
+  .reproject({
+    crs: "EPSG:4326",
+    scale: 30
+  });
+
+
+/* Add a new property to the samples. */
+
+var within = samples.filter(ee.Filter.eq("Class", "Within")).map(function(feature) {
+  return feature.set({
+    InOut: 1
+  });
+});
+
+var outside = samples.filter(ee.Filter.neq("Class", "Within")).map(function(feature) {
+  return feature.set({
+    InOut: 0
+  });
+});
+
+var newSamples = within.merge(outside);
+
+
+/* Image processing function definition. */
+
+// This function removes invalid pixels.
+var removeInvalid_L8 = function(img) {
+  // Remove edge pixels that don't occur in all bands
+  var noNA = img.mask().reduce(ee.Reducer.min());
+  
+  // Identify pixels with all the surface reflectance bands within the valid range: 0-10000.
+  var lowerLimit = img.gt(0).reduce(ee.Reducer.min());
+  var upperLimit = img.lt(1e4).reduce(ee.Reducer.min());
+  
+  var maskedB4B5 = img.updateMask(noNA)
+    .updateMask(lowerLimit)
+    .updateMask(upperLimit)
+    .select(["B4", "B5"]); // Select "B4" and "B5" for further calculating the NDVI.
+  
+  return maskedB4B5;
+};
+
+// This function calculates NDVI of Landsat imagery.
+var calNDVI_L8 = function(i) {
+  var ndvi = i.addBands(i.normalizedDifference(['B5', 'B4'])
+    .rename('OLI_NDVI'))
+    .select('OLI_NDVI');
+  
+  return ndvi;
+};
+
+// This function Convert the OLI NDVI to the ETM+ NDVI.
+// ETM+ = 0.0029 + 0.9589 OLI
+var ETM_NDVI = function(i) {
+  var ETM = i.addBands(i.select("OLI_NDVI")
+    .multiply(0.9589).add(0.0029)
+    .rename("ETM_NDVI"))
+    .select("ETM_NDVI");
+  
+  var postiveNDVI = ETM.updateMask(ETM.gt(0))
+    .rename("postiveNDVI");
+  
+  return ETM.addBands(postiveNDVI);
+};
+
+// This function combine all the processing steps.
+function imageProcessing(image) {
+  var invalidRemoved = removeInvalid_L8(image);
+  var ndviCalculated = calNDVI_L8(invalidRemoved);
+  var ndviConverted = ETM_NDVI(ndviCalculated);
+  
+  // Remove water-covered regions.
+  var waterRemoved = ndviConverted.updateMask(land);
+  
+  return waterRemoved;
+}
+
+
+/* Import the Landsat-8 Surface Reflectance dataset. */
+
+// Bands of surface reflectance.
+var bands = ["B[1-7]"];
+
+// Landsat 8 data in 2019.
+var L8_2019 = ee.ImageCollection("LANDSAT/LC08/C01/T1_SR")
+  .select(bands)
+  .filterBounds(northAmerica)
+  .filterDate('2019-01-01', '2020-01-01'); // The end date is exclusive.
+
+
+/* Image processing and analysis. */
+
+// Image pre-processing and NDVI calculation.
+var ndvi2019 = L8_2019.map(imageProcessing);
+
+// Annual max. NDVI in 2019.
+var maxNDVI2019 = ndvi2019.select("ETM_NDVI").max()
+  .rename("maxNDVI2019")
+  .reproject({
+    crs: "EPSG:4326",
+    scale: 30
+  });
+
+// Annual average NDVI in 2019.
+var avgNDVI2019 = ndvi2019.select("ETM_NDVI").mean()
+  .rename("avgNDVI2019")
+  .reproject({
+    crs: "EPSG:4326",
+    scale: 30
+  });
+
+// Annual average NDVI in 2019.
+var avgPostNDVI2019 = ndvi2019.select("postiveNDVI").mean()
+  .rename("avgPostNDVI2019")
+  .reproject({
+    crs: "EPSG:4326",
+    scale: 30
+  });
+
+
+/* Image smoothing. */
+
+if (true) {
+  // Define a circular smoothing kernel of 10 pixels.
+  var Kn = ee.Kernel.circle({
+    radius: 10 // Default units: "pixels".
+  }); 
+  
+  maxNDVI2019 = maxNDVI2019.reduceNeighborhood({
+    // The median reducer is less smooth than the mean reducer, 
+    // but the former one makes the spatial variation of NDVI more abrupt (i.e., less gradual),
+    // which then provides a sharper gradient (i.e., with larger magnitude).
+    reducer: ee.Reducer.median(),
+    kernel: Kn,
+    skipMasked: false // Do NOT mask output pixels if the corresponding input pixel is masked.
+  }).reproject({
+    crs: "EPSG:4326",
+    scale: 30
+  }).rename("maxNDVI2019");
+  
+  avgNDVI2019 = avgNDVI2019.reduceNeighborhood({
+    // The median reducer is less smooth than the mean reducer, 
+    // but the former one makes the spatial variation of NDVI more abrupt (i.e., less gradual),
+    // which then provides a sharper gradient (i.e., with larger magnitude).
+    reducer: ee.Reducer.median(),
+    kernel: Kn,
+    skipMasked: false // Do NOT mask output pixels if the corresponding input pixel is masked.
+  }).reproject({
+    crs: "EPSG:4326",
+    scale: 30
+  }).rename("avgNDVI2019");
+  
+  avgPostNDVI2019 = avgPostNDVI2019.reduceNeighborhood({
+    // The median reducer is less smooth than the mean reducer, 
+    // but the former one makes the spatial variation of NDVI more abrupt (i.e., less gradual),
+    // which then provides a sharper gradient (i.e., with larger magnitude).
+    reducer: ee.Reducer.median(),
+    kernel: Kn,
+    skipMasked: false // Do NOT mask output pixels if the corresponding input pixel is masked.
+  }).reproject({
+    crs: "EPSG:4326",
+    scale: 30
+  }).rename("avgPostNDVI2019");
+  
+  ALOSelv = ALOSelv.reduceNeighborhood({
+    // The mean reducer is smoother than the median reducer, 
+    // which then provides a less scattered gradient direction dataset.
+    reducer: ee.Reducer.mean(),
+    kernel: Kn,
+    skipMasked: false // Do NOT mask output pixels if the corresponding input pixel is masked.
+  }).reproject({
+    crs: "EPSG:4326",
+    scale: 30
+  }).rename("AVE_DSM");
+}
+
+
+/* Compute the gradient magnitude and direction of NDVI and elevation. */
+
+// Compute the image gradient in the X and Y directions.
+var maxNDVIgrad = maxNDVI2019.gradient()
+  .reproject({
+    crs: "EPSG:4326",
+    scale: 30
+  });
+
+var avgNDVIgrad = avgNDVI2019.gradient()
+  .reproject({
+    crs: "EPSG:4326",
+    scale: 30
+  });
+
+var avgPostGrad = avgPostNDVI2019.gradient()
+  .reproject({
+    crs: "EPSG:4326",
+    scale: 30
+  });
+
+var elvGrad = ALOSelv.gradient()
+  .reproject({
+    crs: "EPSG:4326",
+    scale: 30
+  });
+
+// Compute the magnitude of the gradient: "hypot" calculates the magnitude of the 2D vector [x, y].
+var maxNDVImag = maxNDVIgrad.select('y').hypot(maxNDVIgrad.select('x'))
+  .rename("maxNDVImag");
+
+var avgNDVImag = avgNDVIgrad.select('y').hypot(avgNDVIgrad.select('x'))
+  .rename("avgNDVImag");
+
+var avgPostMag = avgPostGrad.select('y').hypot(avgPostGrad.select('x'))
+  .rename("avgPostMag");
+
+var elvMag = elvGrad.select('y').hypot(elvGrad.select('x'))
+  .rename("elvMag");
+
+// Compute the direction of the gradient: "atan2" calculates the angle formed by the 2D vector [x, y].
+var maxNDVIdir = maxNDVIgrad.select('y').atan2(maxNDVIgrad.select('x'))
+  .rename("maxNDVIdir");
+
+var avgNDVIdir = avgNDVIgrad.select('y').atan2(avgNDVIgrad.select('x'))
+  .rename("avgNDVIdir");
+
+var avgPostDir = avgPostGrad.select('y').atan2(avgPostGrad.select('x'))
+  .rename("avgPostDir");
+
+var elvDir = elvGrad.select('y').atan2(elvGrad.select('x'))
+  .rename("elvDir");
+
+// Calculate the orientation component of ATEI: (1-cos(x))^10/1024. 
+// ***Need to be updated.
+var maxAngle = maxNDVIdir.subtract(elvDir).abs()
+  .reproject({
+    crs: "EPSG:4326",
+    scale: 30
+  }).rename("maxNDVIelvAngle");
+
+// var maxOrientation = ee.Image(1).subtract(maxAngle.cos())
+//                               .pow(10)
+//                               .divide(1024)
+//                               .rename("maxOrientation");
+
+var avgAngle = avgNDVIdir.subtract(elvDir).abs()
+  .reproject({
+    crs: "EPSG:4326",
+    scale: 30
+  }).rename("avgNDVIelvAngle");
+
+// var avgOrientation = ee.Image(1).subtract(avgAngle.cos())
+//                               .pow(10)
+//                               .divide(1024)
+//                               .rename("avgOrientation");
+
+var postAngle = avgPostDir.subtract(elvDir).abs()
+  .reproject({
+    crs: "EPSG:4326",
+    scale: 30
+  }).rename("avgPostElvAngle");
+
+if (false) {
+  // Calculate the Gaussian component of ATEI: exp(-(NDVI-0.44)^2/0.0072).
+  // ***Need to be updated.
+  // var maxGaussian = maxNDVI2019.subtract(0.59).pow(2)
+  var maxGaussian = maxNDVI2019.subtract(0.5134).pow(2)
+                      .divide(-0.0072)
+                      .exp()
+                      .rename("maxGaussian");
+  
+  // var avgGaussian = avgNDVI2019.subtract(0.11).pow(2)
+  var avgGaussian = avgNDVI2019.subtract(0.0930).pow(2)
+                      .divide(-0.0072)
+                      .exp()
+                      .rename("avgGaussian");
+
+  // GEDI forest canopy height.
+  var height = ee.ImageCollection("users/potapovpeter/GEDI_V27")
+    .filterBounds(samples).first()
+    .reproject({
+      crs: "EPSG:4326",
+      scale: 30
+    })
+    .rename("Canopy_Height");
+}
+
+
+/* Variable Extraction. */
+
+// Combine the variables of interest.
+var variables = maxNDVI2019.addBands(avgNDVI2019)
+  .addBands(avgPostNDVI2019)
+  // .addBands(ALOSelv)
+  .addBands(maxNDVImag)
+  .addBands(avgNDVImag)
+  .addBands(avgPostMag)
+  // .addBands(elvMag)
+  // .addBands(maxNDVIdir)
+  // .addBands(avgNDVIdir)
+  // .addBands(elvDir)
+  // .addBands(maxOrientation)
+  // .addBands(avgOrientation)
+  // .addBands(maxGaussian)
+  // .addBands(avgGaussian)
+  .addBands(maxAngle)
+  .addBands(avgAngle)
+  .addBands(postAngle)
+  // .addBands(height)
+  .updateMask(CATE) // Mask the result after computing the gradient to avoid missing pixels along the boundary of the study domain.
+  .updateMask(land) // Remove any remaining water-covered regions.
+  // .float();
+
+print("variables:", variables.bandTypes(), variables.projection().nominalScale())
+
+// Extract the variables at each sampled point.
+var extracted = variables.reduceRegions({
+  collection: newSamples, 
+  reducer: ee.Reducer.first(), 
+  crs: "EPSG:4326",
+  scale: 30
+});
+
+// Remove the NA data.
+var filtered = extracted.filter(ee.Filter.notNull(["avgPostElvAngle"]));
+// print("filtered:", filtered)
+
+
+if (false) {
+  /* Export to Asset. */
+  
+  // var resultName = "testing_extractedVariables_maxNDVI_avgNDVI_raw2019";
+  var resultName = "extractedVariables_anlMaxNDVI_anlAvgNDVI_smd2019";
+    
+  Export.table.toAsset({
+    collection: filtered,
+    description: resultName, 
+    assetId: wdNorthA + "Pixel_Sampling/Random/" + resultName
+  }); 
+} else {
+  /* Export to Drive. */
+  
+  var resultName = "extractedVariables_anlMaxNDVI_anlAvgNDVI_avgPostiveNDVI_smd2019";
+  
+  Export.table.toDrive({
+    collection: filtered, 
+    description: resultName, 
+    folder: resultName,
+    fileFormat: "SHP"
+  });
+}
+
+

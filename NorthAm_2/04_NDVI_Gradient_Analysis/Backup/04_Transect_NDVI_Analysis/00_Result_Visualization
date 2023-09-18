@@ -1,0 +1,128 @@
+/**
+ * Introduction:
+ * 1) Visualize the transect segments with the max. moving-window NDVI
+ *  standard deviations.
+ * 
+ * Update: 1/23/2022.
+*/
+
+
+/* Load module(s). */
+
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var TNA = require("users/ChenyangWei/Public:Modules/Transect_NDVI_Analysis");
+var FC_AP = require("users/ChenyangWei/Public:Modules/FeatureCollection_Analysis&Processing");
+var VIS = require("users/ChenyangWei/Public:Modules/Visualization");
+
+
+/* Data preparation. */
+
+var lowerSegmentSDs = TNA.LoadBasinGroupData_NorthAmerica(
+  TNA.lowerSegments_MaxNDVIsds_fileName,
+  TNA.lowerSegmentsMaxNDVIsds_byBasinGroup_fileName);
+
+var upperSegmentSDs = TNA.LoadBasinGroupData_NorthAmerica(
+  TNA.upperSegments_MaxNDVIsds_fileName,
+  TNA.upperSegmentsMaxNDVIsds_byBasinGroup_fileName);
+
+FC_AP.Print_FtrColInfo("lowerSegmentSDs:", lowerSegmentSDs);
+FC_AP.Print_FtrColInfo("upperSegmentSDs:", upperSegmentSDs);
+
+
+/* Data examination. */
+
+FC_AP.Examine_FtrCol_PropertyPercentiles(
+  lowerSegmentSDs, "lower_MovWinNum", 20);
+
+FC_AP.Examine_FtrCol_PropertyPercentiles(
+  lowerSegmentSDs, "lower_YearNum", 20);
+
+FC_AP.Examine_FtrCol_PropertyPercentiles(
+  lowerSegmentSDs, "lower_MaxMovWin_FirstYear", 20);
+
+FC_AP.Examine_FtrCol_PropertyPercentiles(
+  lowerSegmentSDs, "lower_MaxMovWin_NDVIsd", 20);
+
+
+
+/* Map visualization. */
+
+if (true) { // true OR false.
+
+  var displayFC = VIS.paintFtrCol_FillANDEdge;
+  
+  VIS.centerNorthAmerica(7);
+  
+  
+  var SDmax = 0.2;
+  
+  var varName = "lower_MaxMovWin_NDVIsd";
+  
+  Map.addLayer(displayFC(lowerSegmentSDs, varName, 1), 
+    {min: 0, max: SDmax, 
+    palette: VIS.BWR_palette}, 
+    varName, false);
+  
+  
+  var SD_thres = 0.2;
+  
+  Map.addLayer(lowerSegmentSDs.filter(
+    ee.Filter.lte("lower_MaxMovWin_NDVIsd", SD_thres)),
+    {color: "FF0000"},
+    "Remaining lower segments", true);
+  
+  Map.addLayer(lowerSegmentSDs.filter(
+    ee.Filter.gt("lower_MaxMovWin_NDVIsd", SD_thres)),
+    {color: "FFFF00"},
+    "Masked lower segments", true);
+  
+  
+  // var YOI = 1995;
+  
+  // Map.addLayer(lowerSegmentSDs.filter(
+  //   ee.Filter.eq("lower_MaxMovWin_FirstYear", YOI)),
+  //   {color: "0000FF"},
+  //   "YOI", true);
+  
+  
+  Map.addLayer(lowerSegmentSDs.filter(
+    ee.Filter.gte("lower_YearNum", 30)),
+    {color: "0000FF"},
+    "Observation # filtered", true);
+  
+  
+  var trendAbsMax = 5e-3;
+  
+  var varName = "lower_Trend";
+  
+  Map.addLayer(displayFC(lowerSegmentSDs, varName, 1), 
+    {min: trendAbsMax * -1, max: trendAbsMax, 
+    palette: VIS.BWR_palette}, 
+    varName, false);
+  
+  
+  var varName = "lower_MaxMovWin_FirstYear";
+  
+  Map.addLayer(displayFC(lowerSegmentSDs, varName, 1), 
+    {min: 1985, max: 2015, 
+    palette: VIS.BWR_palette}, 
+    varName, false);
+  
+  
+  var varName = "lower_MovWinNum";
+  
+  Map.addLayer(displayFC(lowerSegmentSDs, varName, 1), 
+    {min: 20, max: 30, 
+    palette: VIS.BWR_palette}, 
+    varName, false);
+  
+  
+  var varName = "lower_YearNum";
+  
+  Map.addLayer(displayFC(lowerSegmentSDs, varName, 1), 
+    {min: 15, max: 36, 
+    palette: VIS.BWR_palette}, 
+    varName, false);
+  
+}
+

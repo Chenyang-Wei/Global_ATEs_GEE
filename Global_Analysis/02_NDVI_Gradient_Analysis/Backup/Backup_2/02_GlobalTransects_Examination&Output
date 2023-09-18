@@ -1,0 +1,199 @@
+/**
+ * Introduction:
+ * 
+ * 1) Examine the filtering operations of the global transects.
+ * 
+ * Update: 4/8/2022.
+ */
+
+
+/* Load module(s). */
+
+var NGA = require("users/ChenyangWei/Public:Modules/NDVI_Gradient_Analysis.js");
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var FC_AP = require("users/ChenyangWei/Public:Modules/FeatureCollection_Analysis&Processing");
+
+
+/* Load and combine the AOIs of all continents. */
+
+var globalAOIs = NGA.Load_GlobalAOIs();
+
+
+/* Load and combine the study domains (i.e., new CATEs) of all continents. */
+
+var globalNewCATEs = NGA.Load_GlobalNewCATEs();
+
+
+/* Load the global transects with the results of the moving-window detection 
+  and the temporal analyses. */
+
+var fileName = NGA.globalTransects_MovWinTempVars_Name;
+
+var globalTransects = ee.FeatureCollection(GATE.wd_Global
+  + "NDVI_Gradient_Analysis/"
+  + fileName);
+
+var oldTransects = ee.FeatureCollection(GATE.wd_Global
+  + "NDVI_Gradient_Analysis/"
+  + "globalTransects_withMaxMovWinNDVIsd_TemporalVars_SDmeanRatio");
+
+
+/* Data examination. */
+
+// FC_AP.Print_FtrColInfo("globalTransects:", 
+//   globalTransects);
+
+// FC_AP.Print_FtrColInfo("oldTransects:", 
+//   oldTransects);
+
+var interval = 20;
+
+FC_AP.Examine_FtrCol_PropertyPercentiles(
+  "Old moving-window NDVI SD", oldTransects, "movWin_MaxNDVIsd", interval
+);
+
+FC_AP.Examine_FtrCol_PropertyPercentiles(
+  "New moving-window NDVI SD", globalTransects, "MW_MaxNDVIsd", interval
+);
+
+FC_AP.Examine_FtrCol_PropertyPercentiles(
+  "Old moving-window SD/mean", oldTransects, "movWin_MaxSDmean_Ratio", interval
+);
+
+FC_AP.Examine_FtrCol_PropertyPercentiles(
+  "New moving-window SD/mean", globalTransects, "MW_MaxSDmean_Ratio", interval
+);
+
+
+/* Filtering. */
+
+var NDVIthres = 0.2;
+var NDVI_filtering = globalTransects.filter(ee.Filter.lte("avgNDVI_Mean", NDVIthres));
+// var NDVI_filtering = globalTransects.filter(
+//   ee.Filter.and(
+//     ee.Filter.lte("avgNDVI_Mean", NDVIthres),
+//     ee.Filter.gt("avgNDVI_Mean", 0.1)
+//   )
+// );
+print("NDVI filtering", NDVI_filtering.size());
+
+var SDthres = 0.8;
+var SD_filtering = globalTransects.filter(ee.Filter.lte("newCATE_rawElv_PNratio", SDthres));
+// var SD_filtering = globalTransects.filter(
+//   ee.Filter.and(
+//     ee.Filter.lte("newCATE_rawElv_PNratio", SDthres),
+//     ee.Filter.gt("newCATE_rawElv_PNratio", 0.75)
+//   )
+// );
+print("Study domain filtering", SD_filtering.size());
+
+
+// Absolute moving-window SD.
+var absMWthres = 0.15;
+var new_absMW_filtering = globalTransects.filter(ee.Filter.gte("MW_MaxNDVIsd", absMWthres));
+var old_absMW_filtering = oldTransects.filter(ee.Filter.gte("movWin_MaxNDVIsd", absMWthres));
+print("Old abs. SD filtering", old_absMW_filtering.size());
+print("New abs. SD filtering", new_absMW_filtering.size());
+
+
+
+// Relative moving-window SD.
+var relMWthres = 0.25;
+var new_relMW_filtering = globalTransects.filter(ee.Filter.gte("MW_MaxSDmean_Ratio", relMWthres));
+var old_relMW_filtering = oldTransects.filter(ee.Filter.gte("movWin_MaxSDmean_Ratio", relMWthres));
+print("Old rel. SD filtering", old_relMW_filtering.size());
+print("New rel. SD filtering", new_relMW_filtering.size());
+
+
+// Combined filter.
+var combined_Filtering = globalTransects.filter(
+  ee.Filter.or(
+    ee.Filter.lte("avgNDVI_Mean", NDVIthres),
+    ee.Filter.lte("newCATE_rawElv_PNratio", SDthres),
+    // ee.Filter.gte("MW_MaxSDmean_Ratio", relMWthres)
+    ee.Filter.gte("MW_MaxNDVIsd", absMWthres)
+  )
+);
+
+var remainingTransects = globalTransects.filter(
+  ee.Filter.and(
+    ee.Filter.gt("avgNDVI_Mean", NDVIthres),
+    ee.Filter.gt("newCATE_rawElv_PNratio", SDthres),
+    // ee.Filter.lt("MW_MaxSDmean_Ratio", relMWthres)
+    ee.Filter.lt("MW_MaxNDVIsd", absMWthres)
+  )
+);
+
+print("Combined filtering", combined_Filtering.size());
+// print("Remaining transect #", remainingTransects.size());
+print("Raw transect #", globalTransects.size());
+
+
+// Whether to output the result.
+var output = false; // true OR false.
+
+
+if (!output) {
+  // // Extract the transects of North America and Asia.
+  // var transects_NorthAmerica_Asia = globalTransects.filter(
+  //   ee.Filter.notNull(["CL_newID"])
+  // );
+  
+  // // Select the transects of continents other than North America and Asia.
+  // var transects_OtherContinents = globalTransects.filter(
+  //   ee.Filter.notNull(["CL_ID"])
+  // );
+  
+
+  // Map visualization.
+  Map.setOptions("satellite");
+  // Map.setCenter(-77.534, 7.987, 7); // South America.
+  Map.setCenter(-117.5495, 48.9958, 8);
+  
+  // Map.addLayer(globalAOIs, {color: "FFFFFF"}, "Global AOIs", false);
+  
+  Map.addLayer(globalNewCATEs, {palette: "808080"}, "Global Study Domains", 
+    true, 0.5);
+  
+  Map.addLayer(globalTransects, {color: "FF00FF"}, 
+    "Raw new transects", false);
+  
+  Map.addLayer(NDVI_filtering, {color: "00FF00"}, 
+    "NDVI mean <= " + NDVIthres, true);
+  
+  Map.addLayer(SD_filtering, {color: "0000FF"}, 
+    "Study domain <= " + SDthres, true);
+  
+  Map.addLayer(old_absMW_filtering, {color: "0000FF"}, 
+    "Old abs. SD >= " + absMWthres, false);
+  
+  Map.addLayer(new_absMW_filtering, {color: "FFFF00"}, 
+    "New abs. SD >= " + absMWthres, true);
+  
+  Map.addLayer(old_relMW_filtering, {color: "FF0000"}, 
+    "Old rel. SD >= " + relMWthres, false);
+  
+  Map.addLayer(new_relMW_filtering, {color: "00FFFF"}, 
+    "New rel. SD >= " + relMWthres, false);
+  
+  Map.addLayer(combined_Filtering, {color: "FF0000"}, 
+    "Combined filtering", true);
+  
+  Map.addLayer(remainingTransects, {color: "FFFF00"}, 
+    "Remaining new transects", false);
+  
+} else {
+  
+  /* Output the global transect results to Google Drive. */
+  
+  var folderName = "globalTransectResults";
+  
+  // CSV.
+  Export.table.toDrive({
+    collection: globalTransects, 
+    description: fileName, 
+    folder: folderName + "_CSV", 
+    fileFormat: "CSV"
+  });
+}
+

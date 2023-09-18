@@ -1,0 +1,241 @@
+/**
+ * Introduction: 
+ * 1) Summarize the process of CATE (climatic ATE) determination. 
+ * 
+ * Date: 6/15/2020.
+ */
+
+
+/* Setup. */
+
+// Asset paths.
+var wdNorthA = "users/treeline/North_America/CATE/";
+var wdGlobal = "users/treeline/Global/Study_Area/GMBA_Lte60NS/";
+
+// Original study domain.
+var original = ee.Image(wdGlobal + "Elv_GtePct80_of_MODISforestElv_in_MtRg__" +
+  "AbsElvDist_Lte1000m_to_AvgTLH__" +
+  "MODISforestDist_Lte50px");
+
+// Copernicus land cover product.
+var copernicus = ee.ImageCollection("COPERNICUS/Landcover/100m/Proba-V/Global")
+  .select('discrete_classification').first();
+
+// Forested areas.
+var closedForests = copernicus.gte(111).and(copernicus.lte(116)); // Closed forests.
+var allForests = copernicus.gte(111).and(copernicus.lte(126)); // All forests.
+
+// Load the average climatic treeline elevation.
+var avgTLH = ee.Image(wdNorthA +
+  "avgTLH_1979to2013_1arcsec_mtRgLand_CHELSAv12_ALOSv22_GMBAv12_HansenV17");
+
+// Study domain.
+var studyDomain = avgTLH.gte(-1e18);
+
+// ALOS elevation.
+var ALOSelv = ee.Image('JAXA/ALOS/AW3D30/V2_2').select('AVE_DSM')
+  .updateMask(studyDomain); // Within the study domain.
+
+var elvPrj = ALOSelv.projection();
+
+// Load the original and newly extracted CATEs.
+var newCATEs_1km = ee.Image(wdNorthA + "new1kmCATEs_3kmForests_wtdAvgElv_10kmGrid_10pxCircleFocalPctDiff"); // 1-km CATE.
+var newCATEs_500m = ee.Image(wdNorthA + "new500mCATEs_3kmForests_wtdAvgElv_10kmGrid_10pxCircleFocalPctDiff"); // 500-m CATE.
+
+
+/* Extract CATEs within a vertical distance to the average TLH. */ 
+
+// Extracted CATEs.
+var CATE_1km = newCATEs_1km.select("originalCATE"); // 1 km.
+var CATE_500m = newCATEs_500m.select("originalCATE"); // 500 m.
+
+
+/* Determine the surrounding regions of the extracted CATEs. */
+
+var neighborhood = 200; // Number of ~30-m pixels.
+
+var surrounding_1km = CATE_1km.fastDistanceTransform({
+  neighborhood: neighborhood,
+  units: "pixels",
+  metric: "squared_euclidean"
+}).sqrt() // Get the distance in pixels.
+  // Request the data at the scale and projection of the elevation image.
+  .reproject({
+    crs: elvPrj
+  });
+
+var surrounding_500m = CATE_500m.fastDistanceTransform({
+  neighborhood: neighborhood,
+  units: "pixels",
+  metric: "squared_euclidean"
+}).sqrt() // Get the distance in pixels.
+  // Request the data at the scale and projection of the elevation image.
+  .reproject({
+    crs: elvPrj
+  });
+
+// Threshold of the horizontal distance for the surrounding regions.
+surrounding_1km = surrounding_1km.lte(100).selfMask();
+surrounding_500m = surrounding_500m.lte(100).selfMask();
+
+
+/* Extract the elevations of the CATE and forested regions within its surrounding areas. */
+
+// 1km.
+var allForElv_1km = ALOSelv.updateMask(surrounding_1km)
+  .updateMask(allForests).rename("allForElv");
+
+var cldForElv_1km = ALOSelv.updateMask(surrounding_1km)
+  .updateMask(closedForests).rename("cldForElv");
+
+var CATEelv_1km = ALOSelv.updateMask(CATE_1km).rename("CATEelv");
+
+// 500m.
+var allForElv_500m = ALOSelv.updateMask(surrounding_500m)
+  .updateMask(allForests).rename("allForElv");
+
+var cldForElv_500m = ALOSelv.updateMask(surrounding_500m)
+  .updateMask(closedForests).rename("cldForElv");
+
+var CATEelv_500m = ALOSelv.updateMask(CATE_500m).rename("CATEelv");
+
+
+/* Aggregate elevation datasets to the 500-m level. */
+
+// Load the 500-m aggregated elevation dataset.
+var aggr500m_1km = ee.Image(wdNorthA +
+  "avgTLH_absElvDistLte1000m_3kmSurroundingForests_wtdAvgElv_500mGrid"); // 1000-m CATE.
+
+var aggr500m_500m = ee.Image(wdNorthA +
+  "avgTLH_absElvDistLte500m_3kmSurroundingForests_elvWeightedAvg_500mGrid"); // 500-m CATE.
+
+// Set the mask of each valid pixel to 1.
+aggr500m_500m = aggr500m_500m.updateMask(aggr500m_500m.gte(-1e18));
+
+
+/* Aggregate elevation datasets to the 10-km level. */
+
+// Load the 10-km aggregated elevation dataset.
+var aggr10km_1km = ee.Image(wdNorthA +
+  "1kmCATE_3kmForests_wtdAvgElv_10kmGrid"); // 1000-m CATE.
+
+var aggr10km_500m = ee.Image(wdNorthA +
+  "avgTLH_absElvDistLte500m_3kmSurroundingForests_elvWeightedAvg_10kmGrid"); // 500-m CATE.
+
+// Set the mask of each valid pixel to 1.
+aggr10km_500m = aggr10km_500m.updateMask(aggr10km_500m.gte(-1e18));
+
+
+/* Calculate the focal percentiles of the elevation datasets. */
+
+// Load the focal elevation percentiles.
+var focalPcts_1km = ee.Image(wdNorthA +
+  "1kmCATE_3kmForests_wtdAvgElv_10kmGrid_10pxCircleFocalPcts"); // 1-km CATE.
+
+var focalPcts_500m = ee.Image(wdNorthA +
+  "avgTLH_absElvDistLte500m_3kmSurroundingForests_wtdAvgElv_10kmGrid_10pxCircleFocalPcts"); // 500-m CATE.
+
+
+/* Calculate the difference between the focal elevational percentiles of the original CATE and its surrounding forested areas. */
+
+// Load the focal elevation percentile differences.
+var focalPctDiff_1km = ee.Image(wdNorthA + 
+  "1kmCATE_3kmForests_wtdAvgElv_10kmGrid_10pxCircleFocalPctDiff"); // 1-km CATE.
+
+var focalPctDiff_500m = ee.Image(wdNorthA + 
+  "avgTLH_absElvDistLte500m_3kmSurroundingForests_wtdAvgElv_10kmGrid_10pxCircleFocalPctDiff"); // 500-m CATE.
+
+print("Focal elevation analysis:", focalPctDiff_500m.bandNames());
+
+
+/* Extract new CATEs in the surrounding regions based on the focal elevation percentile differences. */
+
+print("Newly extracted CATEs:", newCATEs_500m.bandNames());
+
+
+
+if (true) {
+  /* Visualization. */
+  
+  var elvPalette = ['006600', '002200', 'fff700', 'ab7634', 'c4d0ff', 'ffffff'];
+  var elvVis = {min: 1000, max: 3500, palette: elvPalette};
+  
+  var diffPalette = ['0000ff', 'ffffff', 'ff0000'];
+  var diffVis = {min: -0.5e3, max: 0.5e3, palette: diffPalette};
+  
+  Map.setOptions("hybrid");
+  
+  Map.setCenter(-113.655, 48.734, 10);
+  
+  // 30 m.
+  Map.addLayer(ALOSelv, elvVis, "ALOS elevation", false);
+  Map.addLayer(avgTLH, elvVis, "Temporal average climatic treeline elevation", false);
+  
+  Map.addLayer(surrounding_1km, {palette: "FFFF00"}, "CATE - Surrounding (1km)", false);
+  Map.addLayer(newCATEs_1km.select("originalCATE"), {palette: "0000FF"}, "CATE (1km)", false);
+  
+  Map.addLayer(surrounding_500m, {palette: "00FFFF"}, "CATE - Surrounding (500m)", false);
+  Map.addLayer(newCATEs_500m.select("originalCATE"), {palette: "FF0000"}, "CATE (500m)", false);
+  
+  Map.addLayer(cldForElv_1km, elvVis, "Closed forest elevation - Surrounding (1km)", false);
+  Map.addLayer(allForElv_1km, elvVis, "All forest elevation - Surrounding (1km)", false);
+  Map.addLayer(CATEelv_1km, elvVis, "CATE elevation (1km)", false);
+  
+  Map.addLayer(cldForElv_500m, elvVis, "Closed forest elevation - Surrounding (500m)", false);
+  Map.addLayer(allForElv_500m, elvVis, "All forest elevation - Surrounding (500m)", false);
+  Map.addLayer(CATEelv_500m, elvVis, "CATE elevation (500m)", false);
+  
+  // 500 m.
+  Map.addLayer(aggr500m_1km.select("cldForElv"), elvVis, "500-m closed forest elevation - Surrounding (1km)", false);
+  Map.addLayer(aggr500m_1km.select("allForElv"), elvVis, "500-m all forest elevation - Surrounding (1km)", false);
+  Map.addLayer(aggr500m_1km.select("TLHdistElv"), elvVis, "500-m CATE elevation (1km)", false);
+  
+  Map.addLayer(aggr500m_500m.select("cldForElv"), elvVis, "500-m closed forest elevation - Surrounding (500m)", false);
+  Map.addLayer(aggr500m_500m.select("allForElv"), elvVis, "500-m all forest elevation - Surrounding (500m)", false);
+  Map.addLayer(aggr500m_500m.select("TLHdistElv"), elvVis, "500-m CATE elevation (500m)", false);
+  
+  // 10 km.
+  Map.addLayer(aggr10km_1km.select("cldForElv"), elvVis, "10-km closed forest elevation - Surrounding (1km)", false);
+  Map.addLayer(aggr10km_1km.select("allForElv"), elvVis, "10-km all forest elevation - Surrounding (1km)", false);
+  Map.addLayer(aggr10km_1km.select("TLHdistElv"), elvVis, "10-km CATE elevation (1km)", false);
+  
+  Map.addLayer(aggr10km_500m.select("cldForElv"), elvVis, "10-km closed forest elevation - Surrounding (500m)", false);
+  Map.addLayer(aggr10km_500m.select("allForElv"), elvVis, "10-km all forest elevation - Surrounding (500m)", false);
+  Map.addLayer(aggr10km_500m.select("TLHdistElv"), elvVis, "10-km CATE elevation (500m)", false);
+  
+  // Focal percentiles.
+  Map.addLayer(focalPcts_1km.select("cldForElv_p75"), elvVis, "Focal 75th pct. - Closed forests (1km)", false);
+  Map.addLayer(focalPcts_1km.select("allForElv_p90"), elvVis, "Focal 90th pct. - All forests (1km)", false);
+  Map.addLayer(focalPcts_1km.select("TLHdistElv_p10"), elvVis, "Focal 10th pct. - CATE (1km)", false);
+  Map.addLayer(focalPcts_1km.select("TLHdistElv_p25"), elvVis, "Focal 25th pct. - CATE (1km)", false);
+  
+  Map.addLayer(focalPcts_500m.select("cldForElv_p75"), elvVis, "Focal 75th pct. - Closed forests (500m)", false);
+  Map.addLayer(focalPcts_500m.select("allForElv_p90"), elvVis, "Focal 90th pct. - All forests (500m)", false);
+  Map.addLayer(focalPcts_500m.select("TLHdistElv_p10"), elvVis, "Focal 10th pct. - CATE (500m)", false);
+  Map.addLayer(focalPcts_500m.select("TLHdistElv_p25"), elvVis, "Focal 25th pct. - CATE (500m)", false);
+  
+  // Focal differences.
+  Map.addLayer(focalPctDiff_1km.select("allForElv_p90_TLHdistElv_p10"), diffVis, 
+    "All forest 90th pct. & CATE 10th pct. (1km)", false);
+  Map.addLayer(focalPctDiff_1km.select("cldForElv_p75_TLHdistElv_p25"), diffVis, 
+    "Closed forest 75th pct. & CATE 25th pct. (1km)", false);
+  
+  Map.addLayer(focalPctDiff_500m.select("allForElv_p90_TLHdistElv_p10"), diffVis, 
+    "All forest 90th pct. & CATE 10th pct. (500m)", false);
+  Map.addLayer(focalPctDiff_500m.select("cldForElv_p75_TLHdistElv_p25"), diffVis, 
+    "Closed forest 75th pct. & CATE 25th pct. (500m)", false);
+  
+  // New CATEs.
+  Map.addLayer(newCATEs_1km.select("cldForElv_p75_TLHdistElv_p25"), {palette: "FF00FF"}, 
+    "Closed forest 75th pct. & CATE 25th pct. (1km)", false);
+  Map.addLayer(newCATEs_1km.select("cldForElv_p90_TLHdistElv_p10"), {palette: "FFFF00"}, 
+    "Closed forest 90th pct. & CATE 10th pct. (1km)", false);
+  
+  Map.addLayer(newCATEs_500m.select("cldForElv_p75_TLHdistElv_p25"), {palette: "00FFFF"}, 
+    "Closed forest 75th pct. & CATE 25th pct. (500m)", false);
+  Map.addLayer(newCATEs_500m.select("allForElv_p75_TLHdistElv_p25"), {palette: "00FF00"}, 
+    "All forest 75th pct. & CATE 25th pct. (500m)", false);
+  
+  // Original study domain.
+  Map.addLayer(original, {palette: "808080"}, "Original study domain", false);
+}

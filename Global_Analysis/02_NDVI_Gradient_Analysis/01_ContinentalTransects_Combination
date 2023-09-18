@@ -1,0 +1,53 @@
+/**
+ * Introduction:
+ * 
+ * 1) Combine all continental transects into a single FeatureCollection.
+ * 
+ * 
+ * Update: 4/22/2022.
+ * 
+ * Runtime: 2h.
+ */
+
+
+/* Load module(s). */
+
+var NGA = require("users/ChenyangWei/Public:Modules/NDVI_Gradient_Analysis.js");
+var FC_AP = require("users/ChenyangWei/Public:Modules/FeatureCollection_Analysis&Processing");
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+
+
+/* Load and combine all continental transects. */
+
+// Name each continental dataset of transects.
+var continental_Name = NGA.continentalTransects_FileName;
+
+// Combine all continental datasets.
+var globalTransects = NGA.Combine_ContinentalTransects(continental_Name);
+
+// Whether to output the result.
+var output = false; // true OR false.
+
+
+if (!output) {
+  // Data examination.
+
+  FC_AP.Print_FtrColInfo("globalTransects:", 
+    globalTransects); // 2,294,222.
+
+} else {
+  // Export the final result.
+  
+  var wd_Output = GATE.wd_Global
+    + "NDVI_Gradient_Analysis/";
+  
+  var fileName = NGA.globalTransects_FileName;
+  
+  Export.table.toAsset({
+    collection: globalTransects, 
+    description: fileName, 
+    assetId: wd_Output
+      + fileName
+  });
+}
+

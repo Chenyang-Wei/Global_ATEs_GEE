@@ -1,0 +1,209 @@
+/**
+ * Introduction:
+ * 1) Smooth the ALOS elevation by calculating its focal mean 
+ *  within a 10-pixel circular kernel.
+ * 2) Generate the gradient variables of the smoothed annual maximum NDVI and
+ *  elevation.
+ * 3) Extract the generated variables and the biome number at each sample point 
+ *  in the year of high-resolution image collection.
+ * 
+ * Update: 3/19/2021.
+ * 
+ * Runtime: 
+ * 1) To Drive: 48s.
+ * 2) To Asset: 1m.
+*/
+
+
+/* Load and reproject the required datasets. */
+
+// Set the 10-km buffered bounding box of the study domain.
+var AOI = ee.Geometry.Rectangle({
+  coords: [-180, 7.114761500193937, -52.095625030545534, 80.24342770493531],
+  geodesic: false
+});
+
+// Target projection.
+var targetPrj = {
+  crs: "EPSG:4326",
+  scale: 30
+};
+
+// ALOS elevation (Version 3.2, released in January 2021) in the AOI.
+var ALOSelv = ee.ImageCollection('JAXA/ALOS/AW3D30/V3_2').select('DSM')
+  .filterBounds(AOI)
+  .mosaic()
+  .reproject(targetPrj);
+
+// print("ALOSelv:", ALOSelv.bandTypes(),
+//   ALOSelv.projection().crs(),
+//   ALOSelv.projection().nominalScale())
+
+// Set the working directory.
+var wdNA = "users/treeline/NorthAmerica_GME/";
+
+// Load the 300m-buffered new CATE.
+// (Choose the 300-m buffer because the NDVI-smoothing kernel
+// is a 10-pixel (10*30m) circle.)
+var bufNewCATE = ee.Image(wdNA + "Climate-Based_ATE/" +
+  "30mNewCATE_BufRawCATEclosedForests_300mBuffered_AOI");
+
+// print("bufNewCATE:", bufNewCATE.bandTypes(),
+//   bufNewCATE.projection().crs(),
+//   bufNewCATE.projection().nominalScale())
+
+// Load the combined samples within the new CATE.
+var samples = ee.FeatureCollection(wdNA + "ATEI_Estimation/" +
+  "ManualRandomStratified_CombinedSamples_In30mNewCATE");
+
+print("samples:", samples.sort("withinATE").first(), 
+  samples.size(), 
+  samples.geometry().projection().crs())
+
+// Load the smoothed annual maximum NDVIs in the buffered new CATE.
+var maxNDVI = ee.Image(wdNA + "ATEI_Estimation/" +
+  "medianSmdAnnualMaxNDVI_1984to2020_cloudShadowMasked_300mBufNewCATE_AOI");
+
+// print("maxNDVI:", maxNDVI.bandTypes(),
+//   maxNDVI.projection().crs(),
+//   maxNDVI.projection().nominalScale())
+
+// Load the biome numbers in the buffered new CATE.
+var biomeNum = ee.Image(wdNA + "ATEI_Estimation/" +
+  "30mBiomeNum_forestsTundra_montaneNAchanged_300mBufNewCATE_AOI");
+
+// print("biomeNum:", biomeNum.bandTypes(),
+//   biomeNum.projection().crs(),
+//   biomeNum.projection().nominalScale())
+
+
+/* Smooth the ALOS elevation within the 300m-buffered new CATE 
+  by calculating its focal mean within a 10-pixel circular kernel. */
+
+// Extract elevation within the buffered new CATE.
+var bufCATEelv = ALOSelv.updateMask(bufNewCATE);
+
+// Define a circular kernel of 10 pixels.
+var Kn = ee.Kernel.circle({
+  radius: 10,
+  units: "pixels"
+}); 
+
+// Calculate the focal mean within the kernel.
+var smdElv = bufCATEelv.reduceNeighborhood({
+  // The mean reducer is smoother than the median reducer, 
+  // which then provides a less scattered gradient direction dataset.
+  reducer: ee.Reducer.mean(),
+  kernel: Kn,
+  skipMasked: true // MASK output pixels if the corresponding input pixel is masked.
+}).reproject(targetPrj); // Reproject to the target projection.
+
+// print("smdElv:", smdElv.bandTypes(),
+//   smdElv.projection().crs(),
+//   smdElv.projection().nominalScale())
+
+
+/* Generate the gradient direction of the smoothed elevation. */
+
+// Compute the elevation gradient in the X and Y directions.
+var elvGrad = smdElv.gradient()
+  .reproject(targetPrj);
+
+// Compute the direction of the elevation gradient.
+// "atan2" calculates the angle formed by the 2D vector [x, y].
+// (Gradient: -179 ~ 180 (-PI ~ PI), 
+// south: 0, north: 180 (PI), 
+// west : 90 (PI/2), east: -90 (-PI/2)).
+var elvDir = elvGrad.select('y').atan2(elvGrad.select('x'))
+  .rename("elvDir");
+
+// print("elvDir:", elvDir.bandTypes(),
+//   elvDir.projection().crs(),
+//   elvDir.projection().nominalScale())
+
+
+/* Extract the gradient variables at each sample point 
+  in the year of high-resolution image collection. */
+
+// Obtain the years of image collection.
+var Years = samples.aggregate_array("Year")
+  .distinct().sort();
+
+// print("Years:", Years)
+
+// Generate a list of variables at all sample points
+var sampledVarList = Years.map(function(year) {
+  // When directly convert a "floating point" to a "string", 
+  // the result contains a ".", which isn't allowed in band names.
+  var yearName = ee.String(ee.Number(year).int());
+  
+  // Extract and rename the smoothed annual maximum NDVI in the image collection year.
+  var NDVIname = ee.String("smdNDVI_").cat(yearName);
+  var smdNDVI = maxNDVI.select([NDVIname], ["smdNDVI"]);
+  
+  // Compute the NDVI gradient in the X and Y directions.
+  var NDVIgrad = smdNDVI.gradient()
+    .reproject(targetPrj);
+  
+  // Compute the direction of the NDVI gradient.
+  var NDVIdir = NDVIgrad.select('y').atan2(NDVIgrad.select('x'))
+    .rename("NDVIdir");
+
+  // Compute the magnitude of the NDVI gradient: 
+  // "hypot" calculates the magnitude of the 2D vector [x, y].
+  var NDVImag = NDVIgrad.select('y').hypot(NDVIgrad.select('x'))
+    .rename("NDVImag");
+  
+  // Combine the computed NDVI variables, 
+  // the elevation gradient direction, and
+  // the biome numbers.
+  var annualVars = smdNDVI.addBands(NDVIdir)
+    .addBands(NDVImag)
+    .addBands(elvDir)
+    .addBands(biomeNum);
+  
+  // Select samples collected in the same year.
+  var annualSamples = samples.filter(ee.Filter.eq("Year", year));
+  
+  // Get the annual variables at each selected sample.
+  var sampledVars = annualVars.reduceRegions({
+    collection: annualSamples, 
+    reducer: ee.Reducer.first(), 
+    scale: 30, 
+    crs: "EPSG:4326"
+  });
+  
+  return sampledVars;
+});
+
+// Convert the list of sampled variables to a FeatureCollection.
+var sampledVarFC = ee.FeatureCollection(sampledVarList).flatten();
+
+print ("sampledVarFC:", 
+  sampledVarFC.first().propertyNames(),
+  sampledVarFC.size())
+
+
+if (false) {
+  /* Export the result to Asset and Drive. */
+  
+  // var fileName = "maxNDVI_gradMagDir_elvDir_CombinedSamples_In30mNewCATE";
+  var fileName = "maxNDVI_gradMagDir_elvDir_biomeNum_CombinedSamples_In30mNewCATE";
+  
+  // Asset.
+  Export.table.toAsset({
+    collection: sampledVarFC,
+    description: fileName,
+    assetId: wdNA + "ATEI_Estimation/" + 
+      fileName
+  });
+  
+  // Drive.
+  Export.table.toDrive({
+    collection: sampledVarFC,
+    description: fileName, 
+    folder: fileName,
+    fileFormat: "SHP"
+  }); 
+}
+

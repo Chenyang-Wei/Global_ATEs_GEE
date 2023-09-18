@@ -1,0 +1,139 @@
+/**
+ * Introduction:
+ * 
+ * 1) For each transect, divide the filtered annual Features into 
+ *  two periods: (a) Period #1: 1985-2002, and 
+ *  (b) Period #2: 2003-2020.
+ * 
+ * 2) For each period, estimate the temporal trends and 
+ *  observation numbers of the annual average NDVIs and 
+ *  elevational gradients, respectively.
+ * 
+ * 
+ * Update: 4/15/2022.
+ * 
+ * Runtime:
+ */
+
+
+/* Load module(s). */
+
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var NGA = require("users/ChenyangWei/Public:Modules/NDVI_Gradient_Analysis.js");
+var FC_AP = require("users/ChenyangWei/Public:Modules/FeatureCollection_Analysis&Processing");
+
+
+/* Data loading. */
+
+// Set the major working directory.
+var wd_Main = GATE.wd_NorthAmerica; 
+
+// Determine the common file path of the raw transects.
+var wd_RawTransects = wd_Main
+  + "NDVI_Gradient_Analysis/"
+  + NGA.transects_GapDetected_FullName
+  + "/"
+  + NGA.transects_GapDetected_ShortName;
+
+// Determine the common file path of the annual Features.
+var wd_AnnualFeatures = wd_Main
+  + "NDVI_Gradient_Analysis/"
+  + NGA.filteredAnnualFeatures_FullName
+  + "/"
+  + NGA.filteredAnnualFeatures_ShortName;
+
+// Determine the number of transect subsets.
+var subsetNum = 20; 
+
+// Whether to output the result(s).
+var output = true; // true OR false.
+
+
+/* Perform the following operations for each basin group. */
+
+for (var basinGroupID = 1; basinGroupID <= 5; basinGroupID ++) {
+
+
+  /* Perform the following operations for each subset of the annual Features. */
+  
+  for (var subsetID = 1; subsetID <= subsetNum; subsetID ++) {
+    
+    // Load each subset of the raw transects.
+    var raw_Transects = ee.FeatureCollection(wd_RawTransects
+      + "_BG" + basinGroupID
+      + "_S" + subsetID);
+    
+    // Load each subset of the annual Features.
+    var filtered_AnnualFeatures = ee.FeatureCollection(wd_AnnualFeatures
+      + "_BG" + basinGroupID
+      + "_S" + subsetID);
+    
+
+    /* For each transect, divide the filtered annual Features into 
+      two periods: (a) Period #1: 1985-2002, and 
+      (b) Period #2: 2003-2020. */
+    
+    var firstPeriod_AnnualFeatures = NGA.Identify_FirstPeriod_AnnualFeatures(
+      filtered_AnnualFeatures
+    );
+    
+    var secondPeriod_AnnualFeatures = NGA.Identify_SecondPeriod_AnnualFeatures(
+      filtered_AnnualFeatures
+    );
+    
+    
+    /* Perform the trend analyses for each period. */
+    
+    var centerlineID = "CL_newID";
+    
+    var transects_withFirstPeriod = 
+      NGA.Perform_TrendAnalyses_byPeriod(
+        raw_Transects, firstPeriod_AnnualFeatures, 
+        "firstP", centerlineID
+      );
+    
+    var transects_withTwoPeriods = 
+      NGA.Perform_TrendAnalyses_byPeriod(
+        transects_withFirstPeriod, secondPeriod_AnnualFeatures, 
+        "secondP", centerlineID
+      );
+    
+    
+    /* Calculate the secondP/firstP ratio for each temporal trend. */
+    
+    var transects_withTrendRatios = 
+      NGA.Calculate_PeriodTrendRatios(transects_withTwoPeriods);
+    
+    
+    if (output) {
+      // Export the final results.
+      
+      var wd_Output = wd_Main
+        + "NDVI_Gradient_Analysis/"
+        + NGA.transects_withTrendRatios_FullName
+          // "transects_withTrendRatios_MovWinSD_TempVars_GapDetected_MedianFiltered"
+        + "/";
+      
+      var fileName = NGA.transects_withTrendRatios_ShortName
+        + "_BG" + basinGroupID
+        + "_S" + subsetID;
+      
+      Export.table.toAsset({
+        collection: transects_withTrendRatios, 
+        description: fileName, 
+        assetId: wd_Output
+          + fileName
+      });
+    }
+  }
+}
+
+
+if (!output) {
+  // Examine the last subset of data.
+  
+  FC_AP.Print_FtrColInfo("filtered_AnnualFeatures:", filtered_AnnualFeatures);
+  
+  FC_AP.Print_FtrColInfo("transects_withTrendRatios:", transects_withTrendRatios);
+}
+

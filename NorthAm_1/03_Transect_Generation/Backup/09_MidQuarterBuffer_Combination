@@ -1,0 +1,59 @@
+/**
+ * Introduction:
+ * 1) Combine the mid-quarter segment buffers of all basin groups
+ *  into one FeatureCollection.
+ * 
+ * Update: 10/12/2021.
+ * 
+ * Runtime:
+ */
+
+
+/* Load module(s). */
+
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var VIS = require("users/ChenyangWei/Public:Modules/Visualization");
+
+
+/* Read and combine the mid-quarter segment buffers of all basin groups. */
+
+// Determine the working directory of the mid-quarter segment buffers.
+var wd_Buffers = GATE.wd_NorthAmerica
+  + "Elevational_Transect_Generation/"
+  + GATE.midQuarterBuffers_fileName
+  + "/";
+
+// Combine the mid-quarter segment buffers by basin group.
+var allBuffers = ee.List([]);
+
+for (var basinGroup_ID = 1; basinGroup_ID <= 5; basinGroup_ID ++) {
+  var buffers_perBasinGroup = ee.FeatureCollection(wd_Buffers
+    + GATE.midQuarterBuffers_byBasinGroup_fileName
+    + basinGroup_ID);
+  
+  allBuffers = allBuffers.add(buffers_perBasinGroup);
+}
+
+var allBuffers_Flattened = ee.FeatureCollection(allBuffers).flatten();
+
+
+if (false) { // true OR false.
+  print("allBuffers_Flattened:", 
+    allBuffers_Flattened.size(),
+    allBuffers_Flattened.first());
+  
+  VIS.centerNorthAmerica(12);
+  
+  Map.addLayer(allBuffers_Flattened, {color: "FF0000"}, "allBuffers_Flattened");
+
+} else {
+  //// Export the result.
+  var fileName = GATE.midQuarterBuffers_AllBasinGroups_fileName;
+  
+  Export.table.toAsset({
+    collection: allBuffers_Flattened, 
+    description: fileName, 
+    assetId: wd_Buffers + fileName
+  });
+}
+

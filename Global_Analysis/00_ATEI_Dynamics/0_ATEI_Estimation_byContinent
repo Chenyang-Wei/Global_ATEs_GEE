@@ -1,0 +1,304 @@
+/**
+ * Introduction:
+ * 
+ *  1) Smooth the ALOS elevation within the 300m-buffered climatic ATE (CATE) 
+ *    by calculating its focal mean within a 10-pixel circular kernel.
+ * 
+ *  2) Generate the three ATEI components by year based on the parameters calibrated in R.
+ * 
+ *  3) Estimate the annual ATEI using the logistic regression model constructed in R.
+ * 
+ * Update: 10/27/2022.
+ * 
+ * Runtime: .
+ */
+
+
+/* Load module(s). */
+
+var IMG = require("users/ChenyangWei/Public:Modules/Image_Analysis&Processing");
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var TNA = require("users/ChenyangWei/Public:Modules/Transect_NDVI_Analysis");
+var IC_AP = require("users/ChenyangWei/Public:Modules/ImageCollection_Analysis&Processing.js");
+
+
+/* Setup. */
+
+// Determine the target projection.
+var targetPrj = IMG.WGS84_30m;
+
+// Set the area of interest.
+// var AOI = GATE.AOI_SouthAmerica; /**** South America. ****/
+// var AOI = GATE.AOI_NorthAmerica; /**** North America. ****/
+// var AOI = GATE.AOI_Europe; /**** Europe. ****/
+// var AOI = GATE.AOI_Africa; /**** Africa. ****/
+var AOI = GATE.AOI_Oceania; /**** Oceania. ****/
+
+// Set the major working directory.
+// var wd_Main = GATE.wd_SouthAmerica; /**** South America. ****/
+// var wd_Main = GATE.wd_NorthAmerica; /**** North America. ****/
+// var wd_Main = GATE.wd_Europe; /**** Europe. ****/
+// var wd_Main = GATE.wd_Africa; /**** Africa. ****/
+var wd_Main = GATE.wd_Oceania; /**** Oceania. ****/
+
+
+/* Data loading. */
+
+// Load the new CATE.
+var CATE = ee.Image(wd_Main
+  + "Climate-Based_ATE/" 
+  + GATE.newCATE_fileName);
+
+// Load the buffered new CATE.
+//  (Choose the 300-m buffer because the NDVI-smoothing kernel
+//    is a 10-pixel (10*30m) circle.)
+var bufCATE = ee.Image(wd_Main
+  + "Climate-Based_ATE/"
+  + "300mBuffered_30mNewCATE_AOI");
+
+// Load and reproject the ALOS elevation in the buffered new CATE.
+var bufCATE_elv = GATE.load_ALOSelevation(AOI, targetPrj)
+  .updateMask(bufCATE);
+
+// Read the smoothed annual maximum NDVIs in the buffered new CATE 
+//  from 1984 to 2020 as an Image.
+var annualNDVIs = TNA.loadAnnualNDVIs_nonNorthAmerica(wd_Main); /**** Except for North America. ****/
+// var annualNDVIs = ee.Image(wd_Main 
+//   + "ATEI_Estimation/" 
+//   + "medianSmdAnnualMaxNDVI_1984to2020_cloudShadowMasked_300mBufNewCATE_AOI"); /**** North America. ****/
+
+// Remove the annual NDVI of 1984.
+var annualNDVIs_no1984 = IMG.RemoveBands_fromImage(annualNDVIs, 
+  ["smdNDVI_1984"]);
+
+IMG.printImgInfo("annualNDVIs_no1984", annualNDVIs_no1984);
+
+
+/* Smooth the ALOS elevation within the 300m-buffered new CATE 
+  by calculating its focal mean within a 10-pixel circular kernel. */
+
+// Define a circular kernel of 10 pixels.
+var Kn = ee.Kernel.circle({
+  radius: 10,
+  units: "pixels"
+}); 
+
+// Calculate the focal mean within the kernel.
+var smdElv = bufCATE_elv.reduceNeighborhood({
+  // The mean reducer is smoother than the median reducer, 
+  //  which then provides a less scattered gradient direction dataset.
+  reducer: ee.Reducer.mean(),
+  kernel: Kn,
+  skipMasked: true // Output the smoothed elevation within the 300m-buffered new CATE.
+}).reproject(targetPrj); // Reproject to the target projection.
+
+
+/* Generate the gradient direction of the smoothed elevation. */
+
+// Compute the elevation gradient in the X and Y directions.
+var elvGrad = smdElv.gradient()
+  .reproject(targetPrj);
+
+// Compute the direction of the elevation gradient.
+// "atan2" calculates the angle formed by the 2D vector [x, y].
+// (Gradient: -179 ~ 180 (-PI ~ PI), 
+// south: 0, north: 180 (PI), 
+// west : 90 (PI/2), east: -90 (-PI/2)).
+var elvDir = elvGrad.select("y").atan2(elvGrad.select("x"))
+  .rename("elvDir");
+
+IMG.printImgInfo("elvDir", elvDir);
+
+
+/* Function to calculate the "Gradient" component. */
+
+// Check the determined parameters.
+var k_Value = 8804.288;
+var x_0 = 0.000649;
+
+// Define a function.
+var mag_Fun = function(mag_Value) {
+  
+  var power = mag_Value.subtract(x_0).multiply(-1 * k_Value);
+  
+  var comp_Mag = ee.Image(1).divide(power.exp().add(1))
+    .rename("comp_Mag");
+  
+  return comp_Mag;
+};
+
+
+/* Function to calculate the "Greenness" component. */
+
+// Check the determined parameters.
+var b = 0.444227;
+var c_Value = 0.170322;
+var n_Value = 2;
+
+// Define a function.
+var NDVI_fun = function(NDVI_value) {
+  
+  var base = NDVI_value.subtract(b).divide(c_Value);
+  
+  var power = 2 * n_Value;
+  
+  var comp_NDVI = base.pow(power).multiply(-1 / 2).exp()
+    .rename("comp_NDVI");
+  
+  return comp_NDVI;
+};
+
+
+/* Function to calculate the "Orientation" component. */
+
+// Check the determined parameters.
+var m = 3.084104;
+var p_Value = 14;
+
+// Define a function.
+var angle_Fun = function(angle_Value) {
+  
+  var cos_Value = angle_Value.subtract(m).add(Math.PI).cos();
+  
+  var base = ee.Image(1).subtract(cos_Value).divide(2);
+  
+  var comp_Angle = base.pow(p_Value)
+    .rename("comp_Angle");
+  
+  return comp_Angle;
+};
+
+
+/* Generate the three components and estimate the ATEI by year. */
+
+// Determine the formula of the logistic regression.
+var logit_Formula = "-3.336548 + 4.062081 * comp_Mag + 1.830734 * comp_NDVI + 2.045759 * comp_Angle";
+
+// Determine the list of years.
+var yearList_no1984 = ee.List.sequence(1985, 2020);
+
+// Annual ATEI estimation.
+var ATEI_list = yearList_no1984.map(function(year) {
+  
+  // When directly convert a "floating point" to a "string", 
+  //  the result contains a ".", which isn't allowed in band names.
+  var yearName = ee.String(ee.Number(year).int());
+  
+  // Extract and rename each annual NDVI.
+  var NDVIname = ee.String("smdNDVI_").cat(yearName);
+  var smdNDVI = annualNDVIs_no1984.select([NDVIname], ["smdNDVI"]);
+  
+  // Compute the NDVI gradient in the X and Y directions.
+  var NDVIgrad = smdNDVI.gradient()
+    .reproject(targetPrj);
+  
+  // Compute the direction of the NDVI gradient.
+  var NDVIdir = NDVIgrad.select("y").atan2(NDVIgrad.select("x"))
+    .rename("NDVIdir");
+
+  // Compute the magnitude of the NDVI gradient. 
+  //  ("hypot" calculates the magnitude of the 2D vector [x, y].)
+  var NDVImag = NDVIgrad.select("y").hypot(NDVIgrad.select("x"))
+    .rename("NDVImag");
+  
+  // Calculate the absolute angle between the NDVI and elevation gradients.
+  var dir_Angle = NDVIdir.subtract(elvDir).abs();
+  
+  
+  /* Construct the three components. */
+
+  // "Gradient" component.
+  var comp_Mag = mag_Fun(NDVImag);
+
+  // "Greenness" component.
+  var comp_NDVI = NDVI_fun(smdNDVI);
+
+  // "Orientation" component.
+  var comp_Angle = angle_Fun(dir_Angle);
+  
+  // Combine the three components.
+  var ATEI_comps = comp_Mag.addBands(comp_NDVI)
+    .addBands(comp_Angle);
+  
+
+  /* Fit the logistic regression model. */
+
+  // Determine the logit.
+  var logit = ATEI_comps.expression({
+    expression: logit_Formula,
+    map: {
+      "comp_Mag": ATEI_comps.select("comp_Mag"),
+      "comp_NDVI": ATEI_comps.select("comp_NDVI"),
+      "comp_Angle": ATEI_comps.select("comp_Angle")
+    }
+  }); 
+  
+  // 10-fold cross-validation with 100 repeats.
+  // Accuracy: 0.8813133.
+  // Kappa: 0.7600241.
+  // AIC: 660.35
+
+  var exp_Logit = logit.exp();
+  
+  // Calculate the annual ATEI.
+  var ATEIname = ee.String("ATEI_").cat(yearName);
+  
+  var annualATEI = exp_Logit.divide(exp_Logit.add(1))
+    .rename(ATEIname);
+
+  return annualATEI;
+});
+
+
+/* Convert the list of ATEI images to a multi-band image. */
+
+// Define an ATEI ImageCollection.
+var ATEI_imgCol = ee.ImageCollection.fromImages(ATEI_list);
+
+// Function to convert an ImageCollection to a multi-band Image.
+var convert = IC_AP.Convert_ImgCol_toImage;
+
+// Obtain the ATEI image within the new CATE (with no buffer).
+var ATEI_img = ee.Image(ATEI_imgCol.iterate(convert))
+  .updateMask(CATE)
+  .float(); // Reduce the data size.
+
+IMG.printImgInfo("ATEI_img", ATEI_img);
+
+
+var output = true;
+
+if (!output) {
+  
+  // Visualize the result.
+  Map.setOptions("hybrid");
+  
+  // Map.setCenter(-65.1787, -17.5405, 12); // Bolivia.
+  // Map.setCenter(-113.66273, 48.67261, 12); // Glacier National Park.
+  // Map.setCenter(7.7537, 46.0153, 12); // Zermatt.
+  // Map.setCenter(36.7437, -3.2381, 12); // Tanzania.
+  Map.setCenter(169.3757, -44.0807, 12); // New Zealand.
+  
+  var ATEI_visParams = {min: 0, max: 1, palette: "0000FF, FFFFFF, FF0000"};
+  
+  Map.addLayer(ATEI_img.select("ATEI_1985"), ATEI_visParams, "ATEI_1985");
+  Map.addLayer(ATEI_img.select("ATEI_2000"), ATEI_visParams, "ATEI_2000");
+  Map.addLayer(ATEI_img.select("ATEI_2020"), ATEI_visParams, "ATEI_2020");
+
+} else {
+  
+  // Export the result.
+  var fileName = GATE.annualATEI_fileName;
+  
+  Export.image.toAsset({
+    image: ATEI_img,
+    description: fileName, 
+    assetId: wd_Main + "ATEI_Estimation/"
+      + fileName, 
+    crs: targetPrj.crs,
+    scale: targetPrj.scale,
+    region: AOI,
+    maxPixels: IMG.maxPxNum
+  }); 
+}
+

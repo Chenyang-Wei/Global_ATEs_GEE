@@ -1,0 +1,272 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var Geom = 
+    /* color: #d63000 */
+    /* shown: false */
+    /* displayProperties: [
+      {
+        "type": "rectangle"
+      }
+    ] */
+    ee.Geometry.Polygon(
+        [[[-123.35279629922766, 47.836478011645376],
+          [-123.35279629922766, 47.803166578837676],
+          [-123.21666882730383, 47.803166578837676],
+          [-123.21666882730383, 47.836478011645376]]], null, false);
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+/**
+ * Introduction:
+ * 
+ * 1) Visualize the ridge and valley zones.
+ * 
+ * 2) Visualize the pixels, pixel centroids, and buffers of the medial axis.
+ * 
+ * 3) Visualize the selected basins with the medial axis.
+ * 
+ * 4) Visualize the 90-m wide steepest transects with a length between 300m and 3km.
+ * 
+ * 5) Export datasets in the region of interest.
+ * 
+ *  
+ * Update: 6/29/2022.
+ * 
+ * Runtime: 1m.
+ */
+
+
+/* Setups. */
+
+// Load module(s).
+
+var IMG = require("users/ChenyangWei/Public:Modules/Image_Analysis&Processing");
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var TNA = require("users/ChenyangWei/Public:Modules/Transect_NDVI_Analysis");
+var FC_AP = require("users/ChenyangWei/Public:Modules/FeatureCollection_Analysis&Processing");
+
+// Target projection.
+var targetPrj = IMG.WGS84_30m;
+
+// Set the working directory.
+var wd_Main = GATE.wd_NorthAmerica;
+
+// Load the new CATE.
+var newCATE = ee.Image(wd_Main + "Climate-Based_ATE/" 
+  + GATE.newCATE_fileName);
+
+
+/* Extract the landforms of ridge and valley. */
+
+// Load and reproject the ALOS Landform dataset.
+var LF_noInvaid = GATE.loadReproject_ALOSlandforms(targetPrj);
+
+// Extract the ridge landform.
+var ridge = GATE.extractRidgeLandforms(LF_noInvaid)
+  .selfMask();
+
+// Extract the valley landform.
+var valley = GATE.extractValleyLandforms(LF_noInvaid)
+  .selfMask();
+
+
+/* Load the medial-axis pixels, pixel centroids, and buffers. */
+
+// Load the medial-axis pixels between ridges and valleys in the new CATE.
+var medialAxis_Pixels = ee.Image(wd_Main + "Elevational_Transect_Generation/"
+  + GATE.medialAxis_fileName);
+
+// Load the vectorized medial-axis pixel centroids.
+var medialAxis_PxCtds = ee.FeatureCollection(wd_Main + "Elevational_Transect_Generation/"
+  + GATE.medialAxisPxCtds_fileName);
+
+// Load the medial-axis buffers.
+var medialAxis_Buffers = ee.FeatureCollection(wd_Main + "Elevational_Transect_Generation/"
+  + GATE.distBufferedPxCtds_fileName);
+
+
+/* Load the selected basins with the medial axis. */
+
+var selectedBasins = ee.FeatureCollection(wd_Main + "Elevational_Transect_Generation/"
+  + GATE.selectedBasins_fileName);
+
+
+/* Load and buffer the transect centerlines. */
+
+// Determine the universal file path of the selected transect centerlines
+//  with a length between 300m and 3km.
+var wd_SelectedCLs = wd_Main
+  + "Elevational_Transect_Generation/"
+  + TNA.selectedCLs_fileName
+  + "/"
+  + TNA.selectedCLs_byBasinGroup_fileName;
+
+// Create an empty List to store all the selected transect centerlines.
+var allCLs_List = ee.List([]);
+
+for (var basinGroupID = 1; basinGroupID <= 5; basinGroupID ++) {
+
+  // Load the selected transect centerlines of each basin group.
+  var selectedCLs = ee.FeatureCollection(wd_SelectedCLs
+    + basinGroupID);
+  
+  // Add the loaded FeatureCollection to the List.
+  allCLs_List = allCLs_List
+    .add(selectedCLs);
+
+}
+
+// Convert the generated FeatureCollection List to a FeatureCollection.
+var allCLs_FtrCol = ee.FeatureCollection(
+  allCLs_List
+).flatten();
+
+// Buffer each selected centerline by 45 m.
+var allTransects = TNA.buffer_Centerlines_by45m(allCLs_FtrCol);
+
+
+/* Determine the ROI. */
+
+// var ROI = selectedBasins.filterBounds(Geom)
+//   .geometry().buffer(3000).bounds();
+
+var ROI = 
+    ee.Geometry.Polygon(
+        [[[-123.58230322240499,47.656338432609665],
+          [-122.9597641481639,47.656338432609665],
+          [-122.9597641481639,48.01089235785535],
+          [-123.58230322240499,48.01089235785535]]], null, false);
+
+
+if (true) {
+  
+  // FC_AP.Print_FtrColInfo("medialAxis_PxCtds:", medialAxis_PxCtds);
+  // FC_AP.Print_FtrColInfo("medialAxis_Buffers:", medialAxis_Buffers);
+  // FC_AP.Print_FtrColInfo("selectedBasins:", selectedBasins);
+
+  /* Visualization. */
+  
+  Map.setOptions("satellite");
+  
+  Map.setCenter(-123.3188, 47.79649, 13); // Olympic Mountain.
+  
+  
+  Map.addLayer(ROI, {color: "FFFFFF"}, 
+    "ROI", true, 0.5);
+  
+
+  Map.addLayer(selectedBasins, {color: "FFFF00"}, 
+    "selectedBasins", true, 0.5);
+
+
+  Map.addLayer(newCATE, {palette: "808080"}, 
+    "newCATE", true, 0.5);
+
+
+  Map.addLayer(ridge, {palette: "0000FF"}, 
+    "ridge", true, 0.5);
+
+  Map.addLayer(valley, {palette: "00FF00"}, 
+    "valley", true, 0.5);
+
+
+  Map.addLayer(medialAxis_Buffers.filterBounds(ROI).limit(50), 
+    {color: "FF00FF"}, 
+    "medialAxis_Buffers", true, 0.5);
+
+  Map.addLayer(medialAxis_Pixels, {palette: "00FFFF"}, 
+    "medialAxis_Pixels", true, 1);
+
+  Map.addLayer(medialAxis_PxCtds, {color: "FF0000"}, 
+    "medialAxis_PxCtds", true, 1);
+
+
+  Map.addLayer(allTransects, {color: "FF0000"}, 
+    "allTransects", false);
+
+} else if (false) {
+  
+  /* Output the TIF datasets in the ROI. */
+  
+  Export.image.toDrive({
+    image: newCATE, 
+    description: "newCATE", 
+    folder: "OlympicMt_TIF", 
+    region: ROI, 
+    scale: targetPrj.scale, 
+    crs: targetPrj.crs, 
+    maxPixels: 1e13, 
+    fileFormat: "GeoTIFF"
+  });
+  
+  Export.image.toDrive({
+    image: ridge, 
+    description: "ridge", 
+    folder: "OlympicMt_TIF", 
+    region: ROI, 
+    scale: targetPrj.scale, 
+    crs: targetPrj.crs, 
+    maxPixels: 1e13, 
+    fileFormat: "GeoTIFF"
+  });
+  
+  Export.image.toDrive({
+    image: valley, 
+    description: "valley", 
+    folder: "OlympicMt_TIF", 
+    region: ROI, 
+    scale: targetPrj.scale, 
+    crs: targetPrj.crs, 
+    maxPixels: 1e13, 
+    fileFormat: "GeoTIFF"
+  });
+  
+  Export.image.toDrive({
+    image: medialAxis_Pixels, 
+    description: "medialAxis_Pixels", 
+    folder: "OlympicMt_TIF", 
+    region: ROI, 
+    scale: targetPrj.scale, 
+    crs: targetPrj.crs, 
+    maxPixels: 1e13, 
+    fileFormat: "GeoTIFF"
+  });
+  
+} else {
+  
+  /* Output the SHP datasets in the ROI. */
+  
+  Export.table.toDrive({
+    collection: ee.FeatureCollection(ROI), 
+    description: "ROI", 
+    folder: "OlympicMt_ROI", 
+    fileFormat: "SHP"
+  });
+  
+  Export.table.toDrive({
+    collection: selectedBasins.filterBounds(ROI), 
+    description: "selectedBasins", 
+    folder: "OlympicMt_selectedBasins", 
+    fileFormat: "SHP"
+  });
+  
+  Export.table.toDrive({
+    collection: medialAxis_Buffers.filterBounds(ROI), 
+    description: "medialAxis_Buffers", 
+    folder: "OlympicMt_medialAxis_Buffers", 
+    fileFormat: "SHP"
+  });
+  
+  Export.table.toDrive({
+    collection: medialAxis_PxCtds.filterBounds(ROI), 
+    description: "medialAxis_PxCtds", 
+    folder: "OlympicMt_medialAxis_PxCtds", 
+    fileFormat: "SHP"
+  });
+  
+  Export.table.toDrive({
+    collection: allTransects.filterBounds(ROI), 
+    description: "allTransects", 
+    folder: "OlympicMt_allTransects", 
+    fileFormat: "SHP"
+  });
+  
+}
+

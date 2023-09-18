@@ -1,0 +1,172 @@
+/**
+ * Introduction:
+ * 
+ *  1) Average the 30-m open-forest NDVI values
+ *    within each 3-km pixel.
+ * 
+ *  2) Smooth the 3-km open-forest NDVI by 
+ *    calculating its focal average 
+ *    within a 10-pixel circle.
+ * 
+ * Runtime: 18 minutes ~ 2 hours (shared).
+ * 
+ * Update: 1/4/2023.
+*/
+
+
+/* Load module(s). */
+
+var ATEI_EA = require("users/ChenyangWei/Public:Modules/Treeline/ATEI_Estimation&Analysis.js");
+var IMG = require("users/ChenyangWei/Public:Modules/General/Image_Analysis&Processing.js");
+var VIS = require("users/ChenyangWei/Public:Modules/General/Visualization.js");
+
+
+/* Object definition. */
+
+// Create a list of the working directories.
+var WDs_List = ATEI_EA.WDs_AllContinents_List;
+
+// Define a list of the AOIs.
+var AOIs_List = ATEI_EA.AOIs_AllContinents_List;
+
+// Determine the 30-m projection.
+var prj_30m = IMG.WGS84_30m;
+
+// Determine the 300-m projection.
+var prj_300m = IMG.WGS84_300m;
+
+// Determine the 3-km projection.
+var prj_3km = IMG.WGS84_3km;
+
+// Generate a "mean" reducer.
+var meanReducer = ee.Reducer.mean();
+
+
+/* Function definition. */
+
+// Define a function to load the 30-m open-forest NDVI 
+//  in the new CATE of each continent.
+var Read_OpenForestNDVI = function(wd_Cont) {
+  var openForestNDVI_Cont = ee.Image(wd_Cont
+    + "ATEI_Estimation/OpenForestNDVI/" 
+    + "30mTemporalMedianNDVI_OpenForests_NewCATE")
+    .reproject(prj_30m);
+  
+  return openForestNDVI_Cont;
+};
+
+// Define a function to aggregate the open-forest NDVI
+//  from 30 m to 3 km.
+var Aggregate_NDVI_30mTo3km = function(NDVI_30m) {
+  
+  // Step 1: 30 m to 300 m.
+  var raw_NDVI_300m = NDVI_30m.reduceResolution({ 
+    reducer: meanReducer,
+    maxPixels: 1024
+  }).reproject(prj_300m);
+
+  // Set the mask of each valid pixel to 1.
+  var noMask_NDVI_300m = raw_NDVI_300m.updateMask(
+    raw_NDVI_300m.gte(-1e18));
+
+  // Step 2: 300 m to 3 km.
+  var raw_NDVI_3km = noMask_NDVI_300m.reduceResolution({ 
+    reducer: meanReducer,
+    maxPixels: 1024
+  }).reproject(prj_3km);
+
+  // Set the mask of each valid pixel to 1.
+  var noMask_NDVI_3km = raw_NDVI_3km.updateMask(
+    raw_NDVI_3km.gte(-1e18));
+
+  return noMask_NDVI_3km;
+};
+
+// Define a function to calculate the focal average 
+//  of the 3-km open-forest NDVI.
+var Calculate_NDVI_FocalAverage = function(NDVI_3km) {
+  var focalAverage_3km = NDVI_3km.reduceNeighborhood({
+    reducer: meanReducer,
+    kernel: ee.Kernel.circle(10), // Default unit: "pixels".
+    skipMasked: false
+    // Do NOT mask output pixels 
+    //  if the corresponding input pixel is masked.
+  }).reproject(prj_3km);
+
+  return focalAverage_3km;
+};
+
+
+/* Acquire the information of the continent. */
+
+// Determine the continent ID (0 ~ 5).
+var contID = 5;   /* Need to update. */
+
+// Determine the working directory of the continent.
+var contWD = WDs_List[contID];
+
+// Determine the AOI of the continent.
+var contAOI = AOIs_List[contID];
+
+
+/* Read the 30-m open-forest NDVI in the new CATE. */
+
+var openForestNDVI_30m = Read_OpenForestNDVI(contWD);
+
+
+/* Aggregate the open-forest NDVI from 30 m to 3 km. */
+
+var openForestNDVI_3km = Aggregate_NDVI_30mTo3km(
+  openForestNDVI_30m);
+
+
+/* Smooth the 3-km open-forest NDVI by 
+  calculating its focal average. */
+
+var smoothedNDVI_3km = Calculate_NDVI_FocalAverage(
+  openForestNDVI_3km);
+
+
+if (false) {
+  
+  // Check the working directory.
+  print("contWD:", contWD);
+  
+  // Check the result.
+  IMG.printImgInfo("smoothedNDVI_3km:", 
+    smoothedNDVI_3km);
+  
+  // Visualize the datasets.
+  Map.setOptions("satellite");
+  Map.centerObject(contAOI, 6);
+  
+  Map.addLayer(contAOI, {color: "FFFFFF"}, "contAOI", true);
+  
+  Map.addLayer(smoothedNDVI_3km, VIS.NDVI_vis, 
+    "smoothedNDVI_3km", true);
+  
+  Map.addLayer(openForestNDVI_3km, VIS.NDVI_vis, 
+    "openForestNDVI_3km", true);
+  
+  Map.addLayer(openForestNDVI_30m, VIS.NDVI_vis, 
+    "openForestNDVI_30m", true);
+  
+} else {
+  
+  // Determine the output directory.
+  var outputWD = contWD + "ATEI_Estimation/OpenForestNDVI/";
+
+  // Export the result.
+  var fileName = "3kmSmoothed_OpenForestNDVI_NewCATE";
+  
+  Export.image.toAsset({
+    image: smoothedNDVI_3km,
+    description: fileName, 
+    assetId: outputWD + fileName, 
+    crs: prj_3km.crs,
+    scale: prj_3km.scale,
+    region: contAOI,
+    maxPixels: IMG.maxPxNum
+  }); 
+}
+

@@ -1,0 +1,86 @@
+/**
+ * Introduction:
+ * 
+ * 1) Remove the global transects with duplicate IDs. 
+ * 
+ * 
+ * Update: 4/28/2022.
+ * 
+ * Runtime:
+ */
+
+
+/* Load module(s). */
+
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var NGA = require("users/ChenyangWei/Public:Modules/NDVI_Gradient_Analysis.js");
+var FC_AP = require("users/ChenyangWei/Public:Modules/FeatureCollection_Analysis&Processing");
+
+
+/* Data loading. */
+
+// Set the major working directory.
+// var wd_Main = GATE.wd_Global;
+var wd_Main = GATE.wd_NorthAmerica;
+
+// Load the raw global transects.
+var raw_Transects = ee.FeatureCollection(wd_Main
+  + "NDVI_Gradient_Analysis/"
+  + NGA.continentalTransects_FileName);
+
+
+/* Extract the global transects with distinct IDs. */
+
+// Derive transects with "CL_ID".
+// var transects_withID = raw_Transects.filter(ee.Filter.notNull(["CL_ID"]));
+
+// Derive transects with "CL_newID".
+var transects_withNewID = raw_Transects.filter(ee.Filter.notNull(["CL_newID"]));
+
+// Extract transects with distinct "CL_ID".
+// var transects_DistinctID = transects_withID.distinct("CL_ID");
+
+// Extract transects with distinct "CL_newID".
+var transects_DistinctNewID = transects_withNewID.distinct("CL_newID");
+
+// Combine the distinct transects.
+// var distinctTransects = transects_DistinctID.merge(transects_DistinctNewID);
+
+
+// Whether to output the result.
+var output = false; // true OR false.
+
+
+if (!output) {
+  // Data examination.
+  // print("CL_ID:", 
+  //   transects_DistinctID.aggregate_count_distinct("CL_ID"));
+  
+  // FC_AP.Print_FtrColInfo("transects_DistinctID:", 
+  //   transects_DistinctID); // 371,871.
+
+  print("CL_newID:", 
+    transects_withNewID.aggregate_count_distinct("CL_newID"));
+  
+  FC_AP.Print_FtrColInfo("transects_withNewID:", 
+    transects_withNewID);
+
+  // FC_AP.Print_FtrColInfo("distinctTransects:", 
+  //   distinctTransects); // 2,294,127.
+
+} else {
+  // Export the final result.
+  
+  var wd_Output = wd_Main
+    + "NDVI_Gradient_Analysis/";
+  
+  var fileName = NGA.distinctTransects_FileName;
+  
+  Export.table.toAsset({
+    collection: distinctTransects, 
+    description: fileName, 
+    assetId: wd_Output
+      + fileName
+  });
+}
+

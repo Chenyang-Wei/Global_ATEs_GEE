@@ -1,0 +1,103 @@
+/**
+ * Introduction:
+ * 1) Determine the threshold for the maximum moving-window
+ *  NDVI standard deviation based on the average
+ *  spectral change magnitude of each segment.
+ * 
+ * Update: 2/1/2022.
+*/
+
+
+/* Load module(s). */
+
+var FC_AP = require("users/ChenyangWei/Public:Modules/FeatureCollection_Analysis&Processing");
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var VIS = require("users/ChenyangWei/Public:Modules/Visualization");
+var IMG = require("users/ChenyangWei/Public:Modules/Image_Analysis&Processing");
+
+
+/* Data preparation. */
+
+// Target projection.
+var targetPrj = IMG.WGS84_30m;
+
+// Set the major working directory.
+var wd_Main = GATE.wd_NorthAmerica;
+
+// Load the spectral change magnitude (SCMAG) data during 1985-2020.
+var SCMAG = ee.ImageCollection("projects/sat-io/open-datasets/LCMAP/SCMAG");
+
+// Calculate the temporal maximum spectral change magnitude
+//  at each (30-m) pixel.
+var max_SCMAG = SCMAG.max()
+  // .reproject(targetPrj)
+  .rename("max_SCMAG");
+
+// Load the contiguous U.S. transect segments with
+//  the average spectral change magnitude.
+var segmentAvgSCMAG = ee.FeatureCollection(wd_Main
+  + "Transect_NDVI_Analysis/"
+  + "bothSegments_withAvgTmaxSCMAG_AllBasinGroups");
+
+
+/* Examine the spectral change magnitude at the segment level. */
+
+// FC_AP.Print_FtrColInfo("segmentAvgSCMAG:", 
+//   segmentAvgSCMAG);
+
+// FC_AP.Examine_FtrCol_PropertyPercentiles(
+//   "segmentAvgSCMAG", segmentAvgSCMAG, 
+//   "AvgTmaxSCMAG", 10);
+
+// FC_AP.Examine_FtrCol_PropertyPercentiles(
+//   "segmentAvgSCMAG", segmentAvgSCMAG, 
+//   "MaxMovWin_NDVIsd", 10);
+
+// Filter the segments based on the spectral change magnitude.
+var SCMAG_thres = 1e3;
+
+var filtered_Segments = segmentAvgSCMAG.filter(
+  ee.Filter.gte("AvgTmaxSCMAG", SCMAG_thres));
+
+// FC_AP.Print_FtrColInfo("filtered_Segments:", 
+//   filtered_Segments);
+
+// print(filtered_Segments.reduceColumns({
+//   reducer: ee.Reducer.mean(), 
+//   selectors: ["MaxMovWin_NDVIsd"]
+// }));
+
+// FC_AP.Examine_FtrCol_PropertyPercentiles(
+//   "filtered_Segments", filtered_Segments, 
+//   "MaxMovWin_NDVIsd", 10);
+
+
+/* Map visualization. */
+
+if (true) { // true OR false.
+
+  var displayFC = VIS.paintFtrCol_FillANDEdge;
+  
+  VIS.centerNorthAmerica(7);
+  
+  Map.addLayer(max_SCMAG,
+    {min: 0, max: 5e3,
+    palette: VIS.BWR_palette},
+    "Max. spectral change magnitude", true);
+
+  // Map.addLayer(displayFC(segmentAvgSCMAG,
+  //   "MaxMovWin_NDVIsd", 1), 
+  //   {min: 0, max: 0.2, 
+  //   palette: VIS.BWR_palette}, 
+  //   "MaxMovWin_NDVIsd", true);
+  
+  Map.addLayer(segmentAvgSCMAG,
+    {color: "FFFF00"},
+    "Segments", true);
+
+  // Map.addLayer(filtered_Segments,
+  //   {color: "0000FF"},
+  //   "filtered_Segments", true);
+
+}
+

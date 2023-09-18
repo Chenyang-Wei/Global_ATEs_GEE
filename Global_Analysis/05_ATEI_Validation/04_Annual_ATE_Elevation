@@ -1,0 +1,317 @@
+/**
+ * Introduction:
+ * 
+ *  1) Mask the annual ATEIs with an optimal threshold
+ *    and weight the raw elevation with the masked ATEIs
+ *    by year.
+ * 
+ *  2) Calculate the ATEI-weighted average of elevation 
+ *    for each buffered sample by year and 
+ *    select the ATEI-weighted average elevation over zero.
+ * 
+ * Runtime: 4m.
+ * 
+ * Updated: 6/8/2023.
+*/
+
+
+/* Load module(s). */
+
+var IMG = require("users/ChenyangWei/Public:Modules/General/Image_Analysis&Processing.js");
+var ATEI_EA = require("users/ChenyangWei/Public:Modules/Treeline/ATEI_Estimation&Analysis.js");
+var FC_AP = require("users/ChenyangWei/Public:Modules/General/FeatureCollection_Analysis&Processing.js");
+var GATE = require("users/ChenyangWei/Public:Modules/Treeline/Global_ATE.js");
+var TNA = require("users/ChenyangWei/Public:Modules/Treeline/Transect_NDVI_Analysis.js");
+
+
+/* Object definition. */
+
+// Define a list of the continent IDs 
+//  (no Oceania or South America).
+var contIDs_List = [0, 2, 4, 5];
+
+// Determine the target projection.
+var targetPrj = IMG.WGS84_30m;
+
+// Create a list of the working directories.
+var WDs_List = ATEI_EA.WDs_AllContinents_List;
+
+// Define a list of the AOIs.
+var AOIs_List = ATEI_EA.AOIs_AllContinents_List;
+
+// Define a list of the region names.
+var Regions_List = ATEI_EA.Regions_AllContinents_List;
+
+
+/* Defining Reducers. */
+
+// Define a Reducer for summing the annual 
+//  masked ATEIs.
+var ATEI_sumReducer = ee.Reducer.sum().unweighted()
+  .setOutputs(["annual_ATEI_sum"]);
+
+// Define a Reducer for summing the annual 
+//  weighted elevation.
+var wtdElv_sumReducer = ee.Reducer.sum().unweighted()
+  .setOutputs(["annual_WtdElv_sum"]);
+
+// Combine the Reducers.
+var combined_Reducers = 
+  ATEI_sumReducer.combine({
+    reducer2: wtdElv_sumReducer, 
+    sharedInputs: false
+  });
+
+
+/* Function definition. */
+
+// Import a function for checking FeatureCollections.
+var Check_FC = FC_AP.Print_FtrColInfo;
+
+// Define a function to load and reproject the new CATE 
+//  of each continent.
+var Read_NewCATE = function(wd_Cont) {
+  var newCATE_Cont = ee.Image(wd_Cont
+    + "Climate-Based_ATE/" 
+    + GATE.newCATE_fileName)
+    .reproject(targetPrj);
+  
+  return newCATE_Cont;
+};
+
+// Define a function to load the annual ATEIs in 
+//  the new CATE of each continent.
+var Read_AnnualATEIs = function(wd_Cont) {
+  var annualATEIs_Cont = ee.Image(wd_Cont
+    + "ATEI_Estimation/" 
+    + "annualATEIs_1985to2020_NewCATE")
+    .reproject(targetPrj);
+  
+  return annualATEIs_Cont;
+};
+
+
+/* Dataset loading. */
+
+// Load buffered validation points.
+var rawSamples_Global = ee.FeatureCollection(
+  GATE.wd_Global 
+  + "ATEI_Validation/2020Lu_MetaAnalysis/" 
+  + "ATEelevation_3yearMedian_5kmBuffered"
+);
+
+
+/* Estimate the ATE elevation by continent. */
+
+// Create an empty FeatureCollection of global variables.
+var global_SampledVars_FC = ee.FeatureCollection([]);
+
+// By continent.
+contIDs_List.forEach(function(contID) {
+  
+  // Determine the working directory of the continent.
+  var contWD = WDs_List[contID];
+
+  // Determine the AOI of the continent.
+  var contAOI = AOIs_List[contID];
+
+  // Determine the region name of the continent.
+  var contRegion = Regions_List[contID];
+  
+  // Select the sample points of the continent.
+  var contSamples = rawSamples_Global.filter(
+    ee.Filter.eq("Continent", contRegion));
+  
+
+  /* Dataset loading. */
+  
+  // Load the new CATE.
+  var newCATE = Read_NewCATE(contWD);
+  
+  // Load and reproject the ALOS elevation in the new CATE.
+  var ALOSelv_newCATE = 
+    GATE.load_ALOSelevation(contAOI, targetPrj)
+      .updateMask(newCATE);
+
+  
+  /* Load the annual ATEIs during 1985-2020
+    in the new CATE by continent. */
+  
+  var annualATEIs_Raw;
+  
+  if (contID === 5) {
+    
+    /* Asia. */
+    
+    // Load the annual ATEIs.
+    annualATEIs_Raw = Read_AnnualATEIs(GATE.wd_Asia_2);
+  
+  } else if (contID === 4) {
+    
+    /* Europe. */
+    
+    // Load the annual ATEIs.
+    annualATEIs_Raw = Read_AnnualATEIs(GATE.wd_Europe_2);
+  
+  } else {
+    
+    /* Other continents. */
+    
+    // Load the annual ATEIs.
+    annualATEIs_Raw = Read_AnnualATEIs(contWD);
+  }
+  
+
+  /* Calculate the ATEI-weighted average of elevation. */
+  
+  // Mask the annual ATEIs with an optimal threshold.
+  var ATEI_thres = 0.5460715;
+  
+  var thres_Mask = annualATEIs_Raw.gt(ATEI_thres);
+  
+  var annualATEIs_Masked = annualATEIs_Raw
+    .updateMask(thres_Mask);
+  
+  // Weight the raw elevation with the masked ATEIs.
+  var annual_WeightedElv = annualATEIs_Masked
+    .multiply(ALOSelv_newCATE);
+  
+  
+  /* Combine the images by year. */
+  
+  var years_List = ee.List.sequence(1985, 2020);
+  
+  var annualImgs_List = years_List.map(function(year_Num) {
+    
+    // Convert the "year" from a Number to a String 
+    //  (without a ".").
+    var year_Int = ee.Number(year_Num).int();
+    var year_Str = ee.String(year_Int);
+    
+    // Derive the band name of ATEI.
+    var ATEI_bandName_Str = ee.String("ATEI_")
+      .cat(year_Str);
+    
+    // Select the images of each year.
+    var annualATEI = annualATEIs_Masked.select(
+      [ATEI_bandName_Str], ["annual_ATEI"]);
+    
+    var annual_WtdElv = annual_WeightedElv.select(
+      [ATEI_bandName_Str], ["annual_WtdElv"]);
+    
+    // Combine the annual images.
+    var annual_Img = annualATEI
+      .addBands(annual_WtdElv)
+      .reproject(targetPrj);
+    
+    // Store the year number as a property.
+    annual_Img = annual_Img
+      .set("Year", year_Int);
+    
+    return annual_Img;
+  });
+  
+  var annualImgs_ImgCol = 
+    ee.ImageCollection.fromImages(annualImgs_List);
+
+  
+  /* Sum ATEI and the weighted elevation by year. */
+
+  var allYearsResults = annualImgs_ImgCol
+    .map(function(annualImg) {
+      
+      // Apply the combined annual Reducers.
+      var oneYearResults = annualImg.reduceRegions({
+        collection: contSamples, 
+        reducer: combined_Reducers,
+        scale: targetPrj.scale, 
+        crs: targetPrj.crs
+      });
+      
+      // Obtain the corresponding year property.
+      var yearProperty = annualImg.get("Year");
+      
+      // Add a year property to each generated 
+      //  annual Feature.
+      var oneYearResults_withYear = oneYearResults
+        .map(function(annualFeature) {
+          
+          return annualFeature.set({
+            Year: yearProperty
+          });
+        });
+      
+      return oneYearResults_withYear;
+    });
+
+  
+  
+  // // Convert the List of the sampled variables to 
+  // //  a FeatureCollection.
+  // var contSampledVars_FC = 
+  //   ee.FeatureCollection(contSampledVars_List)
+  //     .flatten();
+
+  // Add the sampled variables to the global dataset.
+  global_SampledVars_FC = global_SampledVars_FC
+    .merge(allYearsResults);
+});
+
+
+/* Calculate the annual ATEI-weighted average 
+  elevation for each buffered sample. */
+
+global_SampledVars_FC = global_SampledVars_FC
+  .flatten();
+
+global_SampledVars_FC =
+  global_SampledVars_FC.map(function(annualFtr) {
+    
+    // Calculate the annual weighted average elevation.
+    var ATEI_sum = annualFtr.get("annual_ATEI_sum");
+    
+    var wtdElv_sum = annualFtr.get("annual_WtdElv_sum");
+    
+    var wtdAvgElv = ee.Number(wtdElv_sum)
+      .divide(ATEI_sum);
+    
+    return annualFtr.set({
+      annual_WtdAvgElv: wtdAvgElv
+    });
+  });
+
+// Select the weighted average elevation over zero.
+
+var wtdAvgElv_Filter = 
+  ee.Filter.gt("annual_WtdAvgElv", 0);
+
+// Apply the combined Filters.
+global_SampledVars_FC = 
+  global_SampledVars_FC.filter(
+    wtdAvgElv_Filter
+  );
+
+
+/* Check/output the result. */
+
+var output = true;
+
+if (!output) {
+  
+  Check_FC("global_SampledVars_FC", 
+    global_SampledVars_FC); // Size: 3365.
+  
+} else {
+  
+  var fileName = "Filtered_AnnualFeatures_5kmBuffered";
+  
+  Export.table.toAsset({
+    collection: global_SampledVars_FC, 
+    description: fileName, 
+    assetId: GATE.wd_Global 
+      + "ATEI_Validation/2020Lu_MetaAnalysis/" 
+      + fileName
+  });
+}
+
+

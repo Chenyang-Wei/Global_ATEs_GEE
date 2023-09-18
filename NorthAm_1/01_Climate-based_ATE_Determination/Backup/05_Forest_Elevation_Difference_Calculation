@@ -1,0 +1,119 @@
+/**
+ * Introduction: 
+ * 1) Calculate the difference between the focal elevational percentiles of the original CATE and its surrounding forested areas. 
+ * 
+ * Date: 6/14/2020.
+ */
+
+
+/* Setup. */
+
+// Define the extent of North America. 
+var northAmerica = ee.Geometry.Polygon({
+    coords: [[[-165.69002926658334, 72.44551256468144],
+          [-169.40248634956492, 65.69009098298687],
+          [-172.25893166206492, 63.826281515474996],
+          [171.35638590722195, 52.855285271231274],
+          [-159.1340353549648, 17.264443722753843],
+          [-122.14862062448367, 9.59539750905343],
+          [-79.06711256993691, 6.243890041056693],
+          [-77.03677448989225, 7.40316087095261],
+          [-76.78408894301725, 8.990725120234067],
+          [-75.7244458156751, 12.403191738791786],
+          [-71.5276684719251, 13.751533985801833],
+          [-62.8264965969251, 11.651035844929385],
+          [-62.005942990095036, 9.999896817210585],
+          [-60.791953732282536, 9.96743692413247],
+          [-55.5884807162513, 13.889226127218825],
+          [-47.99315852039507, 58.68729606716915],
+          [-66.52860968724042, 71.51769835770313],
+          [-77.86650031224042, 74.25356562488685],
+          [-89.90751593724042, 74.22969620284344],
+          [-106.04844453284761, 74.3012200035139],
+          [-114.63975312659761, 74.20581277506923],
+          [-120.18954789130242, 74.88484689543225],
+          [-136.27353226630242, 74.6772015427699]]],
+    geodesic: true
+});
+
+// Asset path.
+var wdNorthA = "users/treeline/North_America/CATE/";
+
+// Load the focal elevation percentiles.
+// var aggr = ee.Image(wdNorthA +
+//   "avgTLH_absElvDistLte500m_3kmSurroundingForests_elvWeightedAvgPcts_100kmGrid"); // 100-km grid.
+// var aggr = ee.Image(wdNorthA +
+//   "avgTLH_absElvDistLte500m_3kmSurroundingForests_wtdAvgElv_10kmGrid_10pxCircleFocalPcts"); // 500-m CATE, 10-px focal.
+var aggr = ee.Image(wdNorthA +
+  "1kmCATE_3kmForests_wtdAvgElv_10kmGrid_10pxCircleFocalPcts"); // 1-km CATE, 10-px focal.
+
+print("Final aggregated elevation:", aggr.bandNames(), aggr.projection().nominalScale());
+
+
+/* Calculate the elevation percentile difference between the original CATE and its surrounding forested regions. */
+
+var elvDiff = aggr;
+
+for (var TLH_i = 0; TLH_i <= 4; TLH_i ++) {
+  var all_i = 17 - TLH_i;
+  var cld_i = 26 - TLH_i;
+  
+  // Extract different types of elevation data.
+  var TLHelv = aggr.select(TLH_i);
+  var allElv = aggr.select(all_i);
+  var cldElv = aggr.select(cld_i);
+  
+  // Combine dataset names.
+  var allTLHname = ee.String(allElv.bandNames().get(0)).cat("_").cat(TLHelv.bandNames().get(0));
+  var cldTLHname = ee.String(cldElv.bandNames().get(0)).cat("_").cat(TLHelv.bandNames().get(0));
+  
+  // Subtract the CATE elevation from the forest elevations.
+  var allTLH = allElv.subtract(TLHelv).rename(allTLHname);
+  var cldTLH = cldElv.subtract(TLHelv).rename(cldTLHname);
+  
+  elvDiff = elvDiff.addBands(allTLH)
+    .addBands(cldTLH);
+}
+
+// // Reduce the size of the dataset.
+// elvDiff = elvDiff.float();
+
+print("Elevation difference:", elvDiff.bandTypes(), elvDiff.projection().nominalScale());
+
+
+if (false) {
+  /* Visualization. */
+  
+  var elvPalette = ['006600', '002200', 'fff700', 'ab7634', 'c4d0ff', 'ffffff'];
+  var elvVis = {min: 1000, max: 3500, palette: elvPalette};
+  
+  Map.setOptions("hybrid");
+  
+  Map.setCenter(-113.655, 48.734, 6);
+  
+  Map.addLayer(aggr.select("cldForElv_p75"), elvVis, "cldForElv_p75", true);
+  Map.addLayer(aggr.select("allForElv_p75"), elvVis, "allForElv_p75", true);
+  Map.addLayer(aggr.select("TLHdistElv_p25"), elvVis, "TLHdistElv_p25", true);
+  
+  Map.addLayer(elvDiff.select("allForElv_p75_TLHdistElv_p25"), 
+    {min: -1e3, max: 1e3, palette: "0000FF, FFFFFF, FF0000"}, "allForElv_p75_TLHdistElv_p25", true);
+  Map.addLayer(elvDiff.select("cldForElv_p75_TLHdistElv_p25"), 
+    {min: -1e3, max: 1e3, palette: "0000FF, FFFFFF, FF0000"}, "cldForElv_p75_TLHdistElv_p25", true);
+}
+
+else {
+  /* Output the elevational percentile difference. */
+  
+  // var fileName = "avgTLH_absElvDistLte500m_3kmSurroundingForests_wtdAvgElv_10kmGrid_10pxCircleFocalPctDiff"; // 500-m CATE.
+  var fileName = "1kmCATE_3kmForests_wtdAvgElv_10kmGrid_10pxCircleFocalPctDiff"; // 1-km CATE.
+  
+  Export.image.toAsset({
+    image: elvDiff, 
+    description: fileName, 
+    assetId: wdNorthA + fileName, 
+    region: northAmerica, 
+    crs: "EPSG:4326",
+    scale: 10e3,
+    maxPixels: 1e13
+  });
+}

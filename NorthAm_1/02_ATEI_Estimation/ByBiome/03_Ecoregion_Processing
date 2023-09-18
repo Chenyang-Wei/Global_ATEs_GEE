@@ -1,0 +1,228 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var North = 
+    /* color: #d63000 */
+    /* shown: false */
+    /* displayProperties: [
+      {
+        "type": "rectangle"
+      }
+    ] */
+    ee.Geometry.Polygon(
+        [[[-153.56874089855856, 63.70360836689983],
+          [-153.56874089855856, 55.552072981456206],
+          [-128.73963933605856, 55.552072981456206],
+          [-128.73963933605856, 63.70360836689983]]], null, false),
+    South = 
+    /* color: #98ff00 */
+    /* shown: false */
+    /* displayProperties: [
+      {
+        "type": "rectangle"
+      }
+    ] */
+    ee.Geometry.Polygon(
+        [[[-127.77284246105856, 52.90738539767033],
+          [-127.77284246105856, 50.09077982314788],
+          [-122.49940496105856, 50.09077982314788],
+          [-122.49940496105856, 52.90738539767033]]], null, false),
+    SouthAme = 
+    /* color: #0b4a8b */
+    /* shown: false */
+    /* displayProperties: [
+      {
+        "type": "rectangle"
+      }
+    ] */
+    ee.Geometry.Polygon(
+        [[[-76.4332524857365, 11.253901835397997],
+          [-76.4332524857365, 5.167606011833949],
+          [-69.6656743607365, 5.167606011833949],
+          [-69.6656743607365, 11.253901835397997]]], null, false);
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+/**
+ * Introduction:
+ * 1) Change ecoregions in the NA biome to their neighboring biome types.
+ * 2) Extract and output ecoregions in the biomes of interest (forests and tundra).
+ * 
+ * Update: 3/18/2021.
+ * 
+ * Runtime: 2m.
+ */
+
+
+/* Load the required datasets. */
+
+// Set the working directory.
+var wdNA = "users/treeline/NorthAmerica_GME/";
+
+// Load the individual geometries of ecoregions with the 300-m buffered new CATE.
+var ecoregions = ee.FeatureCollection(wdNA + "ATEI_Estimation/" + 
+  "RESOLVEecoregions2017_individualGeometries_300mBufNewCATE_AOI");
+
+// print("ecoregions:", ecoregions.first(),
+//   ecoregions.size())
+
+
+/* Extract biomes no need to change. */
+
+// Check the types of biomes.
+var biomeTypes = ecoregions.aggregate_array("BIOME_NAME")
+  .distinct();
+
+// print("biomeTypes:", biomeTypes)
+
+// Extract ecoregions not in NA or 
+// Montane Grasslands & Shrublands biomes.
+var noChange = ecoregions.filter(ee.Filter.and(
+  ee.Filter.neq("BIOME_NAME", "N/A"),
+  ee.Filter.neq("BIOME_NAME", "Montane Grasslands & Shrublands")
+));
+
+// print("noChange:", noChange.size())
+
+
+/* Change ecoregions in the NA biome to their neighboring biome types. */
+
+// Extract ecoregions in the NA biome.
+var NA = ecoregions.filter(ee.Filter.eq("BIOME_NAME", "N/A"));
+
+// print("NA:", NA.size())
+
+// Get ecoregions in the Tundra biome.
+var Tundra = ecoregions.filter(ee.Filter.eq("BIOME_NAME", 
+  "Tundra"));
+
+// Get ecoregions in the Temperate Conifer Forests biome.
+var TempConFor = ecoregions.filter(ee.Filter.eq("BIOME_NAME", 
+  "Temperate Conifer Forests"));
+
+// Extract the NA-biome ecoregions close to Tundra. 
+var NA_Tundra = NA.filterBounds(North);
+
+// print("NA_Tundra:", NA_Tundra.size())
+
+// Extract the NA-biome ecoregions close to Temperate Conifer Forests. 
+var NA_TempConFor = NA.filterBounds(South);
+
+// print("NA_TempConFor:", NA_TempConFor.size())
+
+// Change the biome information accordingly.
+var NA_Tundra_changed = NA_Tundra.map(function(ecoregion) {
+  var biomeChanged = ecoregion.set({
+    BIOME_NAME: "Tundra",
+    BIOME_NUM: 11
+  });
+  
+  return biomeChanged;
+});
+
+var NA_TempConFor_changed = NA_TempConFor.map(function(ecoregion) {
+  var biomeChanged = ecoregion.set({
+    BIOME_NAME: "Temperate Conifer Forests",
+    BIOME_NUM: 5
+  });
+  
+  return biomeChanged;
+});
+
+
+/* Change ecoregions in the Montane Grasslands & Shrublands biome 
+  to their neighboring biome types. */
+
+// Extract ecoregions in the Montane Grasslands & Shrublands biome.
+var Montane = ecoregions.filter(ee.Filter.eq("BIOME_NAME", 
+  "Montane Grasslands & Shrublands"));
+
+// print("Montane:", Montane.size())
+
+// Get ecoregions in the Tropical & Subtropical Moist Broadleaf Forests biome.
+var TropicalMoist = ecoregions.filter(ee.Filter.eq("BIOME_NAME", 
+  "Tropical & Subtropical Moist Broadleaf Forests"));
+
+// Extract the Montane-biome ecoregions close to 
+// Tropical & Subtropical Moist Broadleaf Forests. 
+var Montane_TropicalMoist = Montane.filterBounds(SouthAme);
+
+// print("Montane_TropicalMoist:", Montane_TropicalMoist.size())
+
+// Change the biome information accordingly.
+var Montane_TropicalMoist_changed = Montane_TropicalMoist.map(function(ecoregion) {
+  var biomeChanged = ecoregion.set({
+    BIOME_NAME: "Tropical & Subtropical Moist Broadleaf Forests",
+    BIOME_NUM: 1
+  });
+  
+  return biomeChanged;
+});
+
+
+/* Extract and output ecoregions in the biomes of interest (forests and tundra). */
+
+// Merge the changed ecoregions with ecoregions in the rest biomes.
+var newEcoregions = noChange.merge(NA_Tundra_changed)
+  .merge(NA_TempConFor_changed)
+  .merge(Montane_TropicalMoist_changed);
+
+// print("newEcoregions:", newEcoregions.first(),
+//   newEcoregions.size())
+
+// Check the new types of biomes.
+var newBiomeTypes = newEcoregions.aggregate_array("BIOME_NAME")
+  .distinct();
+
+// print("newBiomeTypes:", newBiomeTypes)
+
+// Extract ecoregions in the biomes of interest.
+var BOI_ecoregions = newEcoregions.filter(ee.Filter.or(
+  ee.Filter.stringContains({
+    leftField: "BIOME_NAME", 
+    rightValue: "Forests"
+  }),
+  ee.Filter.eq({
+    name: "BIOME_NAME", 
+    value: "Tundra"
+  })
+));
+
+// print("BOI_ecoregions:", BOI_ecoregions.size())
+
+// Check the biomes of interest.
+var BOI = BOI_ecoregions.aggregate_array("BIOME_NAME")
+  .distinct();
+
+// print("BOI:", BOI)
+
+
+if (false) {
+  // Visualization.
+  Map.setOptions("hybrid");
+  Map.setCenter(-128.06, 56.51, 5);
+  
+  Map.addLayer(noChange, {color: "FFFF00"}, "noChange");
+  
+  Map.addLayer(Tundra, {color: "0000FF"}, "Tundra");
+  Map.addLayer(TempConFor, {color: "00FF00"}, "TempConFor");
+  
+  Map.addLayer(Montane, {color: "FFFFFF"}, "Montane");
+  Map.addLayer(TropicalMoist, {color: "0000FF"}, "TropicalMoist");
+  
+  Map.addLayer(NA_Tundra_changed, {color: "FF0000"}, 
+    "NA_Tundra_changed");
+  Map.addLayer(NA_TempConFor_changed, {color: "FF8000"}, 
+    "NA_TempConFor_changed");
+  
+  Map.addLayer(BOI_ecoregions, {color: "228B22"}, 
+    "BOI_ecoregions");
+
+} else if (true) {
+  // Export the result.
+  var fileName = "RESOLVEecoregions2017_forestsTundra_montaneNAchanged_300mBufNewCATE_AOI";
+  
+  Export.table.toAsset({
+    collection: BOI_ecoregions, 
+    description: fileName, 
+    assetId: wdNA + "ATEI_Estimation/" 
+      + fileName
+  });
+}
+

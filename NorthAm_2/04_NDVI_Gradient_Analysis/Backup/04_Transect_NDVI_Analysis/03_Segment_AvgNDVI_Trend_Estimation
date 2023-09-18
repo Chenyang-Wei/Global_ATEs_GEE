@@ -1,0 +1,128 @@
+/**
+ * Introduction:
+ * 1) Calculate the annual spatial average NDVIs of each transect segment
+ *  from 1985 to 2020.
+ * 2) Estimate the temporal trend of the annual average NDVIs
+ *  of each transect segment.
+ * 
+ * Update: 1/6/2022.
+ * 
+ * Runtime: 1h ~ 2h.
+ */
+
+
+/* Load module(s). */
+
+var IMG = require("users/ChenyangWei/Public:Modules/Image_Analysis&Processing");
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var TNA = require("users/ChenyangWei/Public:Modules/Transect_NDVI_Analysis");
+
+
+/* Data and function preparation. */
+
+// Target projection.
+var targetPrj = IMG.WGS84_30m;
+
+// Set the major working directory.
+var wd_Main = GATE.wd_NorthAmerica;
+
+// Load the new CATE.
+var newCATE = ee.Image(wd_Main
+  + "Climate-Based_ATE/" 
+  + GATE.newCATE_fileName);
+
+// Load the annual NDVIs in the new CATE as an Image.
+var rawAnnualNDVIs_newCATE = ee.Image(wd_Main
+  + "ATEI_Estimation/"
+  + TNA.annualMaxNDVI_300mBufNewCATE_NorthAmerica_fileName)
+  .updateMask(newCATE);
+
+// Remove the annual NDVI of 1984.
+var annualNDVIs_newCATE = IMG.RemoveBands_fromImage(rawAnnualNDVIs_newCATE, 
+  ["smdNDVI_1984"]);
+
+// Determine the universal file path of
+//  the transect segments.
+var wd_Segments = wd_Main
+  + "Transect_NDVI_Analysis/"
+  + TNA.transectSegments_fileName
+  + "/"
+  + TNA.transectSegments_byBasinGroup_fileName;
+
+// Determine the name of the segment IDs.
+var segmentID_name = "SegmentID";
+
+
+/* Operations by basin group (1 ~ 5). */
+
+for (var basinGroupID = 1; basinGroupID <= 5; basinGroupID ++) {
+  
+  // Load the lower and upper segments of transects.
+  var transectSegments = ee.FeatureCollection(wd_Segments
+      + basinGroupID);
+  
+
+  /* Estimate the temporal trend of the annual average NDVIs
+    of each transect segment. */
+  
+  // Obtain the two types of transect segments.
+  var lowerSegments = transectSegments.filter(ee.Filter.eq(segmentID_name, 1));
+  
+  var upperSegments = transectSegments.filter(ee.Filter.eq(segmentID_name, 2));
+  
+  // Estimate the annual-average-NDVI trends of each type of segments.
+  var lowerSegments_withNDVItrends = TNA.estimate_segmentNDVItrends_byBasin(
+    lowerSegments, annualNDVIs_newCATE, targetPrj, "CL_newID", "lower"
+  );
+  
+  var upperSegments_withNDVItrends = TNA.estimate_segmentNDVItrends_byBasin(
+    upperSegments, annualNDVIs_newCATE, targetPrj, "CL_newID", "upper"
+  );
+
+
+  if (false) { //// true OR false.
+    
+    print("transectSegments:", 
+      transectSegments.first(),
+      transectSegments.size());
+  
+    print("lowerSegments:", 
+      lowerSegments.size());
+  
+    print("upperSegments:",
+      upperSegments.size());
+  
+  } else { //// Export the result(s).
+    
+    var wd_Output_Lower = wd_Main
+      + "Transect_NDVI_Analysis/"
+      + TNA.lowerSegmentsNDVItrends_fileName
+      + "/";
+    
+    var wd_Output_Upper = wd_Main
+      + "Transect_NDVI_Analysis/"
+      + TNA.upperSegmentsNDVItrends_fileName
+      + "/";
+    
+    var fileName_Lower = TNA.lowerSegmentsNDVItrends_byBasinGroup_fileName
+      + basinGroupID;
+    
+    var fileName_Upper = TNA.upperSegmentsNDVItrends_byBasinGroup_fileName
+      + basinGroupID;
+    
+    Export.table.toAsset({
+      collection: lowerSegments_withNDVItrends, 
+      description: fileName_Lower, 
+      assetId: wd_Output_Lower
+        + fileName_Lower
+    });
+    
+    Export.table.toAsset({
+      collection: upperSegments_withNDVItrends, 
+      description: fileName_Upper, 
+      assetId: wd_Output_Upper
+        + fileName_Upper
+    });
+  }
+}
+

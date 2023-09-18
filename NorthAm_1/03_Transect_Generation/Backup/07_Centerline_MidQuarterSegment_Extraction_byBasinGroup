@@ -1,0 +1,86 @@
+/**
+ * Introduction:
+ *  (Note: The following operations are performed
+ *    for each group of the selected basins.)
+ * 
+ * 1) Add the basin group ID to each transect and 
+ *  combine it with the corresponding centerline ID.
+ * 2) Extract the mid-quarter segment around the centroid 
+ *  of each transect centerline. 
+ * 
+ * Update: 10/6/2021.
+ * 
+ * Total update number: 1.
+ * 
+ * Runtime: 16m ~ 22m.
+ */
+
+
+/* Load module(s). */
+
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var VIS = require("users/ChenyangWei/Public:Modules/Visualization");
+
+
+
+/**** 1) Need to update. ****/
+
+// Determine the group ID of the selected basins.
+var basinGroupID = 1;
+
+/********/
+
+
+
+/* Data and function preparation. */
+
+// Set the working directory.
+var wd_Main = GATE.wd_NorthAmerica;
+
+// Load the raw transect centerlines of the basin group.
+var rawCLs = VIS.readRawCLs_NorthAmerica(basinGroupID);
+
+
+/* Add the basin group ID to each transect and
+  combine it with the corresponding centerline ID. */
+
+var rawCLs_withBasinGroupID = GATE.addBasinGroupIDtoCenterlines(rawCLs, basinGroupID);
+
+
+/* Extract the mid-quarter segment of each transect centerline. */
+
+var midQuarterSegments = GATE.extractMidQuarterSegments(rawCLs_withBasinGroupID);
+
+
+if (false) { // true OR false.
+  print("rawCLs_withBasinGroupID:", rawCLs_withBasinGroupID.size(), 
+    rawCLs_withBasinGroupID.first());
+  
+  print("midQuarterSegments:", midQuarterSegments.size());
+  
+  //// Visualization.
+  VIS.centerNorthAmerica(13);
+  
+  Map.addLayer(rawCLs_withBasinGroupID, 
+    {color: "FF0000"}, 
+    "rawCLs_withBasinGroupID", true);
+  
+  Map.addLayer(midQuarterSegments, 
+    {color: "FFFF00"}, 
+    "midQuarterSegments", true);
+
+} else {
+  //// Export the result(s) by basin group.
+  var wd_Output = wd_Main + "Elevational_Transect_Generation/"
+    + GATE.midQuarters_fileName
+    + "/";
+
+  var fileName = GATE.midQuarters_byBasinGroup_fileName + basinGroupID;
+  
+  Export.table.toAsset({
+    collection: midQuarterSegments, 
+    description: fileName, 
+    assetId: wd_Output + fileName
+  });
+}
+

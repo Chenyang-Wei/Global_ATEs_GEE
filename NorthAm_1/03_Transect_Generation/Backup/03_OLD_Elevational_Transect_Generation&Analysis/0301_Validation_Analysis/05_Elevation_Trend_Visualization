@@ -1,0 +1,51 @@
+/**
+ * Introduction:
+ * 1) Visualize all types of ATE elevation trends.
+ * 
+ * Update: 4/14/2021.
+*/
+
+
+/* Data preparation. */
+
+// Set the working directory.
+var wdNA = "users/treeline/NorthAmerica_GME/";
+
+// Load the elevation trend with ATEI masking.
+var maskedTrend = ee.FeatureCollection(wdNA + 
+  "Transect_Analysis/" + 
+  "TransectCL_45mBuf_ATEIgtPt4329masked_wAvgEtrend_gte10obs")
+  .select("mskElvTnd")
+  .map(function buffering(CL) {
+    return CL.buffer(45);
+  });
+
+// print("maskedTrend:", maskedTrend.first(),
+//   maskedTrend.size()) // 703172.
+
+
+/* Visualize all types of elevation trends. */
+
+// Extract the center lines with the elevation trend.
+maskedTrend = maskedTrend.filter(ee.Filter.neq("mskElvTnd", null));
+
+// print("maskedTrend:", maskedTrend.first(),
+//   maskedTrend.size()) // 485326.
+
+// Paint the center lines based on the elevation trends.
+var empty = ee.Image().double();
+
+var mskElvTnd = empty.paint({
+  featureCollection: maskedTrend,
+  color: "mskElvTnd",
+  width: 2
+});
+
+// Visualization.
+var tndVis = {min: -0.1, max: 0.1, palette: "0000FF, FFFFFF, FF0000"};
+
+Map.setOptions("HYBRID");
+// Map.setCenter(-113.6351, 48.9004, 9);
+Map.setCenter(-120.7326, 48.7726, 9);
+
+Map.addLayer(mskElvTnd, tndVis, "Elevation trend (with ATEI masking)");

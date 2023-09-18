@@ -1,0 +1,80 @@
+/**
+ * Introduction:
+ * 
+ *  1) Combine grouped transects with the temporal
+ *    analysis result of ATE elevation in Europe,
+ *    Asia, and North America.
+ * 
+ * Updated: 6/6/2023.
+ * 
+ * Runtime: 21 ~ 38m.
+ */
+
+
+/* Load module(s). */
+
+var ATEI_EA = require("users/ChenyangWei/Public:Modules/Treeline/ATEI_Estimation&Analysis.js");
+
+
+/* Object definition. */
+
+// Determine the continent ID (0 ~ 5).
+var contID = 5;
+
+// Whether output the result. (true OR false)
+var output = true;
+
+// Create a list of the working directories.
+var WDs_List = ATEI_EA.WDs_AllContinents_List;
+
+
+/* Acquire the information of each continent. */
+
+// Determine the working directory of the continent.
+var contWD = WDs_List[contID];
+
+
+/* Combine each group of transects. */
+
+// Create an empty FeatureCollection.
+var combined_Transects = ee.FeatureCollection([]);
+
+var groupNum = 50;
+
+// A for-loop.
+for (var i = 0; i < groupNum; i ++) {
+  
+  // Add the transects of each group.
+  var transects_perGroup = ee.FeatureCollection(contWD 
+    + "ATE_Dynamics/transects_ATEelevationTrend/"
+    + "transectGroup_" + i);
+  
+  combined_Transects = combined_Transects
+    .merge(transects_perGroup);
+}
+
+
+/* Check the data or export the final result. */
+
+if (!output) {
+  
+  print(combined_Transects.first(),
+    combined_Transects.size());
+  
+} else {
+  
+  var outputWD = contWD + "ATE_Dynamics/";
+
+  var fileName = "PreprocessedTransects_ATEelevationTrend";
+  
+  Export.table.toAsset({
+    collection: combined_Transects, 
+    description: fileName, 
+    assetId: outputWD
+      + fileName
+  });
+}
+
+
+
+

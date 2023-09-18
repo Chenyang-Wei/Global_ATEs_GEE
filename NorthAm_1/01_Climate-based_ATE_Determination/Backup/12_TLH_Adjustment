@@ -1,0 +1,158 @@
+
+/* Setup. */
+
+// Asset paths.
+var wdNorthA = "users/treeline/North_America/CATE/";
+
+// Elevation percentile difference between the average climatic treeline and its surrounding forested areas. 
+var elvPctDiff = ee.FeatureCollection(wdNorthA + 
+  "avgTLH_absElvDistLte500m_3kmSurroundingClosedForests_elvPctDiff"); // Closed forests.
+// var elvPctDiff = ee.FeatureCollection(wdNorthA + 
+//   "avgTLH_absElvDistLte500m_3kmSurroundingAllForests_elvPctDiff"); // All forests.
+
+print("elvPctDiff:", elvPctDiff.first(), elvPctDiff.size());
+
+// Load the average climatic treeline elevation.
+var avgTLH = ee.Image(wdNorthA +
+  "avgTLH_1979to2013_1arcsec_mtRgLand_CHELSAv12_ALOSv22_GMBAv12_HansenV17");
+
+// ALOS elevation.
+var ALOSelv = ee.Image('JAXA/ALOS/AW3D30/V2_2').select('AVE_DSM')
+  .updateMask(avgTLH.gte(-1e18)); // Within the study domain.
+
+var elvPrj = ALOSelv.projection();
+var elvCRS = elvPrj.crs().getInfo();
+var elvScale = elvPrj.nominalScale().getInfo();
+
+print("Elevation projection:", elvCRS, elvScale);
+
+
+/* Extract areas within a vertical distance to the average climatic treeline and their surrounding regions. */ 
+
+// Calculate the absolute vertical distance.
+var absElvDist = avgTLH.subtract(ALOSelv).abs(); 
+
+// Extract areas within a vertical distance.
+var elvDistThres = 0.5e3; // 500m.
+
+var elvDistMask = absElvDist.lte(elvDistThres);
+
+// Determine the surrounding regions of the extracted areas.
+var neighborhood = 200; // Number of ~30-m pixels.
+
+var surroundingDist = elvDistMask.fastDistanceTransform({
+  neighborhood: neighborhood,
+  units: "pixels",
+  metric: "squared_euclidean"
+}).sqrt() // Get the distance in pixels.
+  .reproject(ee.Projection(elvCRS).atScale(elvScale)); // At the resolution of the elevation dataset.
+
+// Threshold of the horizontal distance for the surrounding regions.
+var surroudingThres = 100; // Number of ~30-m pixels.
+var surroundingArea = surroundingDist.lte(surroudingThres);
+
+// Obtain the average TLH of the surrounding areas.
+var surroundingAvgTLH = avgTLH.updateMask(surroundingArea);
+
+
+/* Adjust the average TLH of the surrounding areas based on the elevation percentile difference. */
+
+function adjustTLH(pctDiff, diff) {
+  // Extract the qualified area within each mountain range.
+  var adjustedTLH = ee.ImageCollection(pctDiff.map(function(mtRg) {
+    // Determine the upper and lower limits of the elevation threshold of each mountain range.
+    var elvDiff = ee.Image(ee.Number(mtRg.get(diff)));
+    
+    // Clip the surrounding average TLH to the corresponding mountain range.
+    var geom = mtRg.geometry();
+    var mtRgTLH = surroundingAvgTLH.clip(geom);
+    
+    // Adjust the surrounding average TLH. 
+    var adjusted = mtRgTLH.subtract(elvDiff);
+    
+    return adjusted;
+  })).mosaic(); // Mosaic the adjusted TLH of all mountain ranges into one image.
+  
+  return adjustedTLH;
+}
+
+var adjustDiff1 = "TLHp25_FORp75";
+var adjustDiff2 = "TLHp50_FORp50";
+var adjustDiff3 = "TLHp10_FORp90";
+
+var adjAvgTLH1 = adjustTLH(elvPctDiff, adjustDiff1);
+var adjAvgTLH2 = adjustTLH(elvPctDiff, adjustDiff2);
+var adjAvgTLH3 = adjustTLH(elvPctDiff, adjustDiff3);
+
+
+/* Extract areas within a vertical distance to the adjusted average TLH. */ 
+
+// Calculate the absolute vertical distance.
+var adjAbsElvDist1 = adjAvgTLH1.subtract(ALOSelv).abs(); 
+var adjAbsElvDist2 = adjAvgTLH2.subtract(ALOSelv).abs(); 
+var adjAbsElvDist3 = adjAvgTLH3.subtract(ALOSelv).abs(); 
+
+// Extract areas within a vertical distance.
+var adjElvDistMask1 = adjAbsElvDist1.lte(elvDistThres);
+var adjElvDistMask2 = adjAbsElvDist2.lte(elvDistThres);
+var adjElvDistMask3 = adjAbsElvDist3.lte(elvDistThres);
+
+
+if (true) {
+  /* Visualization. */
+  
+  Map.setOptions("hybrid");
+  // Map.setCenter(-113.667, 48.8705, 12); // GNP.
+  Map.setCenter(-123.18057, 47.79769, 12); // Olympic.
+  
+  var diffPalette = ['0000ff', 'ffffff', 'ff0000'];
+  var elvPalette = ['006600', '002200', 'fff700', 'ab7634', 'c4d0ff', 'ffffff'];
+  
+  var diffVis = {min: -1500, max: 1500, palette: diffPalette};
+  var elvVis = {min: 1000, max: 3000, palette: elvPalette};
+  
+  var diffField1 = 'TLHp0_FORp100';
+  var diffField2 = 'TLHp5_FORp95';
+  var diffField3 = 'TLHp10_FORp90';
+  var diffField4 = 'TLHp25_FORp75';
+  var diffField5 = 'TLHp50_FORp50';
+  
+  var pctDiff1 = ee.Image().float().paint({
+    featureCollection: elvPctDiff,
+    color: diffField1,
+  });
+  var pctDiff2 = ee.Image().float().paint({
+    featureCollection: elvPctDiff,
+    color: diffField2,
+  });
+  var pctDiff3 = ee.Image().float().paint({
+    featureCollection: elvPctDiff,
+    color: diffField3,
+  });
+  var pctDiff4 = ee.Image().float().paint({
+    featureCollection: elvPctDiff,
+    color: diffField4,
+  });
+  var pctDiff5 = ee.Image().float().paint({
+    featureCollection: elvPctDiff,
+    color: diffField5,
+  });
+  
+  var diffDisplay = false;
+  
+  Map.addLayer(elvPctDiff, {color: 'ffffff'}, 'elvPctDiff', false);
+  Map.addLayer(pctDiff1, diffVis, diffField1, diffDisplay);
+  Map.addLayer(pctDiff2, diffVis, diffField2, diffDisplay);
+  Map.addLayer(pctDiff3, diffVis, diffField3, diffDisplay);
+  Map.addLayer(pctDiff4, diffVis, diffField4, diffDisplay);
+  Map.addLayer(pctDiff5, diffVis, diffField5, diffDisplay);
+  
+  Map.addLayer(surroundingAvgTLH, elvVis, "Original avgTLH", false);
+  Map.addLayer(adjAvgTLH1, elvVis, "Adjusted avgTLH" + adjustDiff1, false);
+  
+  Map.addLayer(adjElvDistMask3.selfMask(), {palette: "0000FF"}, "Adjusted CATE" + adjustDiff3);
+  Map.addLayer(adjElvDistMask2.selfMask(), {palette: "00FF00"}, "Adjusted CATE" + adjustDiff2);
+  Map.addLayer(adjElvDistMask1.selfMask(), {palette: "FF0000"}, "Adjusted CATE" + adjustDiff1);
+  
+  Map.addLayer(elvDistMask.selfMask(), {palette: "FFFF00"}, "Original CATE");
+}

@@ -1,0 +1,235 @@
+/**
+ * Introduction:
+ * 1) Smooth the ALOS elevation within the 300m-buffered new CATE 
+ *  by calculating its focal mean within a 10-pixel circular kernel.
+ * 2) Generate the three types of ATEI components by year.
+ * 3) Estimate the annual ATEI based on the generated components
+ *  using a logistic regression model established in R.
+ * 
+ * Update: 3/14/2021.
+ * 
+ * Runtime: 5h.
+*/
+
+
+/* Load and reproject the required datasets. */
+
+// Set the 10-km buffered bounding box of the study domain.
+var AOI = ee.Geometry.Rectangle({
+  coords: [-180, 7.114761500193937, -52.095625030545534, 80.24342770493531],
+  geodesic: false
+});
+
+// Target projection.
+var targetPrj = {
+  crs: "EPSG:4326",
+  scale: 30
+};
+
+// ALOS elevation (Version 3.2, released in January 2021) in the AOI.
+var ALOSelv = ee.ImageCollection('JAXA/ALOS/AW3D30/V3_2').select('DSM')
+  .filterBounds(AOI)
+  .mosaic()
+  .reproject(targetPrj);
+
+// Set the working directory.
+var wdNA = "users/treeline/NorthAmerica_GME/";
+
+// Load the buffered new CATE.
+// (Choose the 300-m buffer because the NDVI-smoothing kernel
+// is a 10-pixel (10*30m) circle.)
+var bufNewCATE = ee.Image(wdNA + "Climate-Based_ATE/" +
+  "30mNewCATE_BufRawCATEclosedForests_300mBuffered_AOI");
+
+// Load the smoothed annual maximum NDVIs in the 300m-buffered new CATE.
+var maxNDVI = ee.Image(wdNA + "ATEI_Estimation/" +
+  "medianSmdAnnualMaxNDVI_1984to2020_300mBufNewCATE_cloudShadowMasked_AOI");
+
+// Load the new CATE.
+var newCATE = ee.Image(wdNA + "Climate-Based_ATE/" +
+  "30mNewCATE_gteSmd10kmCForestElv_3kmCForestBuffer_BufRawCATEclosedForests_AOI");
+
+// print("newCATE:", newCATE.bandTypes(),
+//   newCATE.projection().crs(),
+//   newCATE.projection().nominalScale())
+
+
+/* Smooth the ALOS elevation within the 300m-buffered new CATE 
+  by calculating its focal mean within a 10-pixel circular kernel. */
+
+// Extract elevation within the buffered new CATE.
+var bufCATEelv = ALOSelv.updateMask(bufNewCATE);
+
+// Define a circular kernel of 10 pixels.
+var Kn = ee.Kernel.circle({
+  radius: 10,
+  units: "pixels"
+}); 
+
+// Calculate the focal mean within the kernel.
+var smdElv = bufCATEelv.reduceNeighborhood({
+  // The mean reducer is smoother than the median reducer, 
+  // which then provides a less scattered gradient direction dataset.
+  reducer: ee.Reducer.mean(),
+  kernel: Kn,
+  skipMasked: true // Output the smoothed elevation within the 300m-buffered new CATE.
+}).reproject(targetPrj); // Reproject to the target projection.
+
+
+/* Generate the gradient direction of the smoothed elevation. */
+
+// Compute the elevation gradient in the X and Y directions.
+var elvGrad = smdElv.gradient()
+  .reproject(targetPrj);
+
+// Compute the direction of the elevation gradient.
+// "atan2" calculates the angle formed by the 2D vector [x, y].
+// (Gradient: -179 ~ 180 (-PI ~ PI), 
+// south: 0, north: 180 (PI), 
+// west : 90 (PI/2), east: -90 (-PI/2)).
+var elvDir = elvGrad.select('y').atan2(elvGrad.select('x'))
+  .rename("elvDir");
+
+
+/* Generate the three types of ATEI components and 
+  estimate the ATEI by year. */
+
+// Determine the list of years.
+var Years = ee.List.sequence(1984, 2020);
+
+var ATEI_list = Years.map(function(year) {
+  // When directly convert a "floating point" to a "string", 
+  // the result contains a ".", which isn't allowed in band names.
+  var yearName = ee.String(ee.Number(year).int());
+  
+  // Extract and rename the smoothed annual maximum NDVI.
+  var NDVIname = ee.String("smdNDVI_").cat(yearName);
+  var smdNDVI = maxNDVI.select([NDVIname], ["smdNDVI"]);
+  
+  // Compute the NDVI gradient in the X and Y directions.
+  var NDVIgrad = smdNDVI.gradient()
+    .reproject(targetPrj);
+  
+  // Compute the direction of the NDVI gradient.
+  var NDVIdir = NDVIgrad.select('y').atan2(NDVIgrad.select('x'))
+    .rename("NDVIdir");
+
+  // Compute the magnitude of the NDVI gradient: 
+  // "hypot" calculates the magnitude of the 2D vector [x, y].
+  var NDVImag = NDVIgrad.select('y').hypot(NDVIgrad.select('x'))
+    .rename("NDVImag");
+  
+  
+  /* Generate the Gaussian component of ATEI. */
+
+  var b_max = 0.4778;
+  
+  var denominator_max = -0.01520768; // Negative value.
+  
+  var gausMax = smdNDVI.subtract(b_max).pow(2)
+    .divide(denominator_max)
+    .exp()
+    .rename("gausMax");
+  
+  
+  /* Generate the Orientation component of ATEI. */
+  
+  var maxElvAgl = NDVIdir.subtract(elvDir).abs();
+  
+  var center_max = 3.0450;
+  
+  var determinedN_max = 8.7295;
+  
+  var cos_max = maxElvAgl.subtract(center_max).add(Math.PI);
+  
+  var base_max = ee.Image(1).subtract(cos_max.cos())
+    .divide(2);
+  
+  var orienMax = base_max.pow(determinedN_max)
+    .rename("orienMax");
+  
+  
+  /* Fit the logistic regression model. */
+
+  // Combine the three types of ATEI components.
+  var ATEIcomps = NDVImag.addBands(gausMax)
+    .addBands(orienMax);
+  
+  // Determine the logit.
+  var logit = ATEIcomps.expression({
+    expression: '-2.5136 + 2570.1669 * NDVImag + 1.0862 * gausMax + 1.4321 * orienMax',
+    map: {
+      'NDVImag': ATEIcomps.select('NDVImag'),
+      'gausMax': ATEIcomps.select('gausMax'),
+      'orienMax': ATEIcomps.select('orienMax')
+    }
+  }); 
+  
+  // 10 fold, repeated 100 times.
+  // Accuracy: 0.8464125.
+  // Kappa: 0.6895755.
+  
+  var logitE = logit.exp();
+  
+  // Calculate the annual ATEI.
+  var ATEIname = ee.String("ATEI_").cat(yearName);
+  
+  var annualATEI = logitE.divide(logitE.add(1))
+    .rename(ATEIname);
+
+  return annualATEI;
+});
+
+
+/* Convert the list of images to a multi-band image. */
+
+var ATEI_ic = ee.ImageCollection.fromImages(ATEI_list);
+
+// print("ATEI_ic:", ATEI_ic)
+
+function convert(current, previous) {
+  var converted = ee.Algorithms.If(
+    ee.Algorithms.IsEqual(previous, null), // Whether or not the first image.
+    current, // True: for the first image.
+    ee.Image(previous).addBands(current) // False: for the rest images.
+  );
+  
+  return converted;
+}
+
+var ATEI_img = ee.Image(ATEI_ic.iterate(convert))
+  .updateMask(newCATE) // Extract the result within the new CATE (with no buffer).
+  .float(); // Reduce the size of data.
+
+print("ATEI_img:", ATEI_img.bandTypes(), 
+  ATEI_img.projection().crs(), 
+  ATEI_img.projection().nominalScale())
+
+
+if (false) {
+  // Visualize the result.
+  Map.setOptions("hybrid");
+  Map.setCenter(-113.49153672863031, 48.74125005784002, 12); // GNP.
+  
+  var ATEIvisParams = {min: 0, max: 1, palette: "0000FF, FFFFFF, FF0000"};
+  
+  Map.addLayer(ATEI_img.select("ATEI_1984"), ATEIvisParams, "ATEI_1984");
+  Map.addLayer(ATEI_img.select("ATEI_2000"), ATEIvisParams, "ATEI_2000");
+  Map.addLayer(ATEI_img.select("ATEI_2020"), ATEIvisParams, "ATEI_2020");
+
+} else if (true) {
+  // Export the result.
+  var fileName = "AnnualATEI_1984to2020_medianSmdAnnualMaxNDVI_meanSmdElv_newCATE_AOI"; 
+  
+  Export.image.toAsset({
+    image: ATEI_img,
+    description: fileName, 
+    assetId: wdNA + "ATEI_Estimation/"
+      + fileName, 
+    crs: "EPSG:4326",
+    scale: 30,
+    region: AOI,
+    maxPixels: 1e13
+  }); 
+}
+

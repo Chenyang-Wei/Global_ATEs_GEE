@@ -1,0 +1,215 @@
+/*
+  Introduction:
+  1) To select the areas within a vertical distance to the average climatic treeline.
+  2) To extract the selected areas within a horizontal distance to forested areas.
+  3) To further extract the areas over a selected percentile 
+    of the forest elevation in each mountain range.
+  
+  Date: 6/6/2020.
+  
+  Launch time: 1h.
+*/
+
+
+/* Setup. */
+
+// Asset paths.
+var wdGlobal = "users/treeline/Global/";
+var wdNorthA = "users/treeline/North_America/CATE/";
+
+// Define the extent of North America. 
+var northAmerica = ee.Geometry.Polygon({
+    coords: [[[-165.69002926658334, 72.44551256468144],
+          [-169.40248634956492, 65.69009098298687],
+          [-172.25893166206492, 63.826281515474996],
+          [171.35638590722195, 52.855285271231274],
+          [-159.1340353549648, 17.264443722753843],
+          [-122.14862062448367, 9.59539750905343],
+          [-79.06711256993691, 6.243890041056693],
+          [-77.03677448989225, 7.40316087095261],
+          [-76.78408894301725, 8.990725120234067],
+          [-75.7244458156751, 12.403191738791786],
+          [-71.5276684719251, 13.751533985801833],
+          [-62.8264965969251, 11.651035844929385],
+          [-62.005942990095036, 9.999896817210585],
+          [-60.791953732282536, 9.96743692413247],
+          [-55.5884807162513, 13.889226127218825],
+          [-47.99315852039507, 58.68729606716915],
+          [-66.52860968724042, 71.51769835770313],
+          [-77.86650031224042, 74.25356562488685],
+          [-89.90751593724042, 74.22969620284344],
+          [-106.04844453284761, 74.3012200035139],
+          [-114.63975312659761, 74.20581277506923],
+          [-120.18954789130242, 74.88484689543225],
+          [-136.27353226630242, 74.6772015427699]]],
+    geodesic: true
+});
+
+// Original study domain.
+var studyDomain = ee.Image(wdGlobal + 
+  'Study_Area/GMBA_Lte60NS/' +
+  'Elv_GtePct80_of_MODISforestElv_in_MtRg__AbsElvDist_Lte1000m_to_AvgTLH__MODISforestDist_Lte50px');
+
+// ALOS elevation.
+var ALOSelv = ee.Image('JAXA/ALOS/AW3D30/V2_2').select('AVE_DSM');
+
+// Projection information.
+var elvPrj = ALOSelv.projection();
+var elvCRS = elvPrj.crs().getInfo();
+var elvScale = elvPrj.nominalScale().getInfo();
+
+print("ALOS projection:", elvCRS, elvScale);
+
+// Copernicus land cover forests.
+var forests = ee.Image(wdNorthA + 
+  "CopernicusLandCover_100mAllForests_2015_GMBAv12");
+
+// GMBA mountain ranges with the calculated percentiles of the forest elevation.  
+var elvPcts = ee.FeatureCollection(wdNorthA +
+  "CopernicusLC_allForests_ElvPcts_ALOSv22_GMBAv12");
+  
+// Horizontal distance to forests.
+var horiDist = ee.Image(wdNorthA +
+  "CopernicusLC_allForests_Distance_1000Px_GMBAv12");
+
+// Projection information.
+print("Horizontal forest distance:", 
+  horiDist.bandTypes(),
+  horiDist.projection().crs(),
+  horiDist.projection().nominalScale());
+
+// Load the average climatic treeline elevation.
+var avgTLH = ee.Image(wdNorthA +
+  "avgTLH_1979to2013_1arcsec_mtRgLand_CHELSAv12_ALOSv22_GMBAv12_HansenV17");
+
+
+/* Select areas within a vertical distance 
+  to the average climatic treeline. */ 
+
+// Calculate the absolute vertical distance.
+var absElvDist = avgTLH.subtract(ALOSelv).abs(); 
+
+// Extract areas within a vertical distance.
+var elvDistThres = 1e3; // In meters.
+
+var elvDistMask = absElvDist.lte(elvDistThres);
+
+ALOSelv = ALOSelv.updateMask(elvDistMask);
+
+
+/* Extract the selected areas within a horizontal distance 
+  to forests. */ 
+
+// Set a distance threshold.
+var horiDistThres = 500; // In 100-m pixels.
+
+// Select areas within a horizontal distance.
+var horiDistMask = horiDist.lte(horiDistThres);
+
+ALOSelv = ALOSelv.updateMask(horiDistMask);
+
+
+/* Further extract areas over a percentile of the forest elevation
+  within each mountain range. */
+
+function forestPctThres(forestElvPcts, pctThres) {
+  // Extract the qualified area within each mountain range.
+  var overElvThres = ee.ImageCollection(forestElvPcts.map(function(mtRg) {
+    // Determine a percentile as the elevation threshold of each mountain range.
+    var pct = ee.Image(ee.Number(mtRg.get(pctThres)));
+    
+    // Clip the extracted elevation dataset to the corresponding mountain range.
+    var geom = mtRg.geometry();
+    var mtRgElv = ALOSelv.clip(geom);
+    
+    // Select areas greater than or equal to the elevation threshold.
+    var overThres = mtRgElv.gte(pct);
+    
+    return overThres.selfMask();
+  })).mosaic(); // Mosaic the qualified areas of all mountain ranges into one image.
+  
+  return overElvThres;
+}
+
+// Determine the final CATE.
+var cate = forestPctThres(elvPcts, 'p50');
+
+
+/* Visualization. */
+
+if (true) {
+  Map.setOptions("hybrid");
+  
+  Map.setCenter(-128.395, 65.0635, 6);
+  
+  Map.addLayer(northAmerica, {color: "0000FF"}, "North America", false);
+  Map.addLayer(elvPcts, {color: "FFFFFF"}, "GMBA mountain ranges", false);
+  
+  // Map.addLayer(horiDist, {min: 0, max: 500, palette: "00FFFF, FFFFFF, FFFF00"}, "Horizontal forest distance");
+  Map.addLayer(horiDistMask.selfMask(), {palette: "0000FF"}, "Horizontal forest distance (500 px)");
+  
+  // Test different thresholds of the horizontal distance.
+  if (true) {
+    var thres1 = 2e3;
+    var thres2 = 1.5e3;
+    var thres3 = 1.2e3;
+    var thres4 = 1e3;
+    var thres5 = 0.5e3;
+    
+    Map.addLayer(absElvDist.lte(thres1).selfMask(), {palette: 'FFFF00'}, 
+      "Climatic treeline distance -- " + thres1 + " m", true);
+    Map.addLayer(absElvDist.lte(thres2).selfMask(), {palette: '00FFFF'}, 
+      "Climatic treeline distance -- " + thres2 + " m", true);
+    Map.addLayer(absElvDist.lte(thres3).selfMask(), {palette: '00FF00'}, 
+      "Climatic treeline distance -- " + thres3 + " m", true);
+    Map.addLayer(absElvDist.lte(thres4).selfMask(), {palette: 'FF0000'}, 
+      "Climatic treeline distance -- " + thres4 + " m", true);
+    Map.addLayer(absElvDist.lte(thres5).selfMask(), {palette: '0000FF'}, 
+      "Climatic treeline distance -- " + thres5 + " m", true);
+  }
+  
+  Map.addLayer(cate, {palette: '0000FF'}, 
+    "All forests ('p50')", true);
+  
+  // Test other forest elevation thresholds.
+  if (false) {
+    var display = false;
+    
+    Map.addLayer(forestPctThres(elvPcts, 'p60'), {palette: '008800'}, 
+      "All forests ('p60')", display);
+    
+    Map.addLayer(forestPctThres(elvPcts, 'p70'), {palette: '00FF00'}, 
+      "All forests ('p70')", display);
+    
+    Map.addLayer(forestPctThres(elvPcts, 'p80'), {palette: '880000'}, 
+      "All forests ('p80')", display);
+    
+    Map.addLayer(forestPctThres(elvPcts, 'p90'), {palette: 'FF0000'}, 
+      "All forests ('p90')", display);
+  }
+  
+  Map.addLayer(forests, {palette: '228B22'}, 
+    "All forests", true);
+  
+  Map.addLayer(studyDomain, {palette: '808080'}, 
+    "Original CATE", true);
+}
+
+
+/* Output the result. */
+
+else {
+  var fileName = "CopernicusLC_allForests_absElvDistLte1000m_horiDistLte500px_forestElvPct50";
+  
+  Export.image.toAsset({
+    image: cate,
+    description: fileName,
+    assetId: wdNorthA + 
+      fileName,
+    region: northAmerica,
+    scale: elvScale,
+    crs: elvCRS,
+    maxPixels: 1e13
+  });
+}
+

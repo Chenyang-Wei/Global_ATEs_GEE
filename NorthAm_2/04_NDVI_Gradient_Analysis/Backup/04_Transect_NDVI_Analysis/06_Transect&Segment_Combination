@@ -1,0 +1,124 @@
+/**
+ * Introduction:
+ * 1) Select transects with at least 10 annual observations.
+ * 1) Combine the variables of elevational transects and the corresponding
+ *  lower and upper segments.
+ * 
+ * Update: 1/27/2022.
+ * 
+ * Runtime: 2h ~ 3h.
+ */
+
+
+/* Load module(s). */
+
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var TNA = require("users/ChenyangWei/Public:Modules/Transect_NDVI_Analysis");
+var FC_AP = require("users/ChenyangWei/Public:Modules/FeatureCollection_Analysis&Processing");
+
+
+/* Data and function preparation. */
+
+// Set the major working directory.
+var wd_Main = GATE.wd_NorthAmerica;
+
+// Determine the universal file path of transects.
+var wd_Transects = wd_Main
+  + "Transect_NDVI_Analysis/"
+  + TNA.elvNDVIgradientTrends_fileName
+  + "/"
+  + TNA.gradientTrends_byBasinGroup_fileName;
+
+// Determine the universal file path of lower and upper segments.
+var wd_LowerSegments = wd_Main
+  + "Transect_NDVI_Analysis/"
+  + TNA.lowerSegments_MaxNDVIsds_fileName
+  + "/"
+  + TNA.lowerSegmentsMaxNDVIsds_byBasinGroup_fileName;
+
+var wd_UpperSegments = wd_Main
+  + "Transect_NDVI_Analysis/"
+  + TNA.upperSegments_MaxNDVIsds_fileName
+  + "/"
+  + TNA.upperSegmentsMaxNDVIsds_byBasinGroup_fileName;
+
+
+/* Operations by basin group (1 ~ 5). */
+
+for (var basinGroupID = 1; basinGroupID <= 5; basinGroupID ++) {
+  
+  // Load the transects of each basin group.
+  var raw_Transects = ee.FeatureCollection(wd_Transects
+    + basinGroupID);
+  
+  // Load the lower and upper segments of each basin group.
+  var lowerSegments = ee.FeatureCollection(wd_LowerSegments
+    + basinGroupID);
+  
+  var upperSegments = ee.FeatureCollection(wd_UpperSegments
+    + basinGroupID);
+  
+
+  /* Select transects with at least 10 annual observations. */
+  
+  var selected_Transects = TNA.Filter_TransectYearNum(raw_Transects);
+
+  
+  /* Combine the transect variables with the variables
+    of the corresponding lower and upper segments. */
+  
+  // Remove the unnecessary properties from each type of segments.
+  var unnecessaryPrpts = ["Hybas_ID", "SegmentID"];
+  
+  var lowerSegments_PrptsRemoved = FC_AP.FtrCol_PropertyRemoval(
+    lowerSegments, unnecessaryPrpts);
+  
+  var upperSegments_PrptsRemoved = FC_AP.FtrCol_PropertyRemoval(
+    upperSegments, unnecessaryPrpts);
+  
+  // Combine the variables of the selected transects and
+  //  the corresponding lower and upper segments.
+  var centerlineID = "CL_newID";
+  
+  var transects_withLowerSegments = FC_AP.combine_twoFtrCols_byCommonProperty(
+    selected_Transects, lowerSegments_PrptsRemoved, centerlineID
+  );
+  
+  var transects_withBothSegments = FC_AP.combine_twoFtrCols_byCommonProperty(
+    transects_withLowerSegments, upperSegments_PrptsRemoved, centerlineID
+  );
+  
+  
+  /* Final output. */
+  
+  if (false) { //// true OR false.
+  
+    FC_AP.Print_FtrColInfo("selected_Transects:", 
+      selected_Transects);
+    
+    FC_AP.Print_FtrColInfo("lowerSegments_PrptsRemoved:", 
+      lowerSegments_PrptsRemoved);
+    
+    FC_AP.Print_FtrColInfo("upperSegments_PrptsRemoved:", 
+      upperSegments_PrptsRemoved);
+  
+  } else { //// Export the result(s).
+    
+    var wd_Output = wd_Main
+      + "Transect_NDVI_Analysis/"
+      + TNA.transects_withBothSegments_fileName
+      + "/";
+    
+    var fileName = TNA.transects_withBothSegments_byBasinGroup_fileName
+      + basinGroupID;
+    
+    Export.table.toAsset({
+      collection: transects_withBothSegments, 
+      description: fileName, 
+      assetId: wd_Output
+        + fileName
+    });
+    
+  }
+}
+

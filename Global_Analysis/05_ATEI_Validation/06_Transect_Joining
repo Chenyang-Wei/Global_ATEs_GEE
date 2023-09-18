@@ -1,0 +1,183 @@
+/**
+ * Introduction:
+ * 
+ *  1) Join each buffered sample with the filtered
+ *    transects.
+ * 
+ * Updated: 6/9/2023.
+ * 
+ * Runtime: 2 ~ 3m.
+ */
+
+
+/* Load module(s). */
+
+var FC_AP = require("users/ChenyangWei/Public:Modules/General/FeatureCollection_Analysis&Processing.js");
+var GATE = require("users/ChenyangWei/Public:Modules/Treeline/Global_ATE.js");
+
+
+/* Dataset loading. */
+
+// Load the buffered validation points.
+var rawSamples_Global = ee.FeatureCollection(
+  GATE.wd_Global 
+  + "ATEI_Validation/2020Lu_MetaAnalysis/" 
+  + "ATEelevationTrend_5kmBuffered_2020Lu"
+);
+
+// Load global transects.
+var raw_Transects = ee.FeatureCollection(
+  GATE.wd_Global + "ATE_Dynamics/"
+    + "Global_PreprocessedTransects_ATEelevationTrend"
+);
+
+
+/* Filter the transects. */
+
+var obsNum_Filter = ee.Filter.gte(
+  "ATEelv_Num",
+  20
+);
+
+var CFelv_Filter = ee.Filter.greaterThan({
+  leftField: "ATEelv_Avg",
+  rightField: "CF_elv"
+});
+
+var nonFelv_Filter = ee.Filter.lessThan({
+  leftField: "ATEelv_Avg",
+  rightField: "nonF_elv"
+});
+
+var combined_Filters = ee.Filter.and(
+  obsNum_Filter,
+  CFelv_Filter,
+  nonFelv_Filter
+);
+
+// Filtered the global transects.
+var filtered_Transects = raw_Transects
+  .filterBounds(rawSamples_Global)
+  .filter(combined_Filters);
+
+
+/* Join the buffered samples with 
+  the filtered transects. */
+
+// Define a spatial filter as 
+//  geometries that intersect.
+var spatialFilter = ee.Filter.intersects({
+  leftField: ".geo",
+  rightField: ".geo"
+});
+
+// Define a save all join.
+var saveAllJoin = ee.Join.saveAll({
+  matchesKey: "tran_Num",
+});
+
+// Apply the join.
+var transectJoined = saveAllJoin
+  .apply(rawSamples_Global, 
+    filtered_Transects, 
+    spatialFilter);
+
+
+/* Average the joined transect variables.*/
+
+// Define a mean Reducer.
+var mean_Reducer = ee.Reducer.mean()
+  .unweighted();
+
+// Create a list of variable names.
+var ATEelv_VarNames_List = [
+  "ATEelv_Avg",
+  "ATEelv_Int",
+  "ATEelv_Num",
+  "ATEelv_SD",
+  "ATEelv_Trd"
+];
+
+// Average each ATE elevation variables.
+transectJoined = transectJoined.map(
+  function(sample_Ftr) {
+    
+    var joined_Transects = ee.FeatureCollection(
+      ee.List(
+        sample_Ftr.get("tran_Num")
+      ));
+    
+    var avgVars_List = ee.List(
+      joined_Transects.reduceColumns({
+        reducer: mean_Reducer.repeat(5),
+        selectors: ATEelv_VarNames_List
+      }).get("mean"));
+    
+    return sample_Ftr.set({
+      tran_Num: joined_Transects.size(),
+      tran_AeAvg: avgVars_List.get(0),
+      tran_AeInt: avgVars_List.get(1),
+      tran_AeNum: avgVars_List.get(2),
+      tran_AeSD: avgVars_List.get(3),
+      tran_AeTrd: avgVars_List.get(4)
+    });
+  });
+
+
+var output = true; // true OR false.
+
+if (!output) {
+  
+  FC_AP.Print_FtrColInfo(
+    "filtered_Transects:",
+    filtered_Transects
+  ); // Size: 947.
+
+  FC_AP.Print_FtrColInfo(
+    "rawSamples_Global:",
+    rawSamples_Global
+  ); // Size: 109.
+
+  FC_AP.Print_FtrColInfo(
+    "transectJoined:",
+    transectJoined
+  ); // Size: 71.
+
+  Map.setOptions("Satellite");
+  Map.setCenter(-105.6011, 39.5009, 11);
+  
+  Map.addLayer(raw_Transects, 
+    {color: "00ffff"}, 
+    "raw_Transects");
+  
+  Map.addLayer(rawSamples_Global, 
+    {color: "ffff00"}, 
+    "rawSamples_Global",
+    true,
+    0.5);
+  
+  Map.addLayer(filtered_Transects, 
+    {color: "ff0000"}, 
+    "filtered_Transects");
+  
+} else {
+  
+  var fileName = 
+    "ATEelevationTrend_TransectJoined_5kmBuffered_2020Lu";
+  
+  Export.table.toDrive({
+    collection: transectJoined, 
+    description: fileName, 
+    folder: fileName, 
+    fileFormat: "SHP"
+  });
+  
+  Export.table.toAsset({
+    collection: transectJoined, 
+    description: fileName, 
+    assetId: GATE.wd_Global 
+      + "ATEI_Validation/2020Lu_MetaAnalysis/" 
+      + fileName
+  });
+}
+

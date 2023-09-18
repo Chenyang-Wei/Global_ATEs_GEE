@@ -1,0 +1,104 @@
+
+/* Setup. */
+
+// Asset paths.
+var wdNorthA = "users/treeline/North_America/CATE/";
+
+// Elevation percentile difference between the average climatic treeline and the forested areas. 
+var elvPctDiff = ee.FeatureCollection(wdNorthA + "avgTLH_absElvDistLte500m_closedForests_elvPctDiff");
+print("elvPctDiff:", elvPctDiff.first(), elvPctDiff.size());
+
+// Load the average climatic treeline elevation.
+var avgTLH = ee.Image(wdNorthA +
+  "avgTLH_1979to2013_1arcsec_mtRgLand_CHELSAv12_ALOSv22_GMBAv12_HansenV17");
+
+// ALOS elevation.
+var ALOSelv = ee.Image('JAXA/ALOS/AW3D30/V2_2').select('AVE_DSM')
+  .updateMask(avgTLH.gte(-1e18)); // Within the study domain.
+
+// Copernicus land cover product.
+var copernicus = ee.ImageCollection("COPERNICUS/Landcover/100m/Proba-V/Global")
+  .select('discrete_classification').first();
+var closedForests = copernicus.gte(111).and(copernicus.lte(116));
+
+
+/* Determine the surrounding regions of the forested areas. */
+var neighborhood = 50; // Number of ~100-m pixels.
+
+var forPrj = closedForests.projection();
+var forCRS = forPrj.crs().getInfo();
+var forScale = forPrj.nominalScale().getInfo();
+
+var surroundingDist = closedForests.fastDistanceTransform({
+  neighborhood: neighborhood,
+  units: "pixels",
+  metric: "squared_euclidean"
+}).sqrt() // Get the distance in pixels.
+  .reproject(ee.Projection(forCRS).atScale(forScale)); // At the resolution of the forest dataset.
+
+// Threshold of the horizontal distance for the surrounding regions.
+var surroudingThres = 30; // Number of 100-m pixels.
+var surroundingArea = surroundingDist.lte(surroudingThres);
+
+
+/* Extract areas within a vertical distance to the average climatic treeline. */ 
+
+// Calculate the absolute vertical distance.
+var absElvDist = avgTLH.subtract(ALOSelv).abs(); 
+
+// Extract areas within a vertical distance.
+var elvDistThres = 0.5e3; // 500m.
+
+var elvDistMask = absElvDist.lte(elvDistThres);
+
+// Forest mask.
+var forestElv = ALOSelv.updateMask(closedForests).gte(-1e18); // Closed forests.
+
+
+if (true) {
+  /* Visualization. */
+  
+  Map.setOptions("hybrid");
+  Map.setCenter(-123.4657, 47.853, 13);
+  
+  var elvPalette = ['0000ff', 'ffffff', 'ff0000'];
+  var elvVis = {min: -2000, max: 2000, palette: elvPalette};
+  
+  var diffField1 = 'TLHp0_FORp100';
+  var diffField2 = 'TLHp5_FORp95';
+  var diffField3 = 'TLHp10_FORp90';
+  var diffField4 = 'TLHp25_FORp75';
+  var diffField5 = 'TLHp50_FORp50';
+  
+  var pctDiff1 = ee.Image().float().paint({
+    featureCollection: elvPctDiff,
+    color: diffField1,
+  });
+  var pctDiff2 = ee.Image().float().paint({
+    featureCollection: elvPctDiff,
+    color: diffField2,
+  });
+  var pctDiff3 = ee.Image().float().paint({
+    featureCollection: elvPctDiff,
+    color: diffField3,
+  });
+  var pctDiff4 = ee.Image().float().paint({
+    featureCollection: elvPctDiff,
+    color: diffField4,
+  });
+  var pctDiff5 = ee.Image().float().paint({
+    featureCollection: elvPctDiff,
+    color: diffField5,
+  });
+  
+  Map.addLayer(elvPctDiff, {color: 'ffffff'}, 'elvPctDiff', false);
+  // Map.addLayer(pctDiff1, elvVis, diffField1);
+  // Map.addLayer(pctDiff2, elvVis, diffField2);
+  // Map.addLayer(pctDiff3, elvVis, diffField3);
+  // Map.addLayer(pctDiff4, elvVis, diffField4);
+  // Map.addLayer(pctDiff5, elvVis, diffField5);
+  
+  Map.addLayer(surroundingArea.selfMask(), {palette: "FFFF00"}, "surroundingArea");
+  Map.addLayer(forestElv.selfMask(), {palette: "228B22"}, "Closed forests", true);
+  Map.addLayer(elvDistMask.selfMask(), {palette: "FF0000"}, "Climatic treeline", true);
+}

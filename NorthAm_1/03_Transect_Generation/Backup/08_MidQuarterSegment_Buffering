@@ -1,0 +1,55 @@
+/**
+ * Introduction:
+ * 1) Buffer the mid-quarter segments by basin group.
+ * 
+ * Update: 10/7/2021.
+ * 
+ * Runtime: 47m ~ 1h.
+ */
+
+
+/* Load module(s). */
+
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var VIS = require("users/ChenyangWei/Public:Modules/Visualization");
+
+
+/* Operations by basin group (1 ~ 5). */
+
+for (var basinGroupID = 1; basinGroupID <= 5; basinGroupID ++) {
+  
+  // Load the mid-quarter segments.
+  var midQuarters = VIS.readMidQuarters_byBasinGroup_NorthAmerica(basinGroupID);
+
+
+  /* Buffer the mid-quarter segments. */
+  
+  var buffered_MidQuarters = GATE.bufferMidSegments(midQuarters);
+  
+  
+  if (false) { // true OR false.
+    print("midQuarters:", midQuarters.size());
+    
+    print("buffered_MidQuarters:", 
+      buffered_MidQuarters.size(),
+      buffered_MidQuarters.first());
+  
+  } else {
+    //// Export the result(s) by basin group.
+    var wd_Output = GATE.wd_NorthAmerica
+      + "Elevational_Transect_Generation/"
+      + GATE.midQuarterBuffers_fileName
+      + "/";
+  
+    var fileName = GATE.midQuarterBuffers_byBasinGroup_fileName + basinGroupID;
+    
+    Export.table.toAsset({
+      collection: buffered_MidQuarters, 
+      description: fileName, 
+      assetId: wd_Output + fileName
+    });
+  }
+}
+
+
+

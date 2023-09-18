@@ -1,0 +1,282 @@
+/**
+ * Introduction:
+ * 1) Vectorize the segmented CATE.
+ * 2) Extract the min. forest and max. non-forest elevations within each vectorized segment.
+ * 3) Select polygons with both elevational extreme values.
+ * 4) Generate and buffer an elevational transect from the highest non-forest pixel 
+ *  to the lowest forest pixel within each selected polygon.
+ * 
+ * Update: 12/15/2020.
+ * 
+ * Runtime: 1m ~ 3h.
+ * 
+ * Failed tasks: Basin_9.
+ * Error: Table is empty.
+ * Reason: no non-forested area within the segmented CATE in that basin.
+ */
+
+
+/* Setup. */
+
+// Asset path.
+var wdNorthA = "users/treeline/NorthAmerica_GME/";
+
+// HydroSHEDS basins ("hybas_4") with the segmented CATE pixels.
+var basins = ee.FeatureCollection(wdNorthA + "Transects/" + 
+  "90mSegmentedCATE_selectedBasins_Hybas4_withLandCover");
+
+// ALOS elevation (V 2.2).
+var ALOSelv = ee.Image('JAXA/ALOS/AW3D30/V2_2').select('AVE_DSM');
+
+// Extract the ALOS elevation projection.
+var elvPrj = ALOSelv.projection();
+var elvCRS = elvPrj.crs();
+var elvScale = elvPrj.nominalScale();
+
+// print("ALOS elevation projection:", 
+//   elvCRS, elvScale)
+
+// Copernicus land cover product.
+var copernicus = ee.ImageCollection("COPERNICUS/Landcover/100m/Proba-V/Global")
+  .select('discrete_classification').first();
+
+// Closed forests in the Copernicus dataset.
+var closedForests = copernicus.gte(111).and(copernicus.lte(116))
+  .selfMask()
+  .rename("closedForests");
+
+// Non-forested areas in the Copernicus dataset.
+// From "Shrubs" to "Moss and lichen".
+var nonForested = copernicus.gte(20).and(copernicus.lte(100))
+  .selfMask()
+  .rename("nonForested");
+
+// Combine the two land cover datasets of interest.
+var landCover = closedForests.addBands(nonForested)
+  .reproject({
+    crs: elvCRS,
+    scale: elvScale
+  });
+
+// print("landCover:", 
+//   landCover.bandTypes(),
+//   landCover.projection().crs(),
+//   landCover.projection().nominalScale())
+
+// Segmented CATE.
+var segCATE = ee.Image(wdNorthA + "Transects/" + 
+  "90mSegmentedCATE_distToRidgesNoCliff_NAlandformsRemoved_ridgesRemoved")
+  .reproject({
+    crs: elvCRS,
+    scale: elvScale
+  });
+
+// print("segCATE:", 
+//   segCATE.bandTypes(),
+//   segCATE.projection().crs(),
+//   segCATE.projection().nominalScale())
+
+// Extract the reprojected closed forests and non-forested areas within the segmented CATE.
+var closedForestsCATE = landCover.select("closedForests")
+  .updateMask(segCATE);
+
+var nonForestedCATE = landCover.select("nonForested")
+  .updateMask(segCATE);
+
+// Get the ALOS elevation of the extracted land cover datasets.
+var closedForestsElv = ALOSelv.updateMask(closedForestsCATE)
+  .rename("closedForestsElv");
+
+var nonForestedElv = ALOSelv.updateMask(nonForestedCATE)
+  .rename("nonForestedElv");
+
+// Combine the segmented CATE with the elevation of the extracted land cover datasets
+// for further extracting the elevational extremes within each vectorized CATE segment.
+var segCATEelv = segCATE
+  .addBands(closedForestsElv)
+  .addBands(nonForestedElv)
+  .reproject({
+    crs: elvCRS,
+    scale: elvScale
+  });
+
+print("segCATEelv:", 
+  segCATEelv.bandTypes(),
+  segCATEelv.projection().crs(),
+  segCATEelv.projection().nominalScale())
+
+
+/* Convert the selected HydroSHEDS basins to a list. */
+
+var basinNum = basins.size();
+
+var basinList = basins.toList({
+  count: basinNum
+});
+
+// print("HydroSHEDS basins:", basinNum, basinList) // 126.
+
+
+/* Determine the pixel coordinates of the segmented CATE in the ALOS elevation projection system. */
+
+// Create an image of the pixel coordinates of the segmented CATE.
+var rawCoords = ee.Image.pixelLonLat().updateMask(segCATEelv.select("Segmented"));
+
+// Request the coordinates at the scale and projection of the elevation image.
+var coords = rawCoords.reproject({
+  crs: elvCRS,
+  scale: elvScale
+});
+
+// print("Coordinate dataset projection:", 
+//   coords.projection().crs(), 
+//   coords.projection().nominalScale())
+
+
+/* Define a function for generating and buffering elevational transects. */
+
+var generateBufferedTransects = function(feature) {  
+  // Get the geometry of each selected polygon.
+  var geom = feature.geometry();
+  
+  // Extract the coordinates of pixels with the maximum non-forest elevation.
+  var elvMax = feature.get("nonForestedElv_max");
+  var maxCoords = coords.updateMask(segCATEelv.select("nonForestedElv")
+    .eq(ee.Number.parse(elvMax)));
+  
+  // Extract the coordinates of pixels with the minimum forest elevation.
+  var elvMin = feature.get("closedForestsElv_min");
+  var minCoords = coords.updateMask(segCATEelv.select("closedForestsElv")
+    .eq(ee.Number.parse(elvMin)));
+  
+  // Convert the extracted coordinates within the geometry to two lists.
+  var maxList = maxCoords.reduceRegion({
+    reducer: ee.Reducer.toList(),
+    geometry: geom,
+    crs: elvCRS,
+    scale: elvScale,
+    maxPixels: 1e13
+  });
+  
+  var minList = minCoords.reduceRegion({
+    reducer: ee.Reducer.toList(),
+    geometry: geom,
+    crs: elvCRS,
+    scale: elvScale,
+    maxPixels: 1e13
+  });
+  
+  // Choose only the coordinates of the first qualified pixel in each list.
+  var maxLon = ee.List(maxList.get('longitude')).get(0);
+  var minLon = ee.List(minList.get('longitude')).get(0);
+  
+  var maxLat = ee.List(maxList.get('latitude')).get(0);
+  var minLat = ee.List(minList.get('latitude')).get(0);
+  
+  // Merge the coordinates of the two pixels into a list of two-element (longitude and latitude) lists.
+  var lonList = ee.List([maxLon, minLon]);
+  var latList = ee.List([maxLat, minLat]);
+  
+  var coordList = lonList.zip(latList);
+  
+  // Construct a line string between the two pixels based on the merged coordinate list.
+  var lineString = ee.Algorithms.GeometryConstructors.LineString(coordList);
+  
+  // Get the length of the generated line string.
+  var lsLength = lineString.length(); // In meters.
+  
+  // Add the length property to the line string.
+  var transect = ee.Feature(lineString).set("Length_m", lsLength);
+  
+  // Create a 30-m buffer for the line string.
+  var buffered = transect.buffer(30); // If no projection is specified, the unit is meters.
+  
+  return buffered;
+};
+
+
+/* Generate and export buffered elevational transects by basins. */
+
+for (var index = 0; index < basinNum.getInfo(); index ++) {
+// for (var index = 0; index < 1; index ++) { // Testing.
+  
+  // Extract the geometry of each basin feature.
+  var basinFeature = ee.Feature(basinList.get(index));
+  var basinGeom = basinFeature.geometry();
+  
+  // Vectorize the segmented CATE in the basin
+  // and extract the elevational extremes within each vectorized polygon.
+  var polygonElvMinMax = segCATEelv.reduceToVectors({
+    // The first band ("segCATE") of the input image is expected to be an integer type; 
+    // adjacent pixels will be in the same segment if they have the same value in this band.
+    reducer: ee.Reducer.minMax(), 
+    // Extract the elevational extremes.
+    // The inputs of this reducer will be taken from the image's bands ("closedForestsElv" and "nonForestedElv") 
+    // after dropping the first band ("segCATE"). 
+    geometry: basinGeom,
+    maxPixels: 1e13,
+    crs: elvCRS,
+    scale: elvScale,
+    geometryType: "polygon",
+    eightConnected: false // Only pixels that share an edge are considered adjacent.
+  });
+  
+  // print("polygonElvMinMax:", 
+  //   polygonElvMinMax.first(), polygonElvMinMax.size())
+  
+  // Select polygons with min. forest elevation and max. non-forest elevation.
+  // The max. non-forest elevation should be higher than the min. forest elevation.
+  var selectedPolygons = polygonElvMinMax.filter(ee.Filter.and(
+    ee.Filter.neq("nonForestedElv_max", null),
+    ee.Filter.neq("closedForestsElv_min", null),
+    ee.Filter.greaterThan({
+      leftField: "nonForestedElv_max", 
+      rightField: "closedForestsElv_min"
+    })));
+
+  // print("selectedPolygons:", 
+  //   selectedPolygons.first(), selectedPolygons.size())
+  
+  // Generate and buffer an elevational transect within each selected polygon.
+  var bufferedTransects = ee.FeatureCollection(selectedPolygons
+    .map(generateBufferedTransects));
+  
+  // print("bufferedTransects:", 
+  //   bufferedTransects.first(), bufferedTransects.size())
+  
+  if (false) { // Testing.
+    /* Visualization. */
+    
+    var elvPalette = ['006600', '002200', 'fff700', 'ab7634', 'c4d0ff', 'ffffff'];
+    var elvVis = {min: 1000, max: 3500, palette: elvPalette};
+    
+    // Map.setCenter(-113.7571, 48.829, 10);
+    Map.centerObject(bufferedTransects.first(), 16);
+    Map.setOptions("hybrid");
+    
+    Map.addLayer(basins, {color: "FFFF00"}, "basins", true);
+    Map.addLayer(segCATE, {palette: "0000FF"}, "segCATE", true);
+    
+    Map.addLayer(coords.select("longitude"), {palette: "FF00FF"}, "longitude", true);
+    
+    Map.addLayer(selectedPolygons, {color: "00FF00"}, "selectedPolygons", true);
+    Map.addLayer(closedForestsElv, elvVis, "closedForestsElv", true);
+    Map.addLayer(nonForestedElv, elvVis, "nonForestedElv", true);
+    
+    Map.addLayer(bufferedTransects, {color: "FF0000"}, "bufferedTransects", true);
+  }
+  
+  else if (true) {
+    /* Output the result.*/
+    
+    var fileName = "Basin_" + index;
+    
+    Export.table.toAsset({
+      collection: bufferedTransects, 
+      description: fileName, 
+      assetId: wdNorthA + "Transects/30mBufTransects30mRes_90mSegmentedCATE_Hybas4_withLandCover/"
+        + fileName
+    });
+  }
+}
+

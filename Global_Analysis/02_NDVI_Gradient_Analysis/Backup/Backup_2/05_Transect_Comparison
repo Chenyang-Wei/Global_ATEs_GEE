@@ -1,0 +1,213 @@
+/**
+ * Introduction:
+ * 
+ * 1) Compare the original transects with the transects filtered based on 
+ *  the long-term no-gap NDVI median.
+ * 
+ * Update: 4/1/2022.
+ * 
+ * Runtime:
+ */
+
+var NGA = require("users/ChenyangWei/Public:Modules/NDVI_Gradient_Analysis.js");
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var FC_AP = require("users/ChenyangWei/Public:Modules/FeatureCollection_Analysis&Processing");
+
+// Function.
+var Combine_TransectResults_forOtherContinents = function(wd_Root, subset_Count) {
+  
+  /**
+   * "String":
+   *  wd_Root.
+   * 
+   * "Number":
+   *  subset_Count.
+   * 
+   * Result: FeatureCollection.
+  */
+
+  // Determine the common file path of the transect results.
+  var wd_TransectResults = wd_Root
+    + "NDVI_Gradient_Analysis/"
+    + "transects_NDVImedianFiltered_withMovWinTemporalVars"
+    + "/"
+    + "transects_MovWinTemporalVars";
+
+  // Create an empty List to store all the transect results.
+  var combined_TransectResults_List = ee.List([]);
+  
+  // Iteratively add each transect dataset into the derived List.
+  for (var subsetID = 1; subsetID <= subset_Count; subsetID ++) {
+    
+    // Load each dataset of the transect results.
+    var transectResults = ee.FeatureCollection(wd_TransectResults
+      + "_S" + subsetID);
+    
+    // Add the loaded FeatureCollection to the List.
+    combined_TransectResults_List = combined_TransectResults_List
+      .add(transectResults);
+  }
+
+  // Convert the generated List of FeatureCollections to
+  //  a regular FeatureCollection.
+  var combined_TransectResults_FtrCol = ee.FeatureCollection(
+    combined_TransectResults_List
+  ).flatten();
+
+  // Return the combined transect results.
+  return combined_TransectResults_FtrCol;
+};
+
+
+var Combine_TransectResults_forNorthAmerica = function(fullName, shortName) {
+  
+  /**
+   * Result: FeatureCollection.
+  */
+
+  // Determine the number of transect subsets.
+  var subsetNum = 20;
+
+  // Determine the common file path of the transect results.
+  var wd_TransectResults = GATE.wd_NorthAmerica
+    + "NDVI_Gradient_Analysis/"
+    + fullName
+    + "/"
+    + shortName;
+
+  // Create an empty List to store all the transect results.
+  var combined_TransectResults_List = ee.List([]);
+  
+  // Iteratively add each transect dataset into the derived List.
+  for (var basinGroupID = 1; basinGroupID <= 5; basinGroupID ++) {
+    
+    // var basinGroupID = 1;
+    
+    for (var subsetID = 1; subsetID <= subsetNum; subsetID ++) {
+      
+      // Load each dataset of the transect results.
+      var transectResults = ee.FeatureCollection(wd_TransectResults
+        + "_BG" + basinGroupID
+        + "_S" + subsetID);
+      
+      // Add the loaded FeatureCollection to the List.
+      combined_TransectResults_List = combined_TransectResults_List
+        .add(transectResults);
+    }
+  }
+  
+  // Convert the generated List of FeatureCollections to
+  //  a regular FeatureCollection.
+  var combined_TransectResults_FtrCol = ee.FeatureCollection(
+    combined_TransectResults_List
+  ).flatten();
+
+  // Return the combined transect results.
+  return combined_TransectResults_FtrCol;
+};
+
+
+// Data in Oceania.
+var wd_Oc = GATE.wd_Oceania;
+
+var oldTransects_Oc = ee.FeatureCollection(wd_Oc
+  + "NDVI_Gradient_Analysis/" 
+  + NGA.allTransects_MovWinTempVars_Name);
+
+var subsetNum_Oc = 10; 
+
+var newTransects_Oc = Combine_TransectResults_forOtherContinents(
+  wd_Oc, subsetNum_Oc
+);
+
+
+// Data in North America.
+var wd_NA = GATE.wd_NorthAmerica;
+
+var oldTransects_NA = Combine_TransectResults_forNorthAmerica(
+  "transects_withMaxMovWinNDVIsd_TemporalVars", "transects_MovWinTempVars"
+);
+
+var newTransects_NA = Combine_TransectResults_forNorthAmerica(
+  NGA.transects_MovWinTempVars_FullName, NGA.transects_MovWinTempVars_ShortName
+);
+
+
+// Data examination.
+
+// Oceania.
+// FC_AP.Examine_FtrCol_PropertyPercentiles(
+//   "oldTransects_Oc:", oldTransects_Oc, 
+//   "movWin_MaxNDVIsd", 10);
+
+// FC_AP.Examine_FtrCol_PropertyPercentiles(
+//   "newTransects_Oc:", newTransects_Oc, 
+//   "MW_MaxNDVIsd", 10);
+
+
+// North America.
+
+FC_AP.Print_FtrColInfo("oldTransects_NA:", 
+  oldTransects_NA);
+
+FC_AP.Print_FtrColInfo("newTransects_NA:", 
+  newTransects_NA);
+
+FC_AP.Examine_FtrCol_PropertyPercentiles(
+  "oldTransects_NA:", oldTransects_NA, 
+  "movWin_MaxNDVIsd", 10);
+
+FC_AP.Examine_FtrCol_PropertyPercentiles(
+  "newTransects_NA:", newTransects_NA, 
+  "MW_MaxNDVIsd", 10);
+
+FC_AP.Examine_FtrCol_PropertyPercentiles(
+  "oldTransects_NA:", oldTransects_NA, 
+  "avgNDVI_Mean", 10);
+
+FC_AP.Examine_FtrCol_PropertyPercentiles(
+  "newTransects_NA:", newTransects_NA, 
+  "avgNDVI_Mean", 10);
+
+// FC_AP.Examine_FtrCol_PropertyPercentiles(
+//   "oldTransects_NA:", oldTransects_NA, 
+//   "elvGrad_Num", 10);
+
+// FC_AP.Examine_FtrCol_PropertyPercentiles(
+//   "newTransects_NA:", newTransects_NA, 
+//   "elvGrad_Num", 10);
+
+
+// Map visualization.
+Map.setOptions("satellite");
+// Map.setCenter(-116.94, 51.137, 6);
+Map.setCenter(-120.4374, 48.774, 9);
+
+var sdThres = 0.15;
+
+Map.addLayer(oldTransects_NA.filter(ee.Filter.gte("movWin_MaxNDVIsd", sdThres)), 
+  {color: "FF0000"}, "oldTransects_NA");
+Map.addLayer(newTransects_NA.filter(ee.Filter.gte("MW_MaxNDVIsd", sdThres)), 
+  {color: "00FF00"}, "newTransects_NA");
+
+Map.addLayer(newTransects_NA.filter(ee.Filter.lte("avgNDVI_Mean", 0)), 
+  {color: "0000FF"}, "<= 0");
+Map.addLayer(newTransects_NA.filter(ee.Filter.gt("avgNDVI_Mean", 0))
+  .filter(ee.Filter.lte("avgNDVI_Mean", 0.2)), 
+  {color: "FFFF00"}, "0 ~ 0.2");
+
+print("oldTransects_NA", oldTransects_NA.filter(ee.Filter.gte("movWin_MaxNDVIsd", sdThres)).size());
+print("newTransects_NA", newTransects_NA.filter(ee.Filter.gte("MW_MaxNDVIsd", sdThres)).size());
+
+print("<= 0", newTransects_NA.filter(ee.Filter.lte("avgNDVI_Mean", 0)).size());
+print("0 ~ 0.1", newTransects_NA.filter(ee.Filter.gt("avgNDVI_Mean", 0))
+  .filter(ee.Filter.lte("avgNDVI_Mean", 0.1)).size());
+print("0.1 ~ 0.2", newTransects_NA.filter(ee.Filter.gt("avgNDVI_Mean", 0.1))
+  .filter(ee.Filter.lte("avgNDVI_Mean", 0.2)).size());
+
+
+// Map.addLayer(oldTransects_Oc.filter(ee.Filter.gte("movWin_MaxNDVIsd", 0.12)), 
+//   {color: "FF0000"}, "oldTransects_Oc");
+// Map.addLayer(newTransects_Oc.filter(ee.Filter.gte("MW_MaxNDVIsd", 0.12)), 
+//   {color: "00FFFF"}, "newTransects_Oc");
+

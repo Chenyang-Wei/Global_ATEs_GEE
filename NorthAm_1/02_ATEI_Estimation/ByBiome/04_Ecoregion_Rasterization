@@ -1,0 +1,79 @@
+/**
+ * Introduction:
+ * 1) Convert the processed ecoregions to an image of biome IDs.
+ * 2) Extract the biome IDs within the 300m-buffered new CATE.
+ * 
+ * Update: 3/18/2021.
+ * 
+ * Runtime: 53m.
+ */
+
+
+/* Load the required datasets. */
+
+// Set the 10-km buffered bounding box of the study domain.
+var AOI = ee.Geometry.Rectangle({
+  coords: [-180, 7.114761500193937, -52.095625030545534, 80.24342770493531],
+  geodesic: false
+});
+
+// Target projection.
+var targetPrj = {
+  crs: "EPSG:4326",
+  scale: 30
+};
+
+// Set the working directory.
+var wdNA = "users/treeline/NorthAmerica_GME/";
+
+// Load the individual geometries of ecoregions with the 300-m buffered new CATE.
+var ecoregions = ee.FeatureCollection(wdNA + "ATEI_Estimation/" + 
+  "RESOLVEecoregions2017_forestsTundra_montaneNAchanged_300mBufNewCATE_AOI");
+
+// print("ecoregions:", ecoregions.first(),
+//   ecoregions.size())
+
+// Load the 300m-buffered new CATE.
+var bufNewCATE = ee.Image(wdNA + "Climate-Based_ATE/" +
+  "30mNewCATE_BufRawCATEclosedForests_300mBuffered_AOI");
+
+// print("bufNewCATE:", bufNewCATE.bandTypes(),
+//   bufNewCATE.projection().crs(),
+//   bufNewCATE.projection().nominalScale())
+
+
+/* Convert the processed ecoregions to an image of biome IDs. */
+
+var ecoregionsImg = ecoregions.reduceToImage({
+  properties: ["BIOME_NUM"], 
+  reducer: ee.Reducer.first()
+}).reproject(targetPrj);
+
+
+/* Extract the biome IDs within the 300m-buffered new CATE. */
+
+var extracted = ecoregionsImg.updateMask(bufNewCATE)
+  .float()
+  .rename("BIOME_NUM");
+
+print("extracted:", extracted.bandTypes(),
+  extracted.projection().crs(),
+  extracted.projection().nominalScale())
+
+
+if (true) {
+  // Export the result.
+  var fileName = "30mBiomeNum_forestsTundra_montaneNAchanged_300mBufNewCATE_AOI"; 
+  
+  Export.image.toAsset({
+    image: extracted,
+    description: fileName, 
+    assetId: wdNA + "ATEI_Estimation/"
+      + fileName, 
+    crs: "EPSG:4326",
+    scale: 30,
+    region: AOI,
+    maxPixels: 1e13
+  }); 
+}
+

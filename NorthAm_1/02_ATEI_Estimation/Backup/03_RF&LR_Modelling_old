@@ -1,0 +1,509 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var testing = 
+    /* color: #d63000 */
+    /* shown: false */
+    /* displayProperties: [
+      {
+        "type": "rectangle"
+      }
+    ] */
+    ee.Geometry.Polygon(
+        [[[-114.71145050663952, 49.40345546758991],
+          [-114.71145050663952, 48.23893112098382],
+          [-113.10744660038952, 48.23893112098382],
+          [-113.10744660038952, 49.40345546758991]]], null, false);
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+/*
+  Introduction:
+    1) Build a RF model with a fixed number of trees. 
+    2) Train the RF regressor with different sets of variables.
+  
+  Update:
+    9/30/2020.
+*/
+
+
+/* Setup. */
+
+// Asset path.
+var wdNorthA = "users/treeline/NorthAmerica_GME/";
+
+// Read the sampled data with the extracted variables of interest.
+// var sampled = ee.FeatureCollection(wdNorthA + "Pixel_Sampling/Random/" +
+//   "testing_extractedVariables_maxNDVI_avgNDVI_smd2019");
+var sampled = ee.FeatureCollection(wdNorthA + "Pixel_Sampling/Random/" +
+  "extractedVariables_smd2019_Gaus_Orien");
+
+// print("Sample size:", sampled.size())
+
+var seed = 17;
+
+// Divide the dataset into training and testing.
+var random = sampled.randomColumn('random', seed);
+var training = random.filter(ee.Filter.lte("random", 0.7));
+var testing = random.filter(ee.Filter.gt("random", 0.7));
+
+
+/* Build a RF model with a fixed number of trees. */
+
+// Create a Random Forest classifier with custom parameters.
+var classifier = ee.Classifier.smileRandomForest({
+  numberOfTrees: 20, 
+  variablesPerSplit: null, // If unspecified, uses the square root of the number of variables.
+  minLeafPopulation: 1, 
+  bagFraction: 0.5, 
+  maxNodes: null, // If unspecified, defaults to no limit.
+  seed: seed
+});
+
+
+/* Train the RF regressor with different sets of variables. */
+
+// Property to predict.
+var target = 'InOut';
+
+// Name of predicted variable.
+var RFpredicted = ee.String(target).cat('_RFpredicted');
+
+// Different sets of variables.
+var allVars = ["maxOrien", "maxNDVImag", "maxNDVIGau", 
+            "avgOrien", "avgNDVImag", "avgNDVIGau"];
+
+var maxVars = ["maxOrien", "maxNDVImag", "maxNDVIGau"];
+
+var avgVars = ["avgOrien", "avgNDVImag", "avgNDVIGau"];
+
+// Function to perform RF prediction.
+function RFprediction(inputVars) {
+  // Fit the RF model based on the training data.
+  var RFregressor = classifier.setOutputMode('REGRESSION') 
+    .train({
+      features: training,
+      classProperty: target, 
+      inputProperties: inputVars
+    });   
+  
+  // Perform the RF regression on the testing data.
+  var predicted = testing.classify({
+    classifier: RFregressor, 
+    outputName: RFpredicted
+  });
+  
+  return predicted;
+}
+
+// Function to create a scatter plot and estimate the prediction accuracy.
+function createScatterPlot(predictionResult, chartTitle) {
+  // Scatterplot of the RF regression result. 
+  var x = predictionResult.aggregate_array(RFpredicted);
+  var y = predictionResult.aggregate_array(target);
+  
+  // print(chartTitle + " (predicted vs. actual):", x.zip(y))
+  
+  var chart = ui.Chart.array.values(y, 0, x);
+  
+  chart = chart.setOptions({
+    title: chartTitle,
+    hAxis: { title: 'Predicted', viewWindow: {min: 0, max: 1} },
+    vAxis: { title: "Actual", viewWindow: {min: 0, max: 1} },
+    pointSize: 3,
+    legend: {position: 'none'}
+  });
+  
+  print(chart)
+  
+  // print(predictionResult)
+  
+  var accuracy = predictionResult.map(classifyResult).aggregate_mean("correct");
+  
+  print("Prediction accuracy:", accuracy)
+  // print(allPredicted.map(classifyResult).reduceColumns(ee.Reducer.mean(), ["correct"])) // Same result.
+}
+
+// Function to classify the predicted result.
+function classifyResult(feature) {
+  var predicted = ee.Number(feature.get(RFpredicted));
+  
+  var oldClass = feature.get("InOut");
+  
+  var newClass = ee.Algorithms.If({
+    condition: predicted.gte(0.5), 
+    trueCase: 1, 
+    falseCase: 0
+  });
+  
+  var correct = ee.Algorithms.If({
+    condition: ee.Number(newClass).eq(oldClass), 
+    trueCase: 1, 
+    falseCase: 0
+  });
+  
+  return feature.set("newClass", newClass, "correct", correct);
+}
+
+// RF prediction.
+var allPredicted = RFprediction(allVars);
+var maxPredicted = RFprediction(maxVars);
+var avgPredicted = RFprediction(avgVars);
+
+// Accuracy assessment.
+createScatterPlot(allPredicted, "All variables");
+createScatterPlot(maxPredicted, "Variables based on the maximum NDVI");
+createScatterPlot(avgPredicted, "Variables based on the average NDVI");
+
+
+/* Classify the image. */
+
+if (true) {
+  
+  // ALOS elevation.
+  var ALOSelv = ee.Image('JAXA/ALOS/AW3D30/V2_2').select('AVE_DSM')
+    .reproject({
+      crs: "EPSG:4326",
+      scale: 30
+    });
+  
+  // Load the climatic ATE.
+  var CATE = ee.Image(wdNorthA + "CATE/" + 
+    "3kmBuffered_30mReprj_500mCATE3kmBuffer_gteAvgClsdFrstElv_10kmRes10pxFocalMean_10kmClsdFrstBuffer")
+    .select("gteFocalMean_30mReprj")
+    .reproject({
+      crs: "EPSG:4326",
+      scale: 30
+    });
+  
+  // Create a mask using the Hansen dataset (V 1.7) to define the area of land surface.
+  var land = ee.Image('UMD/hansen/global_forest_change_2019_v1_7') // The newest version of the Hansen dataset.
+    .select('datamask')
+    .eq(1) // Select the "mapped land surface" in the Hansen dataset.
+    .reproject({
+      crs: "EPSG:4326",
+      scale: 30
+    });
+  
+  
+  /* Image processing function definition. */
+  
+  // This function removes invalid pixels.
+  var removeInvalid_L8 = function(img) {
+    // Remove edge pixels that don't occur in all bands
+    var noNA = img.mask().reduce(ee.Reducer.min());
+    
+    // Identify pixels with all the surface reflectance bands within the valid range: 0-10000.
+    var lowerLimit = img.gt(0).reduce(ee.Reducer.min());
+    var upperLimit = img.lt(1e4).reduce(ee.Reducer.min());
+    
+    var maskedB4B5 = img.updateMask(noNA)
+      .updateMask(lowerLimit)
+      .updateMask(upperLimit)
+      .select(["B4", "B5"]); // Select "B4" and "B5" for further calculating the NDVI.
+    
+    return maskedB4B5;
+  };
+  
+  // This function calculates NDVI of Landsat imagery.
+  var calNDVI_L8 = function(i) {
+    var ndvi = i.addBands(i.normalizedDifference(['B5', 'B4'])
+      .rename('OLI_NDVI'))
+      .select('OLI_NDVI');
+    
+    return ndvi;
+  };
+  
+  // This function Convert the OLI NDVI to the ETM+ NDVI.
+  // ETM+ = 0.0029 + 0.9589 OLI
+  var ETM_NDVI = function(i) {
+    var ETM = i.addBands(i.select("OLI_NDVI")
+      .multiply(0.9589).add(0.0029)
+      .rename("ETM_NDVI"))
+      .select("ETM_NDVI");
+    
+    return ETM;
+  };
+  
+  // This function combine all the processing steps.
+  function imageProcessing(image) {
+    var invalidRemoved = removeInvalid_L8(image);
+    var ndviCalculated = calNDVI_L8(invalidRemoved);
+    var ndviConverted = ETM_NDVI(ndviCalculated);
+    
+    // Remove water-covered regions.
+    var waterRemoved = ndviConverted.updateMask(land);
+    
+    return waterRemoved;
+  }
+  
+  
+  /* Import the Landsat-8 Surface Reflectance dataset. */
+  
+  // Bands of surface reflectance.
+  var bands = ["B[1-7]"];
+  
+  // Landsat 8 data in 2019.
+  var L8_2019 = ee.ImageCollection("LANDSAT/LC08/C01/T1_SR")
+    .select(bands)
+    .filterBounds(CATE.geometry())
+    .filterDate('2019-01-01', '2020-01-01'); // The end date is exclusive.
+  
+  
+  /* Image processing and analysis. */
+  
+  // Image pre-processing and NDVI calculation.
+  var ndvi2019 = L8_2019.map(imageProcessing);
+  
+  // Annual max. NDVI in 2019.
+  var maxNDVI2019 = ndvi2019.max()
+    .rename("maxNDVI2019")
+    .reproject({
+      crs: "EPSG:4326",
+      scale: 30
+    });
+  
+  // Annual average NDVI in 2019.
+  var avgNDVI2019 = ndvi2019.mean()
+    .rename("avgNDVI2019")
+    .reproject({
+      crs: "EPSG:4326",
+      scale: 30
+    });
+  
+  
+  /* Image smoothing. */
+  
+  if (true) {
+    // Define a circular smoothing kernel of 10 pixels.
+    var Kn = ee.Kernel.circle({
+      radius: 10 // Default units: "pixels".
+    }); 
+    
+    maxNDVI2019 = maxNDVI2019.reduceNeighborhood({
+      // The median reducer is less smooth than the mean reducer, 
+      // but the former one makes the spatial variation of NDVI more abrupt (i.e., less gradual),
+      // which then provides a sharper gradient (i.e., with larger magnitude).
+      reducer: ee.Reducer.median(),
+      kernel: Kn,
+      skipMasked: false // Do NOT mask output pixels if the corresponding input pixel is masked.
+    }).reproject({
+      crs: "EPSG:4326",
+      scale: 30
+    }).rename("maxNDVI2019");
+    
+    avgNDVI2019 = avgNDVI2019.reduceNeighborhood({
+      // The median reducer is less smooth than the mean reducer, 
+      // but the former one makes the spatial variation of NDVI more abrupt (i.e., less gradual),
+      // which then provides a sharper gradient (i.e., with larger magnitude).
+      reducer: ee.Reducer.median(),
+      kernel: Kn,
+      skipMasked: false // Do NOT mask output pixels if the corresponding input pixel is masked.
+    }).reproject({
+      crs: "EPSG:4326",
+      scale: 30
+    }).rename("avgNDVI2019");
+    
+    ALOSelv = ALOSelv.reduceNeighborhood({
+      // The mean reducer is smoother than the median reducer, 
+      // which then provides a less scattered gradient direction dataset.
+      reducer: ee.Reducer.mean(),
+      kernel: Kn,
+      skipMasked: false // Do NOT mask output pixels if the corresponding input pixel is masked.
+    }).reproject({
+      crs: "EPSG:4326",
+      scale: 30
+    }).rename("AVE_DSM");
+  }
+  
+  
+  /* Compute the gradient magnitude and direction of NDVI and elevation. */
+  
+  // Compute the image gradient in the X and Y directions.
+  var maxNDVIgrad = maxNDVI2019.gradient()
+    .reproject({
+      crs: "EPSG:4326",
+      scale: 30
+    });
+  
+  var avgNDVIgrad = avgNDVI2019.gradient()
+    .reproject({
+      crs: "EPSG:4326",
+      scale: 30
+    });
+  
+  var elvGrad = ALOSelv.gradient()
+    .reproject({
+      crs: "EPSG:4326",
+      scale: 30
+    });
+  
+  // Compute the magnitude of the gradient: "hypot" calculates the magnitude of the 2D vector [x, y].
+  var maxNDVImag = maxNDVIgrad.select('y').hypot(maxNDVIgrad.select('x'))
+    .rename("maxNDVImag");
+  
+  var avgNDVImag = avgNDVIgrad.select('y').hypot(avgNDVIgrad.select('x'))
+    .rename("avgNDVImag");
+  
+  // Compute the direction of the gradient: "atan2" calculates the angle formed by the 2D vector [x, y].
+  var maxNDVIdir = maxNDVIgrad.select('y').atan2(maxNDVIgrad.select('x'))
+    .rename("maxNDVIdir");
+  
+  var avgNDVIdir = avgNDVIgrad.select('y').atan2(avgNDVIgrad.select('x'))
+    .rename("avgNDVIdir");
+  
+  var elvDir = elvGrad.select('y').atan2(elvGrad.select('x'))
+    .rename("elvDir");
+  
+  // Calculate the orientation component of ATEI. 
+  // ***Need to be updated.
+  // Max. Orien.
+  var maxAngle = maxNDVIdir.subtract(elvDir).abs()
+    .reproject({
+      crs: "EPSG:4326",
+      scale: 30
+    }).rename("maxNDVIelvAngle");
+  
+  var center = 3.0200;
+  
+  var determinedN = 13.0206;
+  
+  var cos = maxAngle.subtract(center).add(Math.PI);
+  
+  var base = ee.Image(1).subtract(cos.cos()).divide(2);
+  
+  var maxOrien = base.pow(determinedN)
+    .rename("maxOrien");
+  
+  // Avg. Orien.
+  var avgAngle = avgNDVIdir.subtract(elvDir).abs()
+    .reproject({
+      crs: "EPSG:4326",
+      scale: 30
+    }).rename("avgNDVIelvAngle");
+  
+  var center = 3.0460;
+  
+  var determinedN = 13.1656;
+  
+  var cos = avgAngle.subtract(center).add(Math.PI);
+  
+  var base = ee.Image(1).subtract(cos.cos()).divide(2);
+  
+  var avgOrien = base.pow(determinedN)
+    .rename("avgOrien");
+  
+  
+  // Calculate the Gaussian component of ATEI.
+  // ***Need to be updated.
+  // Max. Gaus.
+  var b = 0.5072;
+  
+  var denominator = -0.017298;
+  
+  var maxNDVIGau = maxNDVI2019.subtract(b).pow(2)
+                      .divide(denominator)
+                      .exp()
+                      .rename("maxNDVIGau");
+  
+  // Avg. Gaus.
+  var b = 0.0963;
+  
+  var denominator = -0.00153458;
+  
+  var avgNDVIGau = avgNDVI2019.subtract(b).pow(2)
+                      .divide(denominator)
+                      .exp()
+                      .rename("avgNDVIGau");
+  
+  
+  /* Variable Extraction. */
+  
+  // Combine the variables of interest.
+  var variables = maxNDVImag.addBands(avgNDVImag)
+    .addBands(maxOrien)
+    .addBands(avgOrien)
+    .addBands(maxNDVIGau)
+    .addBands(avgNDVIGau)
+    .updateMask(CATE) // Mask the result after computing the gradient to avoid missing pixels along the boundary of the study domain.
+    .updateMask(land) // Remove any remaining water-covered regions.
+    // .float();
+
+  
+  /* RF modelling. */
+  
+  // Fit the RF model based on the sampled data.
+  var allRFregressor = classifier.setOutputMode('REGRESSION') 
+    .train({
+      features: sampled,
+      classProperty: target, 
+      inputProperties: allVars
+    }); 
+  
+  // Perform the RF regression on an image.
+  var RFpredictedImg = variables.classify({
+    classifier: allRFregressor, 
+    outputName: RFpredicted
+  });
+    
+  // print(RFpredictedImg.bandTypes())
+  
+  
+  /* LR Modelling. */
+  
+  // Fit the logistic regression model based on all data.
+  // Perform the RF regression on the testing data.
+  var LR_logit = variables.expression({
+    expression: '-2.6056 + 1651.3460 * maxMag + 0.5179 * maxOrien - 0.1187 * maxGaus ' + 
+      '+ 1583.5244 * avgMag + 1.0275 * avgOrien + 2.2150 * avgGaus', 
+    map: {
+      'maxMag': variables.select('maxNDVImag'),
+      'maxOrien': variables.select('maxOrien'),
+      'maxGaus': variables.select('maxNDVIGau'),
+      'avgMag': variables.select('avgNDVImag'),
+      'avgOrien': variables.select('avgOrien'),
+      'avgGaus': variables.select('avgNDVIGau')
+    }
+  });
+  
+  var LR_logitE = LR_logit.exp();
+  
+  // Calculate the ATEI.
+  var LRpredictedImg = LR_logitE.divide(LR_logitE.add(1)).float();
+  
+  // print(LRpredictedImg.bandTypes())
+  
+  
+  /* Visualization. */
+  
+  if (false) {
+    var palettes = require('users/gena/packages:palettes');
+    var palette = palettes.colorbrewer.RdYlBu[11].reverse();
+    
+    // var point = ee.Geometry.Point([-115.49024400807646, 51.32579263179932]); // Calgary.
+    var point = ee.Geometry.Point([-148.99293, 63.737]); // Alaska.
+    // var point = ee.Geometry.Point([-113.49153672863031, 48.74125005784002]); // GNP.
+    
+    Map.setOptions("hybrid");
+    Map.centerObject(point, 12);
+    
+    var thres = 0.3;
+    
+    Map.addLayer(RFpredictedImg.updateMask(RFpredictedImg), 
+      {min: thres, max: 1, palette: palette}, "RF predicted result");
+    
+    Map.addLayer(LRpredictedImg.updateMask(LRpredictedImg), 
+      {min: thres, max: 1, palette: palette}, "LR predicted result");
+    
+  } else {
+    // print(predictedImg.projection().nominalScale())
+    
+    var outputName = "RF_predictedResult";
+    
+    Export.image.toAsset({
+      image: RFpredictedImg.clip(testing), 
+      description: outputName, 
+      assetId: wdNorthA + "Pixel_Sampling/Random/" + outputName,
+      region: testing, 
+      scale: 30, 
+      crs: "EPSG:4326", 
+      maxPixels: 1e13
+    });
+  }
+}

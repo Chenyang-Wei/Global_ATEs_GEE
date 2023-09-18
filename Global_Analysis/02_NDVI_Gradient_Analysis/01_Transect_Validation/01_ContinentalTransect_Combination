@@ -1,0 +1,110 @@
+/**
+ * Introduction:
+ * 
+ *  1) Load and combine the transects with the segment variables 
+ *    of all continents.
+ * 
+ *  2) Assign a new ID to each transect.
+ * 
+ *  3) Identify the centroid of each transect.
+ * 
+ * 
+ * Update: 8/5/2022.
+ * 
+ * Runtime: 1) 2h (centroids), 2) 8h (transects).
+ */
+
+
+/* Setup. */
+
+// Load module(s).
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var TNA = require("users/ChenyangWei/Public:Modules/Transect_NDVI_Analysis");
+
+// Determine the default transect name.
+var transects_FullName = TNA.transects_withBothSegments_FullName;
+
+// Define a function to load the transects of each continent.
+var Load_ContinentalTransects = function(wd_Continent, continental_FileName) {
+  var continental_Transects = ee.FeatureCollection(wd_Continent
+    + "Elevational_Transect_Generation/"
+    + continental_FileName);
+  
+  return continental_Transects;
+};
+
+
+/* 1) Load and combine the transects with the segment variables
+  of all continents. */
+
+var transects_AllContinents = ee.FeatureCollection([
+  Load_ContinentalTransects(GATE.wd_NorthAmerica, transects_FullName + "_NorthAmerica"),
+  Load_ContinentalTransects(GATE.wd_Asia, transects_FullName + "_Asia"),
+  Load_ContinentalTransects(GATE.wd_SouthAmerica, transects_FullName),
+  Load_ContinentalTransects(GATE.wd_Europe, transects_FullName),
+  Load_ContinentalTransects(GATE.wd_Africa, transects_FullName),
+  Load_ContinentalTransects(GATE.wd_Oceania, transects_FullName)
+]).flatten();
+
+// Whether test the algorithm.
+var test = false; // true OR false.
+
+
+/* 2) Assign a new ID to each transect. */
+
+var transects_withID = transects_AllContinents.randomColumn("TransectID");
+
+
+/* 3) Identify the centroid of each transect. */
+
+var transectCentroids_withID = transects_withID.map(function(transect) {
+  var transectCentroid = transect.centroid();
+  
+  return transectCentroid;
+});
+
+
+if (test) { //// Check the datasets.
+
+  print("transects_AllContinents:", 
+    transects_AllContinents.size()); // 2313246.
+  
+  print("transects_withID:", 
+    transects_withID.limit(5),
+    transects_withID.size()); // 2313246.
+  
+  Map.setOptions("satellite");
+  Map.centerObject(transectCentroids_withID.first(), 13);
+  
+  Map.addLayer(transects_withID, 
+    {color: "FF0000"}, "transects_withID");
+  
+  Map.addLayer(transectCentroids_withID.limit(10), 
+    {color: "00FFFF"}, "transectCentroids_withID");
+  
+} else {
+  
+  //// Output the produced transects and centroids to Google Drive.
+  
+  // Transects.
+  var transectName = "transects_AllContinents_withID";
+  
+  Export.table.toDrive({
+    collection: transects_withID, 
+    description: transectName + "_SHP", 
+    folder: transectName + "_SHP", 
+    fileFormat: "SHP"
+  });
+  
+  // Transect centroids.
+  var centroidName = "transectCentroids_AllContinents_withID";
+  
+  Export.table.toDrive({
+    collection: transectCentroids_withID, 
+    description: centroidName + "_SHP", 
+    folder: centroidName + "_SHP", 
+    fileFormat: "SHP"
+  });
+}
+
+

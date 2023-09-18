@@ -1,0 +1,335 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var Glacier = 
+    /* color: #d63000 */
+    /* shown: false */
+    /* displayProperties: [
+      {
+        "type": "rectangle"
+      }
+    ] */
+    ee.Geometry.Polygon(
+        [[[-114.30441363811643, 49.013290751522106],
+          [-114.30441363811643, 48.283839063188275],
+          [-113.21951373577268, 48.283839063188275],
+          [-113.21951373577268, 49.013290751522106]]], null, false),
+    Olympic = 
+    /* color: #98ff00 */
+    /* shown: false */
+    /* displayProperties: [
+      {
+        "type": "rectangle"
+      }
+    ] */
+    ee.Geometry.Polygon(
+        [[[-124.01052073745922, 48.09501307451264],
+          [-124.01052073745922, 47.456378083084516],
+          [-122.92836741714672, 47.456378083084516],
+          [-122.92836741714672, 48.09501307451264]]], null, false);
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+/*
+  Introduction:
+  1) Extract the spatio-temporal average ATEI of each elevational transect over the study period. 
+  2) Calculate the ATEI-weighted average elevation of all pixels within each transect.
+  3) Calculate the ATEI-weighted average elevation of pixels with ATEI > 0.5 in each transect.
+  
+  Update:
+  12/21/2020.
+  
+  Runtime:
+  1) To Asset: 4h ~ 22h.
+  2) To Drive: 4h ~ 22h.
+*/
+
+// var Glacier = 
+//     ee.Geometry.Polygon(
+//         [[[-114.30441363811643, 49.013290751522106],
+//           [-114.30441363811643, 48.283839063188275],
+//           [-113.21951373577268, 48.283839063188275],
+//           [-113.21951373577268, 49.013290751522106]]], null, false),
+//     Olympic = 
+//     ee.Geometry.Polygon(
+//         [[[-124.01052073745922, 48.09501307451264],
+//           [-124.01052073745922, 47.456378083084516],
+//           [-122.92836741714672, 47.456378083084516],
+//           [-122.92836741714672, 48.09501307451264]]], null, false);
+          
+/* Setup. */
+
+// Set the work directory.
+var wd = "users/treeline/NorthAmerica_GME/";
+
+// Annual ATEIs.
+var ATEI_1 = ee.Image(wd +
+  "Annual_ATEI/ATEI_medianSmdAnlMaxAvgNDVIs_1984to1999");
+var ATEI_2 = ee.Image(wd +
+  "Annual_ATEI/ATEI_medianSmdAnlMaxAvgNDVIs_2000to2019");
+
+var ATEI = ATEI_1.addBands(ATEI_2);
+
+// print("ATEI:", ATEI.bandTypes(),
+//   ATEI.projection().crs(),
+//   ATEI.projection().nominalScale())
+
+// ALOS elevation.
+var ALOSelv = ee.Image('JAXA/ALOS/AW3D30/V2_2').select('AVE_DSM')
+  .reproject({
+    crs: "EPSG:4326",
+    scale: 30
+  });
+
+// print("ALOSelv:", ALOSelv.bandTypes(),
+//   ALOSelv.projection().crs(),
+//   ALOSelv.projection().nominalScale())
+
+var transects = ee.FeatureCollection(wd + 
+  "Transects/30mBufTransects30mRes_90mSegmentedCATE_Hybas4_combined_withLandCover")
+  .filterBounds(Glacier);
+  // .limit(10) // Testing.
+
+
+/* Calculate the spatio-temporal average ATEI of each transect. */
+
+var avgATEI = ATEI.reduce(ee.Reducer.mean())
+  .rename("avgATEI");
+
+// print("avgATEI:", avgATEI.bandTypes(),
+//   avgATEI.projection().crs(),
+//   avgATEI.projection().nominalScale())
+
+var st_avgATEI = avgATEI.reduceRegions({
+  collection: transects, 
+  reducer: ee.Reducer.mean().setOutputs(["st_avgATEI"]), 
+  scale: 30, 
+  crs: "EPSG:4326"
+});
+
+// print("st_avgATEI:", st_avgATEI.first(),
+//   st_avgATEI.size()) // Testing.
+
+/* Calculate and rename the ATEI-weighted elevation. */
+
+// ATEI-weighted elevation.
+var ATEIwtd_Elv = ATEI.multiply(ALOSelv);
+
+// Years of interest.
+var yearList = ee.List.sequence(1984, 2019);
+
+// Function to rename the weighted elevation.
+function renameWtdElv(currentYear, previousResult) {
+  // When convert a "floating point" to a "string", the result contains a ".", which isn't allowed in band names.
+  var yearName = ee.String(ee.Number(currentYear).int());
+  
+  // Rename the ATEI-weighted elevation.
+  var oldName = ee.String("ATEI_").cat(yearName);
+  var newName = ee.String("wtdElv").cat(yearName);
+  var currentImg = ATEIwtd_Elv.select([oldName], [newName]);
+  
+  var renamed = ee.Algorithms.If(
+    ee.Algorithms.IsEqual(previousResult, null), // Whether or not the first iteration.
+    currentImg, // True: for the first iteration.
+    ee.Image(previousResult).addBands(currentImg) // False: for the rest iterations.
+  );
+  
+  return renamed;
+}
+
+// Rename the weighted elevation and combine it with the ATEI.
+var ATEIwtdElv_ATEI = ee.Image(yearList.iterate({
+  function: renameWtdElv, 
+  first: ATEI
+}));
+
+// print("ATEIwtdElv_ATEI:", ATEIwtdElv_ATEI.bandTypes(),
+//   ATEIwtdElv_ATEI.projection().crs(),
+//   ATEIwtdElv_ATEI.projection().nominalScale())
+
+
+/* Extract the pixel information with ATEI > 0.5. */
+
+var ATEImask = ATEI.gt(0.5);
+
+// print("ATEImask:", ATEImask.bandTypes(),
+//   ATEImask.projection().crs(),
+//   ATEImask.projection().nominalScale())
+
+// Mask the ATEI.
+var masked_ATEI = ATEI.updateMask(ATEImask);
+
+// print("masked_ATEI:", masked_ATEI.bandTypes(),
+//   masked_ATEI.projection().crs(),
+//   masked_ATEI.projection().nominalScale())
+
+// Mask the ATEI-weighted elevation.
+var masked_ATEIwtdElv = ATEIwtd_Elv.updateMask(ATEImask);
+
+// print("masked_ATEIwtdElv:", masked_ATEIwtdElv.bandTypes(),
+//   masked_ATEIwtdElv.projection().crs(),
+//   masked_ATEIwtdElv.projection().nominalScale())
+
+
+// Function to rename the masked ATEI.
+function renameMaskedATEI(currentYear, previousResult) {
+  // When convert a "floating point" to a "string", the result contains a ".", which isn't allowed in band names.
+  var yearName = ee.String(ee.Number(currentYear).int());
+  
+  // Rename the ATEI-weighted elevation.
+  var oldName = ee.String("ATEI_").cat(yearName);
+  var newName = ee.String("mATEI_").cat(yearName);
+  var currentImg = masked_ATEI.select([oldName], [newName]);
+  
+  var renamed = ee.Algorithms.If(
+    ee.Algorithms.IsEqual(previousResult, null), // Whether or not the first iteration.
+    currentImg, // True: for the first iteration.
+    ee.Image(previousResult).addBands(currentImg) // False: for the rest iterations.
+  );
+  
+  return renamed;
+}
+
+// Rename the masked ATEI and combine it with the previous result.
+var maskedATEI_ATEIwtdElv_ATEI = ee.Image(yearList.iterate({
+  function: renameMaskedATEI, 
+  first: ATEIwtdElv_ATEI
+}));
+
+// print("maskedATEI_ATEIwtdElv_ATEI:", maskedATEI_ATEIwtdElv_ATEI.bandTypes(),
+//   maskedATEI_ATEIwtdElv_ATEI.projection().crs(),
+//   maskedATEI_ATEIwtdElv_ATEI.projection().nominalScale())
+
+
+// Function to rename the masked weighted elevation.
+function renameMaskedWtdElv(currentYear, previousResult) {
+  // When convert a "floating point" to a "string", the result contains a ".", which isn't allowed in band names.
+  var yearName = ee.String(ee.Number(currentYear).int());
+  
+  // Rename the ATEI-weighted elevation.
+  var oldName = ee.String("ATEI_").cat(yearName);
+  var newName = ee.String("MwtdE_").cat(yearName);
+  var currentImg = masked_ATEIwtdElv.select([oldName], [newName]);
+  
+  var renamed = ee.Algorithms.If(
+    ee.Algorithms.IsEqual(previousResult, null), // Whether or not the first iteration.
+    currentImg, // True: for the first iteration.
+    ee.Image(previousResult).addBands(currentImg) // False: for the rest iterations.
+  );
+  
+  return renamed;
+}
+
+// Rename the masked weighted elevation and combine it with the previous result.
+var maskedATEIwtdElv_maskedATEI_ATEIwtdElv_ATEI = ee.Image(yearList.iterate({
+  function: renameMaskedWtdElv, 
+  first: maskedATEI_ATEIwtdElv_ATEI
+}));
+
+// print("maskedATEIwtdElv_maskedATEI_ATEIwtdElv_ATEI:", maskedATEIwtdElv_maskedATEI_ATEIwtdElv_ATEI.bandTypes(),
+//   maskedATEIwtdElv_maskedATEI_ATEIwtdElv_ATEI.projection().crs(),
+//   maskedATEIwtdElv_maskedATEI_ATEIwtdElv_ATEI.projection().nominalScale())
+
+
+/* Calculate the sum of all variables of each transect. */
+
+var transectSum = maskedATEIwtdElv_maskedATEI_ATEIwtdElv_ATEI.reduceRegions({
+  collection: st_avgATEI, 
+  reducer: ee.Reducer.sum(), 
+  scale: 30, 
+  crs: "EPSG:4326"
+});
+
+// print("transectSum:", transectSum.first(),
+//   transectSum.size()) // Testing.
+
+
+// /* Calculate the ATEI-weighted average elevation of pixels with ATEI > 0.5 in each transect. */
+
+// var transects_masked_ATEIwtdElv_ATEI = masked_ATEIwtdElv_ATEI.reduceRegions({
+//   collection: st_avgATEI, 
+//   reducer: ee.Reducer.sum(), 
+//   scale: 30, 
+//   crs: "EPSG:4326"
+// });
+
+// print("transects_masked_ATEIwtdElv_ATEI:", transects_masked_ATEIwtdElv_ATEI.first(),
+//   transects_masked_ATEIwtdElv_ATEI.size()) // Testing.
+
+
+/* Visualization. */
+
+if (true) {
+  var elvPalette = ['006600', '002200', 'fff700', 'ab7634', 'c4d0ff', 'ffffff'];
+  var elvVisParams = {min: 1e3, max: 2.5e3, palette: elvPalette};
+  
+  var ATEIvisParams = {min: 0, max: 1, palette: "0000FF, FFFFFF, FF0000"};
+  
+  Map.setOptions("HYBRID");
+  Map.centerObject(transects, 12);
+  
+  var year1  = 1985;
+  
+  var year2  = 2015;
+  
+  // Map.addLayer(ALOSelv, 
+  //   elvVisParams, "Elevation");
+  
+  Map.addLayer(ATEI.select("ATEI_" + year1), 
+    ATEIvisParams, "ATEI in " + year1);
+  
+  Map.addLayer(ATEImask.select("ATEI_" + year1), 
+    {min: 0, max: 1}, "ATEImask in " + year1);
+  
+  Map.addLayer(maskedATEIwtdElv_maskedATEI_ATEIwtdElv_ATEI.select("mATEI_" + year1), 
+    ATEIvisParams, "masked_ATEI in " + year1);
+  
+  Map.addLayer(maskedATEIwtdElv_maskedATEI_ATEIwtdElv_ATEI.select("MwtdE_" + year1), 
+    {min: 0, max: 2.5e3, palette: "FF00FF, FFFFFF, 00FF00, 228B22"}, 
+    "masked_ATEIwtdElv in " + year1);
+  
+  Map.addLayer(ATEI.select("ATEI_" + year2), 
+    ATEIvisParams, "ATEI in " + year2);
+  
+  Map.addLayer(ATEImask.select("ATEI_" + year2), 
+    {min: 0, max: 1}, "ATEImask in " + year2);
+  
+  Map.addLayer(maskedATEIwtdElv_maskedATEI_ATEIwtdElv_ATEI.select("mATEI_" + year2), 
+    ATEIvisParams, "masked_ATEI in " + year2);
+  
+  Map.addLayer(maskedATEIwtdElv_maskedATEI_ATEIwtdElv_ATEI.select("MwtdE_" + year2), 
+    {min: 0, max: 2.5e3, palette: "FF00FF, FFFFFF, 00FF00, 228B22"}, 
+    "masked_ATEIwtdElv in " + year2);
+  
+  Map.addLayer(transects, {color: "FFFF00"},
+    "Transects");
+  
+} else if (true) {
+  /* Output the result. */
+  
+  // //// Olympic.
+  // Export.table.toDrive({
+  //   collection: transectSum, 
+  //   description: "transectSum_ATEIwtdElv_ATEI_Olympic", 
+  //   folder: "transectSum_ATEIwtdElv_ATEI_Olympic", 
+  //   fileFormat: "SHP"
+  // });
+  
+  // Export.table.toDrive({
+  //   collection: transectSum, 
+  //   description: "transectSum_ATEIwtdElv_ATEI_Olympic", 
+  //   folder: "transectSum_ATEIwtdElv_ATEI_Olympic", 
+  //   fileFormat: "CSV"
+  // });
+  
+  //// Glacier.
+  Export.table.toDrive({
+    collection: transectSum, 
+    description: "transectSum_ATEIwtdElv_ATEI_Glacier", 
+    folder: "transectSum_ATEIwtdElv_ATEI_Glacier", 
+    fileFormat: "SHP"
+  });
+  
+  Export.table.toDrive({
+    collection: transectSum, 
+    description: "transectSum_ATEIwtdElv_ATEI_Glacier", 
+    folder: "transectSum_ATEIwtdElv_ATEI_Glacier", 
+    fileFormat: "CSV"
+  });
+}

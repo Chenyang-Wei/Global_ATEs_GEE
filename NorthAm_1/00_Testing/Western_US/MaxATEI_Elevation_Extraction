@@ -1,0 +1,154 @@
+/**
+ * Introduction:
+ * 1) Extract the average elevation of pixels with the max. ATEI in each year within each transect.
+ * 
+ * Update: 1/20/2021.
+ * 
+ * Runtime: 
+*/
+
+/* Load datasets. */
+
+var wd = "users/treeline/Dirk/Western_US/";
+var wd2 = "users/treeline/NorthAmerica_GME/";
+
+// var transects = ee.FeatureCollection(wd + 
+//   "wUS_stpTrct_30mBuf_MaxATEIelv_Trend_Length500to3000m_avgATEIgt075");
+// // print("transects:", transects.first(),
+// //   transects.size())
+
+// Annual ATEIs.
+var ATEI_1 = ee.Image(wd2 +
+  "Annual_ATEI/ATEI_medianSmdAnlMaxAvgNDVIs_1984to1999");
+var ATEI_2 = ee.Image(wd2 +
+  "Annual_ATEI/ATEI_medianSmdAnlMaxAvgNDVIs_2000to2019");
+
+// ALOS elevation.
+var ALOSelv = ee.Image('JAXA/ALOS/AW3D30/V2_2').select('AVE_DSM')
+  .reproject({
+    crs: "EPSG:4326",
+    scale: 30
+  });
+
+
+/* Select annual ATEIs from 1984 to 2018. */
+
+// Combine all ATEIs.
+var ATEI = ATEI_1.addBands(ATEI_2);
+
+// Remove the ATEI of 2019.
+var bandNames = ATEI.bandNames().remove("ATEI_2019");
+ATEI = ATEI.select(bandNames);
+
+// print("ATEI:", ATEI.bandTypes())
+
+
+// /* Determine the annual maximum ATEIs within each buffered transect. */
+
+// var transects_maxATEI = ATEI.reduceRegions({
+//   collection: transects,
+//   reducer: ee.Reducer.max(),
+//   scale: 30,
+//   crs: "EPSG:4326"
+// });
+
+// Read the previous generated transects.
+var transects_maxATEI = ee.FeatureCollection(wd + "transects_maxATEI");
+
+// print("transects_maxATEI:", transects_maxATEI.first(),
+//   transects_maxATEI.size())
+
+
+/* Function to extract the average elevation of pixels with the maximum ATEI 
+  in each year within each buffered transect. */
+
+function extractElevation(transect) {
+  var geom = transect.geometry();
+  
+  // Use the original transect as the initial state for the first iteration.
+  var first = transect;
+  
+  // Iteratively extract the pixel elevation and add it as a new property to the transect.
+  var transect_elv = ee.Feature(ATEI.bandNames().iterate(function(bandName, previous) {
+    
+    // Extract the ATEI band of each year.
+    var annualATEI = ATEI.select([bandName]);
+    
+    // Obtain the local maximum ATEI value in the same year from the transect properties.
+    var maxATEI_value = ee.Algorithms.If({
+      condition: transect.get(bandName), 
+      trueCase: transect.get(bandName), 
+      falseCase: 0 // Null is false.
+    });
+    
+    var avgElv;
+    
+    if (maxATEI_value !== 0) {
+      // Generate a constant image with the maximum ATEI value.
+      var maxATEI_img = ee.Image.constant(maxATEI_value);
+      
+      // Extract the elevations of all pixels reaching the annual maximum ATEI.
+      var ATEImask = annualATEI.eq(maxATEI_img);
+      var maxATEIelv = ALOSelv.updateMask(ATEImask);
+      
+      // Calculate the average elevation of all pixels with the annual maximum ATEI.
+      avgElv = maxATEIelv.reduceRegion({
+        reducer: ee.Reducer.mean(),
+        geometry: geom,
+        scale: 30,
+        crs: "EPSG:4326",
+        maxPixels: 1e13
+      }).get("AVE_DSM");
+    
+    } else {
+      avgElv = null;
+    }
+    
+    // Get the corresponding year.
+    var year = ee.String(bandName).slice(5, 9);
+    
+    // Set a property name for the elevation in that year.
+    var elvName = ee.String("Elv_").cat(year);
+    
+    // Add the average elevation as a new property to the result of the previous iteration.
+    return ee.Feature(previous).set(elvName, avgElv);
+    
+  }, first));
+  
+  // Return the processed transect with annual elevational properties.
+  return transect_elv;
+}
+
+
+/* Extract the annual ATEI elevations for each buffered transect. */
+
+var maxATEIelv = ee.FeatureCollection(transects_maxATEI.map(extractElevation));
+
+// print("maxATEIelv:" , maxATEIelv.first(),
+//   maxATEIelv.size()) // 32186.
+
+
+/* Export the result. */
+
+if (true) {
+  // var fileName = "wUS_stpTrct_30mBuf_MaxATEIelv_Trend_Length500to3000m_avgATEIgt075_newMaxATEIelv_1984to2018";
+  var fileName = "newMaxATEIelv_1984to2018";
+  
+  Export.table.toDrive({
+    collection: maxATEIelv, 
+    description: fileName, 
+    folder: fileName, 
+    fileFormat: "SHP"
+  });
+  
+} else if (false) {
+  var fileName = "transects_maxATEI";
+  
+  Export.table.toAsset({
+    collection: transects_maxATEI, 
+    description: fileName, 
+    assetId: wd + fileName
+  });
+  
+}
+

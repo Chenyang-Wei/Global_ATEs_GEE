@@ -1,0 +1,66 @@
+/**
+ * Introduction:
+ * 1) Combine the raw centerlines with the new IDs of all basin groups
+ *  into one FeatureCollection.
+ * 2) Add a new ID column to the combined centerlines.
+ * 
+ * Update: 10/13/2021.
+ * 
+ * Runtime: 2h.
+ */
+
+
+/* Load module(s). */
+
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var VIS = require("users/ChenyangWei/Public:Modules/Visualization");
+
+
+/* Combine the raw centerlines of all basin groups. */
+
+// Determine the working directory of the raw centerlines.
+var wd_RawCLs = GATE.wd_NorthAmerica
+  + "Elevational_Transect_Generation/"
+  + GATE.rawCLs_fileName
+  + "/";
+
+// Combine the raw centerlines by basin group.
+var allRawCLs = ee.List([]);
+
+for (var basinGroup_ID = 1; basinGroup_ID <= 5; basinGroup_ID ++) {
+  // Read the raw centerlines.
+  var rawCLs_perBasinGroup = ee.FeatureCollection(wd_RawCLs
+    + GATE.rawCLs_byBasinGroup_fileName
+    + basinGroup_ID);
+
+  allRawCLs = allRawCLs.add(rawCLs_perBasinGroup);
+}
+
+var allRawCLs_Combined = ee.FeatureCollection(allRawCLs).flatten();
+
+
+/* Add a new ID column to the combined centerlines. */
+
+var allRawCLs_withNewID = allRawCLs_Combined.randomColumn("CL_newID");
+
+
+if (false) { // true OR false.
+  print("allRawCLs_withNewID:", 
+    allRawCLs_withNewID.size(),
+    allRawCLs_withNewID.first());
+  
+  VIS.centerNorthAmerica(12);
+  
+  Map.addLayer(allRawCLs_withNewID, {color: "FF0000"}, "allRawCLs_withNewID");
+
+} else {
+  //// Export the result.
+  var fileName = GATE.rawCLs_AllBasinGroups_fileName;
+  
+  Export.table.toAsset({
+    collection: allRawCLs_withNewID, 
+    description: fileName, 
+    assetId: wd_RawCLs + fileName
+  });
+}
+

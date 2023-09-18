@@ -1,0 +1,78 @@
+/**
+ * Introduction:
+ * 
+ *  1) Visualize the mosaicked climate-based ATEs (CATEs) 
+ *    of all continents.
+ * 
+ *  2) Export the mosaicked CATEs to Drive.
+ * 
+ * Runtime: 2h.
+ * 
+ * Update: 3/15/2023.
+*/
+
+
+/* Load module(s). */
+
+var IMG = require("users/ChenyangWei/Public:Modules/General/Image_Analysis&Processing.js");
+var GATE = require("users/ChenyangWei/Public:Modules/Treeline/Global_ATE.js");
+
+
+/* Object definition. */
+
+// Determine the target projection.
+var targetPrj = IMG.WGS84_30m;
+
+// Define a global AOI.
+var global_AOI = ee.Geometry.Rectangle({
+  coords: [[-180, -85],
+    [180, 85]],
+  geodesic: false
+});
+
+
+/* Load the new mosaicked CATEs of all continents. */
+
+var all_NewCATEs = ee.Image(GATE.wd_Global 
+  + "Climate-Based_ATE/" 
+  + "Broad_Alpine_Treeline_Ecotones_v1_0")
+  .reproject(targetPrj);
+
+
+var output = true;
+
+if (!output) {
+  
+  // Check the mosaicing result.
+  IMG.printImgInfo("all_NewCATEs", all_NewCATEs);
+  
+  // Visualize the result.
+  Map.setOptions("satellite");
+  
+  Map.setCenter(7.7537, 46.0153, 12); // Zermatt.
+  
+  Map.addLayer(global_AOI, {color: "FFFFFF"}, 
+    "global_AOI", true, 0.5);
+
+  Map.addLayer(all_NewCATEs, {palette: "0000FF"}, 
+    "all_NewCATEs", true, 0.5);
+
+} else {
+  
+  // Export the result to Asset.
+  var fileName = "Broad_Alpine_Treeline_Ecotones_v1_0";
+  
+  Export.image.toDrive({
+    image: all_NewCATEs, 
+    description: fileName, 
+    folder: fileName, 
+    region: global_AOI, 
+    scale: targetPrj.scale, 
+    crs: targetPrj.crs, 
+    // maxPixels: IMG.maxPxNum, 
+    maxPixels: 1, // Size check: 842660117208 pixels.
+    skipEmptyTiles: true, 
+    fileFormat: "GeoTIFF"
+  });
+}
+

@@ -1,0 +1,222 @@
+/**
+ * Introduction:
+ * 1) Vectorize the segmented CATE.
+ * 2) Extract the minimum and maximum elevations within each vectorized segment.
+ * 3) Select the polygons with both elevational extreme values.
+ * 4) Generate and buffer an elevational transect from the highest pixel to the lowest pixel within each selected polygon.
+ * 
+ * Update: 11/28/2020.
+ * 
+ * Launch time: 50s ~ 4h.
+ * 
+ * Failed tasks: Basin_23.
+ */
+
+
+/* Setup. */
+
+// Asset path.
+var wdNorthA = "users/treeline/NorthAmerica_GME/";
+
+// HydroSHEDS basins ("hybas_4") with the segmented CATE pixels.
+var basins = ee.FeatureCollection(wdNorthA + "Transects/" + 
+  "90mSegmentedCATE_selectedBasins_Hybas4");
+
+// ALOS elevation (V 2.2).
+var ALOSelv = ee.Image('JAXA/ALOS/AW3D30/V2_2').select('AVE_DSM');
+
+// Extract the ALOS elevation projection.
+var elvPrj = ALOSelv.projection();
+var elvCRS = elvPrj.crs();
+var elvScale = elvPrj.nominalScale();
+
+// print("ALOS elevation projection:", 
+//   elvCRS, elvScale)
+
+// Segmented CATE.
+var rawSegCATE = ee.Image(wdNorthA + "Transects/" + 
+  "90mSegmentedCATE_distToRidgesNoCliff_NAlandformsRemoved_ridgesRemoved");
+
+// Reproject the segmented CATE to the ALOS elevation projection system.
+var segCATE = rawSegCATE.reproject({
+  crs: elvCRS,
+  scale: elvScale
+});
+
+print("Reprojected segmented CATE:", 
+  segCATE.bandTypes(),
+  segCATE.projection().crs(),
+  segCATE.projection().nominalScale())
+
+// Get the ALOS elevation of the segmented CATE.
+var segElv = ALOSelv.updateMask(segCATE);
+
+// Combine the segmented CATE with the corresponding ALOS elevation 
+// for further extracting the elevational extremes within each vectorized CATE segment.
+var segCATEelv = segCATE.addBands(segElv);
+
+
+/* Convert the selected HydroSHEDS basins to a list. */
+
+var basinNum = basins.size();
+
+var basinList = basins.toList({
+  count: basinNum
+});
+
+// print("HydroSHEDS basins:", basinNum, basinList)
+
+
+/* Determine pixel coordinates in the CATE projection system. */
+
+// Create an image of the pixel coordinates of the segmented CATE.
+var rawCoords = ee.Image.pixelLonLat().updateMask(segCATE);
+
+// Request the coordinates at the scale and projection of the elevation image.
+var coords = rawCoords.reproject({
+  crs: elvCRS,
+  scale: elvScale
+});
+
+// print("Coordinate dataset projection:", 
+//   coords.projection().crs(), 
+//   coords.projection().nominalScale())
+
+
+/* Define a function for generating and buffering elevational transects. */
+
+var generateBufferedTransects = function(feature) {  
+  // Get the geometry of each selected polygon.
+  var geom = feature.geometry();
+  
+  // Extract the coordinates of pixels with the maximum elevation.
+  var elvMax = feature.get("max");
+  var maxCoords = coords.updateMask(segElv.eq(ee.Number.parse(elvMax)));
+  
+  // Extract the coordinates of pixels with the minimum elevation.
+  var elvMin = feature.get("min");
+  var minCoords = coords.updateMask(segElv.eq(ee.Number.parse(elvMin)));
+  
+  // Convert the extracted coordinates within the geometry to two lists.
+  var maxList = maxCoords.reduceRegion({
+    reducer: ee.Reducer.toList(),
+    geometry: geom,
+    crs: elvCRS,
+    scale: elvScale,
+    maxPixels: 1e13
+  });
+  
+  var minList = minCoords.reduceRegion({
+    reducer: ee.Reducer.toList(),
+    geometry: geom,
+    crs: elvCRS,
+    scale: elvScale,
+    maxPixels: 1e13
+  });
+  
+  // Choose only the coordinates of the first qualified pixel in each list.
+  var maxLon = ee.List(maxList.get('longitude')).get(0);
+  var minLon = ee.List(minList.get('longitude')).get(0);
+  
+  var maxLat = ee.List(maxList.get('latitude')).get(0);
+  var minLat = ee.List(minList.get('latitude')).get(0);
+  
+  // Merge the coordinates of the two pixels into a list of two-element (longitude and latitude) lists.
+  var lonList = ee.List([maxLon, minLon]);
+  var latList = ee.List([maxLat, minLat]);
+  
+  var coordList = lonList.zip(latList);
+  
+  // Construct a line string between the two pixels based on the merged coordinate list.
+  var lineString = ee.Algorithms.GeometryConstructors.LineString(coordList);
+  
+  // Get the length of the generated line string.
+  var lsLength = lineString.length(); // In meters.
+  
+  // Add the length property to the line string.
+  var transect = ee.Feature(lineString).set("Length_m", lsLength);
+  
+  // Create a 30-m buffer for the line string.
+  var buffered = transect.buffer(30); // If no projection is specified, the unit is meters.
+  
+  return buffered;
+};
+
+
+/* Generate and export buffered elevational transects by basins. */
+
+for (var index = 0; index < basinNum.getInfo(); index ++) {
+// for (var index = 0; index < 1; index ++) { // Testing.
+  
+  // Extract the geometry of each basin feature.
+  var basinFeature = ee.Feature(basinList.get(index));
+  var basinGeom = basinFeature.geometry();
+  
+  // Vectorize the segmented CATE in the basin
+  // and extract the elevational extremes within each vectorized polygon.
+  var polygonElvMinMax = segCATEelv.reduceToVectors({
+    // The first band ("segCATE") of the input image is expected to be an integer type; 
+    // adjacent pixels will be in the same segment if they have the same value in this band.
+    reducer: ee.Reducer.minMax(), 
+    // Extract the elevational extremes.
+    // The inputs of this reducer will be taken from the image's bands ("segElv") after dropping the first band ("segCATE"). 
+    geometry: basinGeom,
+    maxPixels: 1e13,
+    crs: elvCRS,
+    scale: elvScale,
+    geometryType: "polygon",
+    eightConnected: false // Only pixels that share an edge are considered adjacent.
+  });
+  
+  // print("polygonElvMinMax:", 
+  //   polygonElvMinMax.first(), polygonElvMinMax.size())
+  
+  // Select polygons with both extreme values.
+  var selectedPolygons = polygonElvMinMax.filter(ee.Filter.and(
+    ee.Filter.neq("max", null),
+    ee.Filter.neq("min", null)));
+
+  // print("selectedPolygons:", 
+  //   selectedPolygons.first(), selectedPolygons.size())
+  
+  // Generate and buffer an elevational transect within each selected polygon.
+  var bufferedTransects = ee.FeatureCollection(selectedPolygons
+    .map(generateBufferedTransects));
+  
+  // print("bufferedTransects:", 
+  //   bufferedTransects.first(), bufferedTransects.size())
+  
+  if (true) { // Testing.
+    /* Visualization. */
+    
+    var elvPalette = ['006600', '002200', 'fff700', 'ab7634', 'c4d0ff', 'ffffff'];
+    var elvVis = {min: 1000, max: 3500, palette: elvPalette};
+    
+    // Map.setCenter(-113.7571, 48.829, 10);
+    Map.centerObject(bufferedTransects.first(), 16);
+    Map.setOptions("hybrid");
+    
+    Map.addLayer(basins, {color: "FFFF00"}, "basins", true);
+    Map.addLayer(segCATE, {palette: "0000FF"}, "segCATE", true);
+    
+    Map.addLayer(coords.select("longitude"), {palette: "FF00FF"}, "longitude", true);
+    
+    Map.addLayer(selectedPolygons, {color: "00FF00"}, "selectedPolygons", true);
+    Map.addLayer(segElv, elvVis, "elevation", true);
+    
+    Map.addLayer(bufferedTransects, {color: "FF0000"}, "bufferedTransects", true);
+  }
+  
+  else if (true) {
+    /* Output the result.*/
+    
+    var fileName = "Basin_" + index;
+    
+    Export.table.toAsset({
+      collection: bufferedTransects, 
+      description: fileName, 
+      assetId: wdNorthA + "Transects/30mBufTransects30mRes_90mSegmentedCATE_Hybas4/" + fileName
+    });
+  }
+}
+

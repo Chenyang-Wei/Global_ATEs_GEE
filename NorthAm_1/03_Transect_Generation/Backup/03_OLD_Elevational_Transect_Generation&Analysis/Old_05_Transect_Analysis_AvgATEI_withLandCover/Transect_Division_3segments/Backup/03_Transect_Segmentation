@@ -1,0 +1,133 @@
+/**
+ * Introduction:
+ * 1) Segment the elevational transects based on the previously generated divides.
+ * 
+ * Update: 2/3/2021.
+*/
+
+
+/* Load datasets. */
+
+// Set the work directory.
+var wd = "users/treeline/NorthAmerica_GME/";
+
+// Annual ATEIs.
+var ATEI_1 = ee.Image(wd +
+  "Annual_ATEI/ATEI_medianSmdAnlMaxAvgNDVIs_1984to1999");
+var ATEI_2 = ee.Image(wd +
+  "Annual_ATEI/ATEI_medianSmdAnlMaxAvgNDVIs_2000to2019");
+
+var ATEI = ATEI_1.addBands(ATEI_2);
+
+// print(ATEI.projection().crs(), ATEI.projection().nominalScale())
+
+// Transects with landforms information involved.
+var oldTransects = ee.FeatureCollection(wd + 
+  "Transects/SelectedHybas4Basins_closedForestsLowerSlopeValley_nonForestedUpperSlope/transectTrend_gte10obs");
+
+
+/* Generate the average ATEIs over time within each transect. */
+
+var avgATEI = ATEI.reduce(ee.Reducer.mean());
+  // .reproject({
+  //   crs: "EPSG:4326", 
+  //   scale: 30
+  // });
+
+// print(avgATEI)
+
+
+/* Generate a mask of the average ATEI. */
+
+var threshold = 0.1;
+
+var ATEIdiff = avgATEI.subtract(0.5).abs();
+var ATEImask = ATEIdiff.lte(threshold);
+
+
+/* Combine the grouped center lines. */
+
+// Create a list of start indices.
+var startIndices = ee.List.sequence(0, 120, 5).getInfo();
+
+// Combine the grouped center lines.
+var combinedCL = ee.FeatureCollection(startIndices.map(function(startIndex) {
+  var endIndex = startIndex + 5;
+  var fileName = "Basins_" + startIndex + "to" + endIndex;
+  var CL = ee.FeatureCollection(wd + "Transects/SelectedHybas4Basins_closedForestsLowerSlopeValley_nonForestedUpperSlope/"
+    + "CenterLines/"
+    + "divideConnected_avgATEI_Pt4toPt6_45mBufPlg/" + fileName);
+  
+  return CL;
+})).flatten();
+
+var indices = ee.List.sequence(0, 123).remove(106).getInfo();
+
+// var transects = ee.FeatureCollection(indices.map(function(index) {
+//   var fileName = "Basin_" + index;
+//   var transect = ee.FeatureCollection(wd + "Transects/SelectedHybas4Basins_closedForestsLowerSlopeValley_nonForestedUpperSlope/"
+//     + "CenterLines/" + fileName);
+  
+//   return transect;
+// })).flatten();
+
+// transects = transects.map(function(transect) {
+//   return transect.buffer(30);
+// });
+
+var transects = combinedCL.map(function(CL) {
+  var highEnd = [CL.get("maxLong"), CL.get("maxLat")];
+  var lowEnd = [CL.get("minLong"), CL.get("minLat")];
+  
+  var transect = ee.Geometry.LineString([highEnd, lowEnd]);
+  
+  return ee.Feature(transect.buffer(30));
+});
+
+// print(transects.size())
+
+// Estimate the ATE.
+var ATE = combinedCL.map(function(CL) {
+  var bufferedCL = CL.buffer(45);
+  
+  var transect = transects.filterBounds(CL.geometry()).first();
+  var intersection = bufferedCL.intersection(transect);
+  
+  return intersection;
+});
+
+// print(ATE.size(), ATE.first())
+
+// Estimate the non-ATE areas.
+// var nonATE = ATE.map(function(ate) {
+  
+//   var transect = transects.filterBounds(ate.geometry()).first();
+//   var difference = ee.Feature(transect).difference(ate);
+  
+//   return difference;
+// });
+
+var nonATE = combinedCL.map(function(CL) {
+  var bufferedCL = CL.buffer(45);
+  
+  var transect = transects.filterBounds(CL.geometry()).first();
+  var difference = ee.Feature(transect).difference(bufferedCL);
+  
+  return difference;
+});
+
+// print(nonATE.size(), nonATE.first())
+
+Map.setOptions("HYBRID");
+// // Map.centerObject(groupedCL.first(), 14);
+// Map.setCenter(-114.32445, 38.97152, 14);
+Map.setCenter(-113.82774, 48.93285, 14);
+
+Map.addLayer(avgATEI, {min: 0, max: 1, palette: "0000FF, FFFFFF, FF0000"}, "Avg. ATEI");
+Map.addLayer(ATEImask.selfMask(), {palette: "00FF00"}, "ATEI mask");
+
+Map.addLayer(oldTransects, {color: "FFFFFF"}, "Original transects", false);
+Map.addLayer(transects, {color: "FFFF00"}, "Transects", true);
+
+Map.addLayer(ATE, {color: "0000FF"}, "Estimated ATEs", true);
+Map.addLayer(nonATE, {color: "00FFFF"}, "Estimated non-ATEs", false);

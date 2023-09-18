@@ -1,0 +1,74 @@
+/**
+ * Introduction:
+ * 1) Visualize the annual NDVI and gradient data.
+ * 
+ * Date: 8/10/2020.
+ */
+
+
+/* Setup. */
+
+// Asset path.
+var wdNorthA = "users/treeline/NorthAmerica_GME/";
+
+// Load the climatic ATE.
+var CATE = ee.Image(wdNorthA + "CATE/" + 
+  "3kmBuffered_30mReprj_500mCATE3kmBuffer_gteAvgClsdFrstElv_10kmRes10pxFocalMean_10kmClsdFrstBuffer");
+
+// Original NDVI (with cloud masking).
+var rawNDVI = ee.Image(wdNorthA + "Annual_NDVI/" +
+  "rawAnlMaxNDVI_L5L7_1984to2013").addBands(ee.Image(wdNorthA + "Annual_NDVI/" +
+  "rawAnlMaxNDVI_L8_2014to2019"));
+
+// Annual NDVI and gradient data.
+var NDVIgradL5L7 = ee.Image(wdNorthA + "Annual_NDVI/" +
+  "RawMedianSmdAnlMaxNDVI_gradMagDir_L5L7_1984to2013");
+var NDVIgradL8 = ee.Image(wdNorthA + "Annual_NDVI/" +
+  "RawMedianSmdAnlMaxNDVI_gradMagDir_L8_2014to2019");
+var NDVIgrad = NDVIgradL5L7.addBands(NDVIgradL8);
+
+print("NDVI and gradient:", NDVIgrad.bandTypes(),
+  NDVIgrad.projection().crs(),
+  NDVIgrad.projection().nominalScale())
+
+
+if (true) {
+  // Visualization.
+  Map.setOptions("hybrid");
+  Map.setCenter(-113.724166, 48.5763, 12);
+  
+  var ndvi_palette =
+      'FFFFFF, CE7E45, DF923D, F1B555, FCD163, 99B718, 74A901, 66A000, 529400,' +
+      '3E8601, 207401, 056201, 004C00, 023B01, 012E01, 011D01, 011301';
+  
+  Map.addLayer(CATE.select("Buffered_3km"), {palette: "FFFF00"}, "3km-buffered climatic ATE");
+  
+  Map.addLayer(CATE.select("gteFocalMean_30mReprj"), {palette: "0000FF"}, "Climatic ATE");
+  
+  Map.addLayer(rawNDVI.select("NDVI_1984"), 
+    {min: 0, max: 1, palette: ndvi_palette}, 
+    "Raw NDVI of 1984 (cloud masking)", true);
+  
+  Map.addLayer(NDVIgrad.select("rNDVI_1984"), 
+    {min: 0, max: 1, palette: ndvi_palette}, 
+    "Raw NDVI of 1984 (no cloud masking)", true);
+  
+  Map.addLayer(rawNDVI.select("NDVI_2014"), 
+    {min: 0, max: 1, palette: ndvi_palette}, 
+    "Raw NDVI of 2014 (cloud masking)", true);
+  
+  Map.addLayer(NDVIgrad.select("rNDVI_2014"), 
+    {min: 0, max: 1, palette: ndvi_palette}, 
+    "Raw NDVI of 2014 (no cloud masking)", true);
+  
+  Map.addLayer(NDVIgrad.select("sNDVI_2014"), 
+    {min: 0, max: 1, palette: ndvi_palette}, 
+    "Smoothed NDVI of 2014 (smoothing first)", true);
+  
+  Map.addLayer(NDVIgrad.select("dir_2014"),
+    {min: -Math.PI, max: Math.PI}, "NDVI Gradient Direction of 2014", true);
+  
+  Map.addLayer(NDVIgrad.select("mag_2014"),
+    {min: 0, max: 2e-3, palette: "FFFFFF, FF0000"}, "NDVI Gradient Magnitude of 2014", true);
+}
+

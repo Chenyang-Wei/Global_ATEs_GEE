@@ -1,0 +1,296 @@
+/*
+  Introduction:
+  1) To pre-process the Landsat surface reflectance data within the CATE.
+  2) To calculate annual maximum NDVIs over the study period of time.
+  3) To smooth the annual maximum NDVIs by calculating focal median values 
+    within a circular kernel.
+  
+  Date: 7/15/2020.
+  
+  Notes:
+  1) LANDSAT-5 surface reflectance from 1984 to 2011.
+  2) LANDSAT-7 surface reflectance from 2012 to 2013.
+  
+  Launch time:
+  1) Raw NDVI -- 2d.
+  2) Smoothed NDVI -- 4d.
+*/
+
+
+/* Setup. */
+
+// Define the extent of North America. 
+var northAmerica = ee.Geometry.Polygon({
+    coords: [[[-165.69002926658334, 72.44551256468144],
+          [-169.40248634956492, 65.69009098298687],
+          [-172.25893166206492, 63.826281515474996],
+          [171.35638590722195, 52.855285271231274],
+          [-159.1340353549648, 17.264443722753843],
+          [-122.14862062448367, 9.59539750905343],
+          [-79.06711256993691, 6.243890041056693],
+          [-77.03677448989225, 7.40316087095261],
+          [-76.78408894301725, 8.990725120234067],
+          [-75.7244458156751, 12.403191738791786],
+          [-71.5276684719251, 13.751533985801833],
+          [-62.8264965969251, 11.651035844929385],
+          [-62.005942990095036, 9.999896817210585],
+          [-60.791953732282536, 9.96743692413247],
+          [-55.5884807162513, 13.889226127218825],
+          [-47.99315852039507, 58.68729606716915],
+          [-66.52860968724042, 71.51769835770313],
+          [-77.86650031224042, 74.25356562488685],
+          [-89.90751593724042, 74.22969620284344],
+          [-106.04844453284761, 74.3012200035139],
+          [-114.63975312659761, 74.20581277506923],
+          [-120.18954789130242, 74.88484689543225],
+          [-136.27353226630242, 74.6772015427699]]],
+    geodesic: true
+});
+
+// Asset path.
+var wdNorthA = "users/treeline/NorthAmerica_GME/";
+
+// Load the extracted new ATE.
+var newCATE = ee.Image(wdNorthA + "CATE/" +
+  "500mCATE_3kmSurrounding_gte10kmClsdFrstElvFocalMean_10kmClsdFrstBuffer");
+
+// print("New CATE:", newCATE.bandTypes(), 
+//   newCATE.projection().crs(), 
+//   newCATE.projection().nominalScale())
+
+
+/* Image processing function definition. */
+
+// This function identifies the imagery within the new CATE.
+var identify = function(i) {
+  return i.updateMask(newCATE);
+};
+
+// This function masks water, clouds and, cloud shadow 
+// based on the pixel_qa band of Landsat SR data. (From GEE Landsat 5 & 7 tutorial.)
+var cloudMaskL457 = function(image) {
+  var qa = image.select('pixel_qa');
+  
+  // If the cloud bit (5) is set and the cloud confidence (7) is high
+  // or the cloud shadow bit is set (3), 
+  // or the water bit is set (2), then it's a bad pixel.
+  var badPixels = qa.bitwiseAnd(1 << 5)
+    .and(qa.bitwiseAnd(1 << 7))
+    .or(qa.bitwiseAnd(1 << 3))
+    .or(qa.bitwiseAnd(1 << 2)); // Bit 2: Water.
+  
+  // Remove edge pixels that don't occur in all bands
+  var mask2 = image.mask().reduce(ee.Reducer.min());
+  
+  // Mask the bad or invalid edge pixels.
+  var masked = image.updateMask(badPixels.not()).updateMask(mask2);
+  
+  // Select the bands of surface reflectance. 
+  return masked.select('B.*');
+};
+
+// This function removes the edge effect.
+var removeEdge_L57 = function(img) {
+  // Identify pixels with all the surface reflectance bands within the valid range: 0-10000.
+  var lowerLimit = img.gt(0).reduce(ee.Reducer.min());
+  var upperLimit = img.lt(1e4).reduce(ee.Reducer.min());
+  
+  var maskedB3B4 = img.updateMask(lowerLimit)
+    .updateMask(upperLimit)
+    .select(["B3", "B4"]); // Select "B3" and "B4" for further calculating the NDVI.
+  
+  return maskedB3B4;
+};
+
+// This function calculates NDVI of Landsat imagery.
+var calNDVI_L57 = function(i){
+  var ndvi = i.addBands(i.normalizedDifference(['B4', 'B3'])
+    .rename('NDVI'))
+    .select('NDVI');
+  
+  return ndvi;
+};
+
+// This function converts each image collection to a multi-band image and rename each band.
+function convert(current, previous) {
+  // When convert a "floating point" to a "string", the result contains a ".", which isn't allowed in band names.
+  var yearName = ee.String(ee.Number(current.get("year")).int());
+  var bandName = ee.String("NDVI_").cat(yearName);
+
+  // Rename the current image.
+  current = current.select([0], [bandName]);
+  
+  var converted = ee.Algorithms.If(
+    ee.Algorithms.IsEqual(previous, null), // Condition.
+    current, // True case.
+    ee.Image(previous).addBands(current) // False case.
+  );
+    
+  return converted;
+}
+
+// Define a circular smoothing kernel of 10 pixels.
+var Kn = ee.Kernel.circle({
+  radius: 10 // Default units: "pixels".
+}); 
+
+// This function smooths NDVI by calculating the focal median value within each kernel.
+var smoothing = function(img) {
+  var smoothed = img.reduceNeighborhood({
+    // The median reducer is less smooth than the mean reducer, 
+    // but the former one makes the spatial variation of NDVI more abrupt (i.e., less gradual).
+    reducer: ee.Reducer.median(),
+    kernel: Kn,
+    skipMasked: false // Do NOT mask output pixels if the corresponding input pixel is masked.
+  }).reproject({
+    crs: "EPSG:4326",
+    scale: 30
+  });
+  
+  // Copy the property of year.
+  var withYear = smoothed.copyProperties({
+    source: img, 
+    properties: ["year"]
+  }); 
+  
+  // Identify the result within the study domain.
+  var identified = identify(ee.Image(withYear));
+  
+  return identified;
+};
+
+// This function combine all the processing steps.
+function imageProcessing(image) {
+  var cloundMasked = cloudMaskL457(image);
+  var edgeRemoved = removeEdge_L57(cloundMasked);
+  var ndviCalculated = calNDVI_L57(edgeRemoved);
+  var identified = identify(ndviCalculated);
+  
+  return identified;
+}
+
+
+/* Import the Surface Reflectance dataset. */
+
+// Landsat 5 and 7 are part of LANDSAT 4-7 SURFACE REFLECTANCE (LEDAPS) PRODUCT.
+
+// Bands of interest.
+var bands = ['B[1-5]', 'B7', 'pixel_qa'];
+
+// Landsat 5.
+var LT5 = ee.ImageCollection("LANDSAT/LT05/C01/T1_SR")
+  .select(bands)
+  .filterBounds(northAmerica)
+  .filterDate('1984-01-01', '2012-01-01'); // The end date is exclusive. 
+
+// Landsat 7.
+var LE7 = ee.ImageCollection("LANDSAT/LE07/C01/T1_SR")
+  .select(bands)
+  .filterBounds(northAmerica)
+  .filterDate('2012-01-01', '2014-01-01'); // The end date is exclusive. 
+
+
+/* Image processing and analysis. */
+
+// Merge Landsat 5 & 7.
+var L5_7 = LT5.merge(LE7);
+
+// print("Raw Landsat 5 & 7:", L5_7.first().bandTypes(),
+//   L5_7.first().projection().crs(),
+//   L5_7.first().projection().nominalScale())
+
+// Image pre-processing and NDVI calculation.
+var ndvi = L5_7.map(imageProcessing);
+
+// print("Landsat 5 * 7 - NDVI:", ndvi.first())
+
+// Determine the list of years.
+var years = ee.List.sequence(1984, 2013);
+// var years = ee.List.sequence(1984, 1985) // Testing.
+
+// Annual maximum NDVI calculation.
+var anlMaxNDVI_ic = ee.ImageCollection.fromImages(
+  years.map(function (y) {
+    // Extract the NDVI image collection of each year.
+    var anlNDVI = ndvi.filter(ee.Filter.calendarRange(y, y, 'year'));
+    
+    // Calculate its annual maximum value.
+    var anlNDVImax = anlNDVI.max()
+      .set('year', y); // Add the corresponding "year" as a new property.
+    
+    return anlNDVImax;
+})); // Return an image collection.
+
+// print("Un-smoothed IC:", anlMaxNDVI_ic)
+
+
+/* NDVI smoothing and multi-band image conversion. */
+
+// Raw NDVI conversion.
+var rawAnlMaxNDVI = ee.Image(anlMaxNDVI_ic.iterate(convert)); // Convert to a multi-band image.
+
+// print("Un-smoothed Img:", rawAnlMaxNDVI.bandTypes(), 
+//   rawAnlMaxNDVI.projection().crs(), 
+//   rawAnlMaxNDVI.projection().nominalScale())
+
+// NDVI smoothing and conversion.
+var smdAnlMaxNDVI = ee.Image(anlMaxNDVI_ic.map(smoothing) // Smoothing.
+  .iterate(convert)); // Convert to a multi-band image.
+
+// print("Smoothed Img:", smdAnlMaxNDVI.bandTypes(), 
+//   smdAnlMaxNDVI.projection().crs(), 
+//   smdAnlMaxNDVI.projection().nominalScale())
+
+
+/* Export or visualize the result. */
+
+if (true) {
+  // Export the smoothed NDVI.
+  var fileName1 = "medianSmdAnlMaxNDVI_L5L7_1984to2013";
+  
+  Export.image.toAsset({
+    image: smdAnlMaxNDVI, 
+    description: fileName1, 
+    assetId: wdNorthA + "Annual_NDVI/" + fileName1,
+    region: northAmerica, 
+    crs: "EPSG:4326",
+    scale: 30,
+    maxPixels: 1e13
+  });
+  
+  // Export the raw NDVI.
+  var fileName2 = "rawAnlMaxNDVI_L5L7_1984to2013";
+  
+  Export.image.toAsset({
+    image: rawAnlMaxNDVI, 
+    description: fileName2, 
+    assetId: wdNorthA + "Annual_NDVI/" + fileName2,
+    region: northAmerica, 
+    crs: "EPSG:4326",
+    scale: 30,
+    maxPixels: 1e13
+  });
+  
+} else {
+  // Visualization.
+  Map.setOptions("hybrid");
+  Map.setCenter(-113.724166, 48.5763, 12);
+  
+  var ndvi_palette =
+      'FFFFFF, CE7E45, DF923D, F1B555, FCD163, 99B718, 74A901, 66A000, 529400,' +
+      '3E8601, 207401, 056201, 004C00, 023B01, 012E01, 011D01, 011301';
+  
+  Map.addLayer(newCATE, 
+    {palette: "FF0000"}, "newCATE", true, 1);
+  
+  if (true) {
+    Map.addLayer(anlMaxNDVI_ic, 
+      {min: 0, max: 1, palette: ndvi_palette}, 
+      "Smoothed NDVI in the first year", true);
+    
+    Map.addLayer(smdAnlMaxNDVI.select("NDVI_1984"), 
+      {min: 0, max: 1, palette: ndvi_palette}, 
+      "Smoothed NDVI_1984", true);
+  }
+}
+

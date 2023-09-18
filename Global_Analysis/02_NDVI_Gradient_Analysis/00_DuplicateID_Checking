@@ -1,0 +1,83 @@
+/**
+ * Introduction:
+ * 
+ * 1) Check the existence of transects with duplicate IDs. 
+ * 
+ * 
+ * Update: 6/30/2022.
+ * 
+ * Runtime: N/A.
+ */
+
+
+/* Load module(s). */
+
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var NGA = require("users/ChenyangWei/Public:Modules/NDVI_Gradient_Analysis.js");
+var FC_AP = require("users/ChenyangWei/Public:Modules/FeatureCollection_Analysis&Processing");
+
+
+/* Setups. */
+
+// Load the raw transects.
+var transects_NorAm = ee.FeatureCollection(GATE.wd_NorthAmerica
+  + "NDVI_Gradient_Analysis/"
+  + NGA.continentalTransects_FileName);
+
+var transects_As = ee.FeatureCollection(GATE.wd_Asia
+  + "NDVI_Gradient_Analysis/"
+  + NGA.continentalTransects_FileName);
+
+var transects_NorAm_As = transects_NorAm
+  .merge(transects_As);
+
+var transects_World = ee.FeatureCollection(GATE.wd_Global
+  + "NDVI_Gradient_Analysis/"
+  + NGA.globalTransectsWithID_FileName);
+
+var newIDs_World = transects_World.filter(ee.Filter.notNull(["CL_newID"]));
+
+var IDs_World = transects_World.filter(ee.Filter.notNull(["CL_ID"]));
+
+
+/* Check the numbers of transects with duplicate IDs. */
+
+print("North America:", 
+  transects_NorAm.size().subtract(
+    transects_NorAm.aggregate_count_distinct("CL_newID")
+  ));
+
+print("Asia:", 
+  transects_As.size().subtract(
+    transects_As.aggregate_count_distinct("CL_newID")
+  ));
+
+print("Combined:", 
+  transects_NorAm_As.size().subtract(
+    transects_NorAm_As.aggregate_count_distinct("CL_newID")
+  ));
+
+print("newIDs_World:", 
+  newIDs_World.size().subtract(
+    newIDs_World.aggregate_count_distinct("CL_newID")
+  ));
+
+print("IDs_World:", 
+  IDs_World.size().subtract(
+    IDs_World.aggregate_count_distinct("CL_ID")
+  ));
+
+
+/* Check the numbers of distinct IDs. */
+
+print("North America + Asia:", 
+  transects_NorAm.aggregate_count_distinct("CL_newID").add(
+    transects_As.aggregate_count_distinct("CL_newID")
+  )); // 1922256.
+
+print("Combined:", 
+  transects_NorAm_As.aggregate_count_distinct("CL_newID")); // 1922256.
+
+print("newIDs_World:", 
+  newIDs_World.aggregate_count_distinct("CL_newID")); // 1922256.
+

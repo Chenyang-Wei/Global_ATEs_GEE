@@ -1,0 +1,229 @@
+/**
+ * Introduction:
+ * 1) Visualize the medial axis and selected basins in each continent.
+ * 
+ * Update: 10/1/2021.
+ */
+
+
+/* Load module(s). */
+
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var VIS = require("users/ChenyangWei/Public:Modules/Visualization");
+var IMG = require("users/ChenyangWei/Public:Modules/Image_Analysis&Processing");
+
+
+/* New Climate-based ATE. */
+
+var readCATE = VIS.readNewCATE;
+
+// North America.
+var newCATE_NA = readCATE(GATE.wd_NorthAmerica);
+
+// South America.
+var newCATE_SA = readCATE(GATE.wd_SouthAmerica);
+
+// Africa.
+var newCATE_Af = readCATE(GATE.wd_Africa);
+
+// Oceania.
+var newCATE_Oc = readCATE(GATE.wd_Oceania);
+
+// Europe.
+var newCATE_Eu = readCATE(GATE.wd_Europe);
+
+// Asia.
+var newCATE_As = readCATE(GATE.wd_Asia);
+
+// IMG.printImgInfo("newCATE_SA:", newCATE_SA);
+
+// Global.
+var newCATE = ee.ImageCollection.fromImages([newCATE_NA,
+  newCATE_SA,
+  newCATE_Af,
+  newCATE_Oc,
+  newCATE_Eu,
+  newCATE_As]).mosaic();
+
+
+/* The squared distance to the nearest ridges/valleys 
+  at each pixel along the medial axis. */
+
+var readMedialAxis = VIS.readMedialAxisSqDist;
+
+// North America.
+var medialAxis_sqDist_NA = readMedialAxis(GATE.wd_NorthAmerica);
+
+// South America.
+var medialAxis_sqDist_SA = readMedialAxis(GATE.wd_SouthAmerica);
+
+// Africa.
+var medialAxis_sqDist_Af = readMedialAxis(GATE.wd_Africa);
+
+// Oceania.
+var medialAxis_sqDist_Oc = readMedialAxis(GATE.wd_Oceania);
+
+// Europe.
+var medialAxis_sqDist_Eu = readMedialAxis(GATE.wd_Europe);
+
+// IMG.printImgInfo("medialAxis_sqDist_Eu:", medialAxis_sqDist_Eu);
+
+// Asia AOIs.
+var readMedialAxis_Asia = VIS.readMedialAxisSqDist_AsiaAOIs;
+
+var medialAxis_sqDist_As = ee.ImageCollection.fromImages([readMedialAxis_Asia("1"),
+  readMedialAxis_Asia("3"),
+  readMedialAxis_Asia("4"),
+  readMedialAxis_Asia("5")]).mosaic();
+
+// Global.
+var medialAxis_sqDist = ee.ImageCollection.fromImages([medialAxis_sqDist_NA,
+  medialAxis_sqDist_SA,
+  medialAxis_sqDist_Af,
+  medialAxis_sqDist_Oc,
+  medialAxis_sqDist_Eu,
+  medialAxis_sqDist_As]).mosaic();
+
+
+/* The selected basins containing the medial axis. */
+
+var readBasins = VIS.readSelectedBasins;
+
+// North America.
+var selectedBasins_NA = readBasins(GATE.wd_NorthAmerica);
+
+// South America.
+var selectedBasins_SA = readBasins(GATE.wd_SouthAmerica);
+
+// Africa.
+var selectedBasins_Af = readBasins(GATE.wd_Africa);
+
+// Europe.
+var selectedBasins_Eu = readBasins(GATE.wd_Europe);
+
+// Europe.
+var selectedBasins_Oc = readBasins(GATE.wd_Oceania);
+
+// print(selectedBasins_NA.size(), selectedBasins_SA.size(),
+//   selectedBasins_Eu.size());
+
+// Asia AOIs.
+// var readBasins_Asia = VIS.readSelectedBasins_AsiaAOIs;
+var readBasins_Asia = VIS.readNonDuplicateBasins_AsiaAOIs;
+
+var selectedBasins_Asia_1 = readBasins_Asia("1");
+var selectedBasins_Asia_2 = readBasins_Asia("2");
+var selectedBasins_Asia_3 = readBasins_Asia("3");
+var selectedBasins_Asia_4 = readBasins_Asia("4");
+var selectedBasins_Asia_5 = readBasins_Asia("5");
+var selectedBasins_Asia_6 = readBasins_Asia("6");
+
+print("selectedBasins_Asia_1:", selectedBasins_Asia_1.first(),
+  selectedBasins_Asia_1.size());
+
+print("selectedBasins_Asia_2:", selectedBasins_Asia_2.size());
+
+print("selectedBasins_Asia_3:", selectedBasins_Asia_3.size());
+
+print("selectedBasins_Asia_4:", selectedBasins_Asia_4.size());
+
+print("selectedBasins_Asia_5:", selectedBasins_Asia_5.size());
+
+print("selectedBasins_Asia_6:", selectedBasins_Asia_6.size());
+
+
+
+/* Visualization. */
+
+Map.setOptions("satellite");
+
+Map.setCenter(95.6027, 30.058, 13); // Asia.
+
+
+/* Asia AOIs. */
+
+var vis3 = false;
+
+Map.addLayer(GATE.AOI_Asia_1, 
+  {color: "FF0000"}, 
+  "Asia_1", vis3);
+
+Map.addLayer(GATE.AOI_Asia_2, 
+  {color: "00FFFF"}, 
+  "Asia_2", vis3);
+
+Map.addLayer(GATE.AOI_Asia_3, 
+  {color: "00FF00"}, 
+  "Asia_3", vis3);
+
+Map.addLayer(GATE.AOI_Asia_4, 
+  {color: "0000FF"}, 
+  "Asia_4", vis3);
+
+Map.addLayer(GATE.AOI_Asia_5, 
+  {color: "FFFF00"}, 
+  "Asia_5", vis3);
+
+Map.addLayer(GATE.AOI_Asia_6, 
+  {color: "FF00FF"}, 
+  "Asia_6", vis3);
+
+
+Map.addLayer(newCATE, {palette: "FFFFFF"}, "newCATE", false, 0.5);
+
+Map.addLayer(medialAxis_sqDist, 
+  {min: 0, max: 500, palette: VIS.BWR_palette}, 
+  "medialAxis_sqDist", false);
+
+
+/* Basins. */
+
+var vis1 = false;
+
+Map.addLayer(selectedBasins_NA, 
+  {color: "FF0000"}, 
+  "selectedBasins_NA", vis1);
+
+Map.addLayer(selectedBasins_SA, 
+  {color: "00FFFF"}, 
+  "selectedBasins_SA", vis1);
+
+Map.addLayer(selectedBasins_Af, 
+  {color: "00FF00"}, 
+  "selectedBasins_Af", vis1);
+
+Map.addLayer(selectedBasins_Eu, 
+  {color: "0000FF"}, 
+  "selectedBasins_Eu", vis1);
+
+Map.addLayer(selectedBasins_Oc, 
+  {color: "FFFF00"}, 
+  "selectedBasins_Oc", vis1);
+
+
+var vis2 = true;
+
+Map.addLayer(selectedBasins_Asia_1, 
+  {color: "800000"}, 
+  "selectedBasins_Asia_1", vis2);
+
+Map.addLayer(selectedBasins_Asia_2, 
+  {color: "008080"}, 
+  "selectedBasins_Asia_2", vis2);
+
+Map.addLayer(selectedBasins_Asia_3, 
+  {color: "008000"}, 
+  "selectedBasins_Asia_3", vis2);
+
+Map.addLayer(selectedBasins_Asia_4, 
+  {color: "000080"}, 
+  "selectedBasins_Asia_4", vis2);
+
+Map.addLayer(selectedBasins_Asia_5, 
+  {color: "008080"}, 
+  "selectedBasins_Asia_5", vis2);
+
+Map.addLayer(selectedBasins_Asia_6, 
+  {color: "800080"}, 
+  "selectedBasins_Asia_6", vis2);
+

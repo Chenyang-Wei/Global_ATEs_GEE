@@ -1,0 +1,118 @@
+/**
+ * Introduction:
+ * 1) Union all the annual ATE segments within each transect.
+ * 
+ * Update: 4/29/2021.
+ * 
+ * Runtime: 3h.
+*/
+
+
+/* Data preparation. */
+
+// Set the working directory.
+var wdNA = "users/treeline/NorthAmerica_GME/";
+
+// Create a list of years.
+var years = [];
+
+for (var year = 1984; year <= 2020; year ++) {
+  years.push(year);
+}
+
+// print("years:", years)
+
+// Read the ATE segments in each year.
+var ATEsegments = years.map(function(year) {
+  // Load the annual ATE segments.
+  var annualSegName = "AnnualATEsegments_" + year;
+  var annualATEsegs = ee.FeatureCollection(wdNA + 
+    "Transect_Analysis/AnnualATEsegments_CenterLines_ATEIgtPt4329/" + 
+    annualSegName);
+  
+  return annualATEsegs;
+});
+
+ATEsegments = ee.FeatureCollection(ATEsegments).flatten();
+
+// print("ATEsegments:", 
+//   ATEsegments.first(),
+//   ATEsegments.size(), // 6385290.
+//   ATEsegments.aggregate_count_distinct("Year"), // 37.
+//   ATEsegments.aggregate_count_distinct("ID") // 496447.
+// )
+
+// Load the transect center lines with ID.
+var centerLines = ee.FeatureCollection(wdNA + 
+  "Transect_Analysis/" + 
+  "TransectCL_withID_20210405");
+
+// print("centerLines:", centerLines.first(), // With ID.
+//   centerLines.size()) // 703172.
+
+
+/* Union the annual ATE segments in each transect. */
+
+// Create a ID filter to define a match as sharing the same ID.
+var ID_filter = ee.Filter.equals({
+  leftField: "ID", 
+  rightField: "ID"
+});
+
+// Define a join.
+var key = "ID_matches";
+
+var saveAllJoin = ee.Join.saveAll({
+  matchesKey: key,
+  outer: false // Primary rows without matches will NOT be included in the result.
+});
+
+// Apply the join to group the ATE segments by ID.
+var groupedATEsegs = ee.ImageCollection(saveAllJoin.apply({
+  primary: centerLines, 
+  secondary: ATEsegments, 
+  condition: ID_filter
+}));
+
+// print("groupedATEsegs:", 
+//   groupedATEsegs.first())
+
+// Union the geometries of the ATE segments.
+var unionedATEsegs = groupedATEsegs.map(function(CL_ATEsegs) {
+  // Extract the grouped ATE segments.
+  var ATEsegs = ee.FeatureCollection(ee.List(CL_ATEsegs.get(key)));
+  
+  // Get the number of the grouped annual ATE segments.
+  var annualSegCount = ATEsegs.size();
+  
+  // Union the geometries.
+  var unionedGeom = ATEsegs.union().first();
+  
+  // Copy and set the properties of interest.
+  var unionedSegs = unionedGeom.copyProperties({
+    source: CL_ATEsegs, 
+    exclude: [key]
+  }).set({
+    annualSegCount: annualSegCount
+  });
+  
+  return unionedSegs;
+});
+
+// print("unionedATEsegs:", 
+//   unionedATEsegs.first())
+
+
+if (true) {
+  // Output the result to the Asset.
+  var fileName = "ATEsegmentUnion_perCenterLine";
+  
+  Export.table.toAsset({
+    collection: unionedATEsegs, 
+    description: fileName, 
+    assetId: wdNA + 
+      "Transect_Analysis/" + 
+      fileName
+  });
+}
+

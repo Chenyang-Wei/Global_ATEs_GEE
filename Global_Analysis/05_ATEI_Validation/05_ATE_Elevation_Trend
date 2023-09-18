@@ -1,0 +1,159 @@
+/**
+ * Introduction:
+ * 
+ *  1) For each buffered sample, estimate the long-term mean, 
+ *    SD, and trend, and the observation number of 
+ *    the ATEI-weighted average elevation of each 
+ *    filtered annual Feature, respectively.
+ * 
+ * Updated: 6/8/2023.
+ * 
+ * Runtime: < 1m.
+ */
+
+
+/* Load module(s). */
+
+var ATEI_EA = require("users/ChenyangWei/Public:Modules/Treeline/ATEI_Estimation&Analysis.js");
+var FC_AP = require("users/ChenyangWei/Public:Modules/General/FeatureCollection_Analysis&Processing.js");
+var GATE = require("users/ChenyangWei/Public:Modules/Treeline/Global_ATE.js");
+
+
+/* Dataset loading. */
+
+// Load the filtered annual features with 
+//  the ATEI-weighted average elevation.
+var annualFtrs_Filtered = ee.FeatureCollection(
+  GATE.wd_Global 
+  + "ATEI_Validation/2020Lu_MetaAnalysis/" 
+  + "Filtered_AnnualFeatures_5kmBuffered");
+
+// Load buffered validation points.
+var rawSamples_Global = ee.FeatureCollection(
+  GATE.wd_Global 
+  + "ATEI_Validation/2020Lu_MetaAnalysis/" 
+  + "ATEelevation_3yearMedian_5kmBuffered"
+);
+
+
+/* Create Reducers for the temporal analysis. */
+
+// Sen's slope Reducer for estimating the temporal trend.
+//  (Note: The inputs are expected to be x data followed by y data.
+//  It returns two double values; the estimated slope and the offset.)
+var sens_Reducer = ee.Reducer.sensSlope()
+  .setOutputs(["ATEelv_Trd", "ATEelv_Int"]);
+
+// Reducer for calculating the long-term mean.
+//  (Note: as the Sen's slope Reducer has unweighted inputs,
+//  the mean Reducer inputs have to be unweighted.)
+var mean_Reducer = ee.Reducer.mean().unweighted()
+  .setOutputs(["ATEelv_Avg"]);
+
+// Reducer for calculating the long-term SD.
+var SD_Reducer = ee.Reducer.stdDev()
+  .setOutputs(["ATEelv_SD"]);
+
+// Reducer for counting the non-null annual variables.
+var count_Reducer = ee.Reducer.count()
+  .setOutputs(["ATEelv_Num"]);
+
+
+/* Combine the temporal-analysis Reducers. */
+
+var meanSD_Reducer = mean_Reducer
+  .combine({
+    reducer2: SD_Reducer, 
+    sharedInputs: true
+  });
+
+var meanSDcount_Reducer = meanSD_Reducer.combine({
+  reducer2: count_Reducer, 
+  sharedInputs: true
+});
+
+var combined_Reducers = sens_Reducer
+  .combine({
+    reducer2: meanSDcount_Reducer, 
+    sharedInputs: false // Using different inputs.
+  });
+
+
+/* Perform the temporal analysis. */
+
+// Conduct the grouped reduction by sample.
+var temporalVars_List = ee.List(annualFtrs_Filtered
+  .reduceColumns({
+    selectors: ["Year", "annual_WtdAvgElv", // Sen's slope.
+                "annual_WtdAvgElv", // Other Reducers.
+                "Number"],
+    reducer: combined_Reducers.group({
+      groupField: 3,
+      groupName: "Number",
+    })
+  }).get("groups"));
+
+// Convert the generated List to a FeatureCollection 
+//  without Geometries.
+var temporalVars_FtrCol = ee.FeatureCollection(
+  temporalVars_List.map(
+    function(grouped) {
+      
+      // Create a Feature with a NULL Geometry 
+      //  for each sample.
+      return ee.Feature(null).set(grouped);
+    }));
+  
+// Combine each temporal variable Feature with 
+//  the corresponding sample Feature
+//  and keep the unique properties of the former one.
+var samples_TemporalVars = 
+  FC_AP.combine_twoFtrCols_byCommonProperty(
+    rawSamples_Global, 
+    temporalVars_FtrCol, 
+    "Number"
+  );
+
+
+/* Check the data or export the final result. */
+
+// Whether output the result. (true OR false)
+var output = true;
+
+if (!output) {
+  
+  FC_AP.Print_FtrColInfo(
+    "annualFtrs_Filtered:", 
+    annualFtrs_Filtered
+  ); // Size: 3365.
+  
+  FC_AP.Print_FtrColInfo(
+    "rawSamples_Global:", 
+    rawSamples_Global
+  );
+  
+  FC_AP.Print_FtrColInfo(
+    "samples_TemporalVars:", 
+    samples_TemporalVars
+  ); // Size: 109.
+  
+} else {
+  
+  var fileName = "ATEelevationTrend_5kmBuffered_2020Lu";
+  
+  Export.table.toDrive({
+    collection: samples_TemporalVars, 
+    description: fileName, 
+    folder: fileName, 
+    fileFormat: "SHP"
+  });
+  
+  Export.table.toAsset({
+    collection: samples_TemporalVars, 
+    description: fileName, 
+    assetId: GATE.wd_Global 
+      + "ATEI_Validation/2020Lu_MetaAnalysis/" 
+      + fileName
+  });
+}
+

@@ -1,0 +1,168 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var testing1 = 
+    /* color: #d63000 */
+    /* displayProperties: [
+      {
+        "type": "rectangle"
+      }
+    ] */
+    ee.Geometry.Polygon(
+        [[[-114.57669504227852, 49.39299365253969],
+          [-114.57669504227852, 48.27211680621954],
+          [-113.21988351884102, 48.27211680621954],
+          [-113.21988351884102, 49.39299365253969]]], null, false),
+    testing2 = 
+    /* color: #d63000 */
+    /* displayProperties: [
+      {
+        "type": "rectangle"
+      }
+    ] */
+    ee.Geometry.Polygon(
+        [[[-106.28931075053409, 40.929010576487165],
+          [-106.28931075053409, 39.054937246235234],
+          [-105.4085974894855, 39.054937246235234],
+          [-105.4085974894855, 40.929010576487165]]], null, false),
+    testing3 = 
+    /* color: #d63000 */
+    /* displayProperties: [
+      {
+        "type": "rectangle"
+      }
+    ] */
+    ee.Geometry.Polygon(
+        [[[-124.38362597036749, 48.211323170578844],
+          [-124.38362597036749, 47.287996046914124],
+          [-122.88948534536749, 47.287996046914124],
+          [-122.88948534536749, 48.211323170578844]]], null, false),
+    testing4 = 
+    /* color: #98ff00 */
+    /* displayProperties: [
+      {
+        "type": "rectangle"
+      }
+    ] */
+    ee.Geometry.Polygon(
+        [[[-126.44999246312285, 58.915334418503924],
+          [-126.44999246312285, 58.18161734468816],
+          [-124.30765847874785, 58.18161734468816],
+          [-124.30765847874785, 58.915334418503924]]], null, false);
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+/*
+  Introduction:
+  1) Compare the focal median elevation with the focal mean elevation in four testing regions.
+  
+  Date: 7/20/2020.
+*/
+
+
+/* Setup. */
+
+// Asset path.
+var wdNorthA = "users/treeline/NorthAmerica_GME/";
+
+// Load the climatic ATE.
+var CATE = ee.Image(wdNorthA + "CATE/" +
+  "500mCATE_3kmSurrounding_gte10kmClsdFrstElvFocalMean_10kmClsdFrstBuffer");
+
+// ALOS elevation.
+var ALOSelv = ee.Image('JAXA/ALOS/AW3D30/V2_2').select('AVE_DSM');
+
+
+/* Smooth the elevation. */
+
+// Define a circular smoothing kernel of 10 pixels.
+var Kn = ee.Kernel.circle({
+  radius: 10 // Default units: "pixels".
+}); 
+
+// This function smooths an image by calculating its focal value within each kernel.
+var smoothing = function(img, Rd) {
+  var smoothed = img.reduceNeighborhood({
+    // The median reducer is less smooth than the mean reducer, 
+    // but the former one makes the spatial variation of NDVI more abrupt (i.e., less gradual).
+    reducer: Rd,
+    kernel: Kn,
+    skipMasked: false // Do NOT mask output pixels if the corresponding input pixel is masked.
+  }).reproject({
+    crs: "EPSG:4326",
+    scale: 30
+  });
+  
+  // Mask the result with the study domain (i.e., the CATE).
+  var masked = smoothed.updateMask(CATE);
+  
+  return masked.float(); // Convert the PixelType to float.
+};
+
+// Apply the smoothing function.
+var medianElv = smoothing(ALOSelv, ee.Reducer.median()).rename("median");
+var meanElv = smoothing(ALOSelv, ee.Reducer.mean()).rename("mean");
+
+// print("medianElv:", medianElv.bandTypes(),
+//   medianElv.projection().crs(),
+//   medianElv.projection().nominalScale())
+
+// print("meanElv:", meanElv.bandTypes(),
+//   meanElv.projection().crs(),
+//   meanElv.projection().nominalScale())
+
+
+/* Plot the correlation between the median and mean smoothing results. */
+
+var multiBand = medianElv.addBands(meanElv);
+
+var reduced1 = multiBand.reduceRegion({
+  reducer: ee.Reducer.pearsonsCorrelation(), 
+  geometry: testing1, 
+  crs: "EPSG:4326",
+  scale: 30, 
+  maxPixels: 1e13
+});
+
+var reduced2 = multiBand.reduceRegion({
+  reducer: ee.Reducer.pearsonsCorrelation(), 
+  geometry: testing2, 
+  crs: "EPSG:4326",
+  scale: 30, 
+  maxPixels: 1e13
+});
+
+var reduced3 = multiBand.reduceRegion({
+  reducer: ee.Reducer.pearsonsCorrelation(), 
+  geometry: testing3, 
+  crs: "EPSG:4326",
+  scale: 30, 
+  maxPixels: 1e13
+});
+
+var reduced4 = multiBand.reduceRegion({
+  reducer: ee.Reducer.pearsonsCorrelation(), 
+  geometry: testing4, 
+  crs: "EPSG:4326",
+  scale: 30, 
+  maxPixels: 1e13
+});
+
+print("Correlation - Testing 1", reduced1.get("correlation"))
+print("Correlation - Testing 2", reduced2.get("correlation"))
+print("Correlation - Testing 3", reduced3.get("correlation"))
+print("Correlation - Testing 4", reduced4.get("correlation"))
+
+
+/* Visualization. */
+  
+var elvPalette = ['006600', '002200', 'fff700', 'ab7634', 'c4d0ff', 'ffffff'];
+var elvVis = {min: 1000, max: 3500, palette: elvPalette};
+
+Map.setCenter(-113.7571, 48.829, 12);
+Map.setOptions("hybrid");
+
+Map.addLayer(ALOSelv.updateMask(CATE), elvVis, "ALOSelv", true);
+
+// Map.addLayer(CATE, {palette: "0000FF"}, "CATE", false, 0.5);
+
+Map.addLayer(medianElv, elvVis, "medianElv");
+
+Map.addLayer(meanElv, elvVis, "meanElv");
+

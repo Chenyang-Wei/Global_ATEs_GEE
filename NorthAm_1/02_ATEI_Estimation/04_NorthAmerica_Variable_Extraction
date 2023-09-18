@@ -1,0 +1,207 @@
+/**
+ * Introduction:
+ * 
+ *  1) Smooth the ALOS elevation within the 300m-buffered climatic ATE (CATE) 
+ *    by calculating its focal MEAN within a 10-pixel circular kernel.
+ * 
+ *  2) Calculate the median value of the smoothed annual maximum NDVIs
+ *    over the previous FIVE years of the image collection date.
+ * 
+ *  3) Generate the ATEI variables based on the gradients of the smoothed elevation
+ *    and the five-year NDVI median.
+ * 
+ *  4) Extract the ATEI variables at each sample point.
+ * 
+ * Update: 11/10/2022.
+ * 
+ * Runtime: 1m.
+*/
+
+
+/* Load module(s). */
+
+var IMG = require("users/ChenyangWei/Public:Modules/Image_Analysis&Processing");
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+
+
+/* Setup. */
+
+// Determine the target projection.
+var targetPrj = IMG.WGS84_30m;
+
+// Set the area of interest.
+var AOI = GATE.AOI_NorthAmerica;
+
+// Set the major working directory.
+var wd_Main = GATE.wd_NorthAmerica;
+
+// Load and reproject the ALOS elevation in the AOI.
+var ALOSelv = GATE.load_ALOSelevation(AOI, targetPrj);
+
+// IMG.printImgInfo("ALOSelv", ALOSelv);
+
+// Load the buffered new CATE.
+//  (Choose the 300-m buffer because the NDVI-smoothing kernel
+//    is a 10-pixel (10*30m) circle.)
+var bufNewCATE = ee.Image(wd_Main
+  + "Climate-Based_ATE/"
+  + "300mBuffered_30mNewCATE_AOI")
+  .reproject(targetPrj);
+
+// IMG.printImgInfo("bufNewCATE", bufNewCATE);
+
+// Load the combined samples within the new CATE.
+var samples = ee.FeatureCollection(wd_Main
+  + "ATEI_Estimation/"
+  + "ManualRandomStratified_CombinedSamples_In30mNewCATE");
+
+// print("samples:", samples.sort("withinATE").first(), 
+//   samples.size(), 
+//   samples.geometry().projection().crs());
+
+// Read the smoothed annual maximum NDVIs in the buffered new CATE 
+//  from 1984 to 2020 as an Image.
+var raw_AnnualSmdNDVIs = ee.Image(wd_Main 
+  + "ATEI_Estimation/" 
+  + "medianSmdAnnualMaxNDVI_1984to2020_cloudShadowMasked_300mBufNewCATE_AOI")
+  .reproject(targetPrj);
+
+// IMG.printImgInfo("raw_AnnualSmdNDVIs", raw_AnnualSmdNDVIs);
+
+
+/* Smooth the ALOS elevation within the 300m-buffered new CATE 
+  by calculating its focal MEAN within a 10-pixel circular kernel. */
+
+// Extract elevation within the buffered new CATE.
+var bufCATEelv = ALOSelv.updateMask(bufNewCATE);
+
+// Define a circular kernel of 10 pixels.
+var Kn = ee.Kernel.circle({
+  radius: 10,
+  units: "pixels"
+}); 
+
+// Calculate the focal MEAN within the kernel.
+var smdElv = bufCATEelv.reduceNeighborhood({
+  // The MEAN reducer is smoother than the median reducer, 
+  //  which then provides a less scattered gradient direction dataset.
+  reducer: ee.Reducer.mean(),
+  kernel: Kn,
+  skipMasked: true // MASK output pixels if the corresponding input pixel is masked.
+}).reproject(targetPrj); // Reproject to the target projection.
+
+// IMG.printImgInfo("smdElv", smdElv);
+
+
+/* Generate the gradient direction of the smoothed elevation. */
+
+// Compute the elevation gradient in the X and Y directions.
+var elvGrad = smdElv.gradient()
+  .reproject(targetPrj);
+
+// Compute the direction of the elevation gradient.
+var elvDir = elvGrad.select("y").atan2(elvGrad.select("x"))
+  .reproject(targetPrj)
+  .rename("elvDir");
+
+
+/* Extract the ATEI variables based on the gradients of
+  the smoothed elevation and the median NDVI over the previous FIVE years 
+  of the image collection date. */
+
+// Obtain the years of image collection.
+var yearList = samples.aggregate_array("Year")
+  .distinct().sort();
+
+// print("yearList:", yearList);
+
+// Generate a list of variables at all sample points.
+var sampledVarList = yearList.map(function(year) {
+  
+  var lastYearNum = ee.Number(year);
+  
+  var firstYearNum = lastYearNum.subtract(4);
+  
+  // Create a list of band names for the previous FIVE years.
+  var fiveYears_List = ee.List.sequence(firstYearNum, lastYearNum);
+  
+  var bandNames_List = fiveYears_List.map(function(yearNum) {
+    
+    // When directly convert a "floating point" to a "string", 
+    //  the result contains a ".", which isn't allowed in band names.
+    var yearInt = ee.Number(yearNum).int();
+    var yearString = ee.String(yearInt);
+    
+    // Define the band name of each year.
+    var bandName = ee.String("smdNDVI_").cat(yearString);
+    
+    return bandName;
+  });
+  
+  // Extract annual NDVIs of the previous FIVE years.
+  var fiveYearNDVIs = raw_AnnualSmdNDVIs.select(bandNames_List);
+  
+  // Calculate the median NDVI.
+  var medianNDVI = fiveYearNDVIs.reduce(ee.Reducer.median())
+    .reproject(targetPrj)
+    .rename("medianNDVI");
+  
+  // Compute the NDVI gradient in the X and Y directions.
+  var NDVIgrad = medianNDVI.gradient()
+    .reproject(targetPrj);
+  
+  // Compute the direction of the NDVI gradient.
+  var NDVIdir = NDVIgrad.select("y").atan2(NDVIgrad.select("x"))
+    .reproject(targetPrj)
+    .rename("NDVIdir");
+
+  // Compute the magnitude of the NDVI gradient. 
+  //  ("hypot" calculates the magnitude of the 2D vector [x, y].)
+  var NDVImag = NDVIgrad.select("y").hypot(NDVIgrad.select("x"))
+    .reproject(targetPrj)
+    .rename("NDVImag");
+  
+  // Combine the computed NDVI variables and
+  //  the elevation-gradient direction.
+  var combinedVars = medianNDVI.addBands(NDVIdir)
+    .addBands(NDVImag)
+    .addBands(elvDir)
+    .reproject(targetPrj);
+  
+  // Select the samples collected in the same year.
+  var selectedSamples = samples.filter(ee.Filter.eq("Year", year));
+  
+  // Get the variables at each selected sample.
+  var sampledVars = combinedVars.reduceRegions({
+    collection: selectedSamples, 
+    reducer: ee.Reducer.first(), 
+    scale: targetPrj.scale, 
+    crs: targetPrj.crs
+  });
+  
+  return sampledVars;
+});
+
+// Convert the list of sampled variables to a FeatureCollection.
+var sampledVarFC = ee.FeatureCollection(sampledVarList).flatten();
+
+// print ("sampledVarFC:", 
+//   sampledVarFC.first().propertyNames(),
+//   sampledVarFC.size());
+
+
+if (true) {
+  
+  /* Export the result to Drive. */
+  
+  var fileName = "CombinedSamples_GradientVars_FiveYrNDVImedian";
+  
+  // Drive.
+  Export.table.toDrive({
+    collection: sampledVarFC,
+    description: fileName, 
+    folder: fileName,
+    fileFormat: "SHP"
+  }); 
+}
+

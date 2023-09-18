@@ -1,0 +1,169 @@
+/*
+  Introduction:
+  1) Plot the distribution of each extracted variable.
+  2) Map out the sampled points.
+  
+  Date:
+  9/2/2020.
+*/
+
+
+/* Setup. */
+
+// Asset path.
+var wdNorthA = "users/treeline/NorthAmerica_GME/";
+
+// Read the previously extracted data.
+// var filtered = ee.FeatureCollection(wdNorthA + "Pixel_Sampling/Random/" +
+//   "testing_extractedVariables_900PointsFiltered_NorthAmerica");
+
+// Alaska samples.
+var filtered = ee.FeatureCollection(wdNorthA + "Pixel_Sampling/Random/" +
+  "extractedVariables_Alaska");
+
+// print("filtered:", filtered.first(), filtered.size())
+print("filtered:", filtered, filtered.size())
+
+// Raw annual NDVI.
+var ndviL5L7 = ee.Image(wdNorthA + "Annual_NDVI/" +
+  "RawMedianSmdAnlMaxNDVI_gradMagDir_L5L7_1984to2013").select("r.*");
+
+var ndviL8 = ee.Image(wdNorthA + "Annual_NDVI/" +
+  "RawMedianSmdAnlMaxNDVI_gradMagDir_L8_2014to2019").select("r.*");
+
+var rawNDVI = ndviL5L7.addBands(ndviL8);
+
+// Temporal average NDVI.
+var avgNDVI = rawNDVI.reduce(ee.Reducer.mean()).rename("avgNDVI")
+  .reproject({
+    crs: "EPSG:4326",
+    scale: 30
+  });
+
+
+/* Define a function to generate the histograms of sampled variables of each pixel class. */
+
+var seriesColors = {
+  0: {color: 'blue'},
+  1: {color: 'darkgreen'},
+  2: {color: 'orange'}
+};
+
+function generateHistogram(chartName, variable, min, max, steps) {
+  // Create fixed histograms by pixel classes.
+  var oldHist = ee.List(filtered.reduceColumns({
+    selectors: [variable, 'Class'],
+    reducer: ee.Reducer.fixedHistogram({
+      min: min, 
+      max: max, 
+      steps: steps
+    }).group({
+      groupField: 1,
+      groupName: 'Pixel_Class',
+    })
+  }).get("groups"));
+  
+  // Process the old histogram for plotting.
+  var newHist = ee.FeatureCollection(oldHist.map(function(element) {
+    // Extract the histogram of each pixel class.
+    var pixelClass = ee.Dictionary(element).get("Pixel_Class");
+    var histogram = ee.Array(ee.Dictionary(element).get("histogram")).toList();
+  
+    // Separate the value and count in each histogram.
+    histogram = ee.FeatureCollection(histogram.map(function(element) {
+      var value = ee.List(element).get(0);
+      var count = ee.List(element).get(1);
+      
+      return ee.Feature(null).set({
+        Pixel_Class: pixelClass,
+        Value: value,
+        Count: count
+      });
+    }));
+    
+    return histogram;
+  })).flatten();
+  
+  // Create a chart.
+  var chart = ui.Chart.feature.groups({
+    features: newHist, 
+    xProperty: "Value", 
+    yProperty: "Count", 
+    seriesProperty: "Pixel_Class"
+  }).setChartType('AreaChart')
+    .setOptions({
+      title: chartName,
+      series: seriesColors
+    });
+    
+  return chart;
+}
+
+
+/* Create histograms by variables. */
+
+// GEDI forest canopy height. 
+print(generateHistogram("GEDI forest canopy height", 
+  "Canopy_Height", 0, 40, 41)); // Doesn't work for Alaska.
+
+// Temporal average NDVI. 
+print(generateHistogram("Temporal average NDVI", 
+  "avgNDVI", 0, 1, 50));
+
+// Gaussian component.
+print(generateHistogram("Gaussian component", 
+  "gaussian", 0, 1, 50));
+
+// NDVI gradient magnitude.
+print(generateHistogram("NDVI gradient magnitude", 
+  "NDVImag", 0, 0.01, 50));
+
+// Angle between the gradients of NDVI and elevation.
+print(generateHistogram("Angle between the gradients of NDVI and elevation", 
+  "NDVIelvAngle", 0, 6.3, 64));
+
+// Orientation component.
+print(generateHistogram("Orientation component", 
+  "orientation", 0, 1, 50));
+
+// Elevation.
+// print(generateHistogram("Elevation", 
+//   "AVE_DSM", 1000, 4500, 50));
+print(generateHistogram("Elevation", 
+  "AVE_DSM", 700, 1800, 50)); // Alaska.
+
+// Elevation gradient magnitude.
+print(generateHistogram("Elevation gradient magnitude", 
+  "elvMag", 0, 1, 50));
+
+
+if (true) {
+  /* Visualization. */
+  
+  // Divide the extracted variables into the three classes of pixels.
+  var Above = filtered.filter(ee.Filter.eq("Class", "Above"));
+  var Within = filtered.filter(ee.Filter.eq("Class", "Within"));
+  var Below = filtered.filter(ee.Filter.eq("Class", "Below"));
+  
+  Map.setOptions("hybrid");
+  // Map.setCenter(-123.888, 53.755, 5);
+  Map.setCenter(-123.98912, 50.26572, 13);
+  
+  // GEDI forest canopy height.
+  var height = ee.ImageCollection("users/potapovpeter/GEDI_V27");
+  
+  Map.addLayer(height, {min: 0, max: 40, palette: "FFFFFF, FF0000"}, "GEDI forest canopy height");
+
+  var ndvi_palette =
+      'FFFFFF, CE7E45, DF923D, F1B555, FCD163, 99B718, 74A901, 66A000, 529400,' +
+      '3E8601, 207401, 056201, 004C00, 023B01, 012E01, 011D01, 011301';
+  
+  Map.addLayer(avgNDVI, 
+    {min: 0, max: 1, palette: ndvi_palette}, 
+    "Temporally average NDVI", false, 1);
+  
+  Map.addLayer(Above, {color: "blue"}, "Above", true, 1);
+  Map.addLayer(Below, {color: "darkgreen"}, "Below", true, 1);
+  Map.addLayer(Within, {color: "orange"}, "Within", true, 1);
+}
+

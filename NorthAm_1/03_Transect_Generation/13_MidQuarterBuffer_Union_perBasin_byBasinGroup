@@ -1,0 +1,70 @@
+/**
+ * Introduction:
+ * 1) Union the mid-segment buffers of each basin into one MultiPolygon
+ *  by basin group.
+ * 
+ * Update: 10/20/2021.
+ * 
+ * Total update number: 1.
+ * 
+ * Runtime: 17m ~ 22m.
+ */
+
+
+/* Load module(s). */
+
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+
+
+/* Data and function preparation. */
+
+// Set the major working directory.
+var wd_Main = GATE.wd_NorthAmerica
+  + "Elevational_Transect_Generation/"; /**** 1) Need to update. ****/
+
+// Determine the universal file path of the mid-segment buffers with Hybas IDs.
+var wd_Buffers = wd_Main
+  + GATE.midQuarterBuffers_withHybasIDs_fileName
+  + "/"
+  + GATE.midQuarterBuffers_withHybasIDs_byBasinGroup_fileName;
+
+
+/* Operations by basin group (1 ~ 5). */
+
+for (var basinGroupID = 1; basinGroupID <= 5; basinGroupID ++) {
+  
+  // Load the mid-segment buffers with Hybas IDs of each basin group.
+  var midQuarterBuffers_withIDs = ee.FeatureCollection(wd_Buffers
+    + basinGroupID);
+  
+  
+  /* Union the mid-segment buffers of each basin into one MultiPolygon. */
+  
+  var unioned_MidQuarterBuffers = GATE.unionMidSegmentBuffers_perBasin(midQuarterBuffers_withIDs);
+
+
+  if (false) { // true OR false.
+    
+    print("basinGroupID:", basinGroupID);
+    
+    print("midQuarterBuffers_withIDs:", 
+      midQuarterBuffers_withIDs.first(),
+      midQuarterBuffers_withIDs.size());
+
+  } else {
+    //// Export the results by basin group.
+    var wd_Output = wd_Main
+      + GATE.unionedMultiPolygons_perBasin_fileName
+      + "/";
+    
+    var fileName = GATE.unionedMultiPolygons_perBasin_byBasinGroup_fileName
+      + basinGroupID;
+    
+    Export.table.toAsset({
+      collection: unioned_MidQuarterBuffers, 
+      description: fileName, 
+      assetId: wd_Output + fileName
+    });
+  }
+}
+

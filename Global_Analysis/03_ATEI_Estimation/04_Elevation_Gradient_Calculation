@@ -1,0 +1,179 @@
+/**
+ * Introduction:
+ * 
+ *  1) Smooth the ALOS elevation in the 300m-buffered 
+ *    climatic ATE by calculating its focal "median" 
+ *    within a 10-pixel circular kernel.
+ * 
+ *  2) Estimate the gradient direction of 
+ *    the smoothed elevation in the study domain 
+ *    (i.e., the un-buffered climatic ATE).
+ * 
+ * Runtime: (shared).
+ * 
+ * Update: 2/14/2023.
+*/
+
+
+/* Module loading. */
+
+var IMG = require("users/ChenyangWei/Public:Modules/General/Image_Analysis&Processing.js");
+
+var ATEI_EA = require("users/ChenyangWei/Public:Modules/Treeline/ATEI_Estimation&Analysis.js");
+
+var GATE = require("users/ChenyangWei/Public:Modules/Treeline/Global_ATE.js");
+
+
+/* Object definition. */
+
+// Determine the 30-m projection.
+var prj_30m = IMG.WGS84_30m;
+
+// Create a list of the working directories.
+var WDs_List = ATEI_EA.WDs_AllContinents_List;
+
+// Define a list of the AOIs.
+var AOIs_List = ATEI_EA.AOIs_AllContinents_List;
+
+// Define a circular kernel of 10 pixels.
+var Kn_10pxCir = ee.Kernel.circle({
+  radius: 10,
+  units: "pixels"
+}); 
+
+// Define a "median" reducer 
+//  (same as the NDVI smoothing metric).
+var median_Reducer = ee.Reducer.median();
+
+
+/* Function definition. */
+
+// Define a function to load and reproject 
+//  the 300-buffered CATE of each continent.
+var Read_BufferedCATE = function(wd_Cont) {
+  var bufferedCATE_Cont = ee.Image(wd_Cont
+    + "Climate-Based_ATE/"
+    + "300mBuffered_30mNewCATE_AOI")
+    .reproject(prj_30m);
+  
+  return bufferedCATE_Cont;
+};
+
+// Define a function to load and reproject 
+//  the un-buffered CATE of each continent.
+var Read_RawCATE = function(wd_Cont) {
+  var rawCATE_Cont = ee.Image(wd_Cont
+    + "Climate-Based_ATE/" 
+    + GATE.newCATE_fileName)
+    .reproject(prj_30m);
+  
+  return rawCATE_Cont;
+};
+
+
+/* Acquire the information of each continent. */
+
+// Whether or not export the result.
+var output = true;
+
+// Determine the continent ID (0 ~ 5).
+var contID = 5;
+
+// Determine the working directory of the continent.
+var contWD = WDs_List[contID];
+
+// Determine the AOI of the continent.
+var contAOI = AOIs_List[contID];
+
+
+/* Read the buffered and raw CATEs. */
+
+var buffered_CATE = Read_BufferedCATE(contWD);
+
+var raw_CATE = Read_RawCATE(contWD);
+
+
+/* Load and smooth the buffered-CATE elevation. */
+
+// Load and reproject the ALOS elevation in the AOI.
+var raw_Elv = GATE.load_ALOSelevation(contAOI, prj_30m);
+
+// Extract the raw elevation in the buffered CATE.
+var rawElv_BufferedCATE = raw_Elv
+  .updateMask(buffered_CATE);
+
+// Calculate the focal median of the raw elevation.
+var medSmd_Elv = rawElv_BufferedCATE
+  .reduceNeighborhood({
+    reducer: median_Reducer,
+    kernel: Kn_10pxCir,
+    skipMasked: true
+    // Mask output pixels if 
+    //  the corresponding input pixels are masked.
+  }).reproject(prj_30m);
+
+
+/* Estimate the elevation's gradient direction. */
+
+// Compute the gradient of the smoothed elevation.
+var medElv_Grad = medSmd_Elv.gradient()
+  .reproject(prj_30m);
+
+// Derive the elevation's gradient direction 
+//  in the un-buffered CATE.
+var medElvDir_RawCATE = medElv_Grad.select("y")
+  .atan2(medElv_Grad.select("x"))
+  .updateMask(raw_CATE)
+  .reproject(prj_30m)
+  .float()
+  .rename("medElv_Dir");
+
+
+if (!output) {
+  
+  // Check the working directory.
+  print("contWD:", contWD);
+  
+  // Check the result.
+  IMG.printImgInfo("medElvDir_RawCATE:", 
+    medElvDir_RawCATE);
+  
+  // Visualize the datasets.
+  Map.setOptions("satellite");
+  Map.centerObject(contAOI, 6);
+  
+  Map.addLayer(contAOI, 
+    {color: "FFFFFF"}, 
+    "contAOI", 
+    true);
+  
+  Map.addLayer(raw_CATE, 
+    {palette: "00FFFF"}, 
+    "raw_CATE", 
+    true);
+  
+  Map.addLayer(medElvDir_RawCATE, 
+    {min: -Math.PI, max: Math.PI, 
+    palette: "0000FF, 00FF00, FF0000"}, 
+    "medElvDir_RawCATE", 
+    false);
+  
+} else {
+  
+  // Determine the output directory.
+  var outputWD = contWD + "ATEI_Estimation/";
+
+  // Export the result.
+  var fileName = "medianSmdElv_GradDir_NewCATE";
+  
+  Export.image.toAsset({
+    image: medElvDir_RawCATE,
+    description: fileName, 
+    assetId: outputWD + fileName, 
+    crs: prj_30m.crs,
+    scale: prj_30m.scale,
+    region: contAOI,
+    maxPixels: IMG.maxPxNum
+  }); 
+}
+

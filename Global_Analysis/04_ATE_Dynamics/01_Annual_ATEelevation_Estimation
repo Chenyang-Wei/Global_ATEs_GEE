@@ -1,0 +1,431 @@
+/**
+ * Introduction:
+ * 
+ *  1) Mask the annual ATEIs with an optimal threshold
+ *    and weight the raw elevation with the masked ATEIs
+ *    by year.
+ * 
+ *  2) Calculate the ATEI-weighted average of elevation 
+ *    for each transect by year.
+ * 
+ *  3) Calculate the annual average NDVIs of each transect
+ *    and remove the generated annual Features with 
+ *    a NULL average NDVI.
+ * 
+ *  4) Count the NDVI pixels within the study domain
+ *    for each transect by year and remove the generated 
+ *    annual Features that have no NDVI pixel.
+ * 
+ *  5) Compute the ratio between the NDVI pixel number 
+ *    and the elevation pixel number for each annual Feature.
+ * 
+ * Updated: 6/2/2023.
+ * 
+ * Runtime: 22m ~ 4h.
+ */
+
+
+/* Load module(s). */
+
+var IMG = require("users/ChenyangWei/Public:Modules/General/Image_Analysis&Processing.js");
+var ATEI_EA = require("users/ChenyangWei/Public:Modules/Treeline/ATEI_Estimation&Analysis.js");
+var GATE = require("users/ChenyangWei/Public:Modules/Treeline/Global_ATE.js");
+var TNA = require("users/ChenyangWei/Public:Modules/Treeline/Transect_NDVI_Analysis.js");
+
+
+/* Object definition. */
+
+// Determine the continent ID (0 ~ 5).
+var contID = 5;
+
+// Whether output the result. (true OR false)
+var output = true; // Folder name: "ATE_Dynamics".
+
+// Determine the target projection.
+var targetPrj = IMG.WGS84_30m;
+
+// Create a list of the working directories.
+var WDs_List = ATEI_EA.WDs_AllContinents_List;
+
+// Define a list of the AOIs.
+var AOIs_List = ATEI_EA.AOIs_AllContinents_List;
+
+// Define a list of the GMBA regions.
+var Regions_List = ATEI_EA.GMBA_Regions_List;
+
+
+/* Function definition. */
+
+// Define a function to load and reproject the new CATE 
+//  of each continent.
+var Read_NewCATE = function(wd_Cont) {
+  var newCATE_Cont = ee.Image(wd_Cont
+    + "Climate-Based_ATE/" 
+    + GATE.newCATE_fileName)
+    .reproject(targetPrj);
+  
+  return newCATE_Cont;
+};
+
+// Define a function to load the annual NDVIs of
+//  the new CATE during 1985-2020 
+//  in continents other than North America.
+var Read_AnnualNDVIs_NewCATE = function(wd_Cont, newCATE_Cont) {
+  
+  // Load the raw annual NDVIs.
+  var rawAnnualNDVIs_Cont = 
+    TNA.loadAnnualNDVIs_nonNorthAmerica(wd_Cont)
+      .reproject(targetPrj)
+      .updateMask(newCATE_Cont);
+  
+  // Remove the annual NDVI of 1984.
+  var annualNDVIs_no1984_Cont = 
+    IMG.RemoveBands_fromImage(rawAnnualNDVIs_Cont, 
+      ["smdNDVI_1984"]);
+
+  return annualNDVIs_no1984_Cont;
+};
+
+
+// Define a function to load the annual ATEIs in 
+//  the new CATE of each continent.
+var Read_AnnualATEIs = function(wd_Cont) {
+  var annualATEIs_Cont = ee.Image(wd_Cont
+    + "ATEI_Estimation/" 
+    + "annualATEIs_1985to2020_NewCATE")
+    .reproject(targetPrj);
+  
+  return annualATEIs_Cont;
+};
+
+
+/* Acquire the information of each continent. */
+
+// Determine the working directory of the continent.
+var contWD = WDs_List[contID];
+
+// Determine the AOI of the continent.
+var contAOI = AOIs_List[contID];
+
+
+/* Dataset loading. */
+
+// Load the new CATE.
+var newCATE = Read_NewCATE(contWD);
+
+// Load and reproject the ALOS elevation in the new CATE.
+var ALOSelv_newCATE = GATE.load_ALOSelevation(contAOI, targetPrj)
+  .updateMask(newCATE);
+
+
+/* Load the pre-processed transects with NDVI and EG trends. */
+
+if (contID === 5) {
+  
+  // Combine "Asia" and "Pacific Ocean".
+  var transects_Cont = ee.FeatureCollection(GATE.wd_Global
+    + "NDVI_Gradient_Analysis/"
+    + "Preprocessed_Transects_Gte30obs_NegEGmean")
+    .filter(
+      ee.Filter.or(
+        ee.Filter.eq("Regn_GMBA", "Asia"),
+        ee.Filter.eq("Regn_GMBA", "Pacific Ocean")));
+
+} else {
+  
+  // Other continents.
+  var GMBA_region = Regions_List[contID];
+  
+  var transects_Cont = ee.FeatureCollection(GATE.wd_Global
+    + "NDVI_Gradient_Analysis/"
+    + "Preprocessed_Transects_Gte30obs_NegEGmean")
+    .filter(ee.Filter.eq("Regn_GMBA", GMBA_region));
+}
+
+
+/* Load the annual NDVIs and ATEIs during 1985-2020
+  in the new CATE by continent. */
+
+var annualNDVIs_NewCATE, annualATEIs_Raw;
+
+if (contID === 0) {
+  
+  /* North America. */
+  
+  // Load the raw annual NDVIs in North America.
+  var rawAnnualNDVIs_NewCATE = ee.Image(GATE.wd_NorthAmerica
+    + "ATEI_Estimation/"
+    + TNA.annualMaxNDVI_300mBufNewCATE_NorthAmerica_fileName)
+    .reproject(targetPrj)
+    .updateMask(newCATE);
+  
+  // Remove the annual NDVI of 1984.
+  annualNDVIs_NewCATE = 
+    IMG.RemoveBands_fromImage(rawAnnualNDVIs_NewCATE, 
+      ["smdNDVI_1984"]);
+
+  // Load the annual ATEIs.
+  annualATEIs_Raw = Read_AnnualATEIs(contWD);
+
+} else if (contID === 5) {
+  
+  /* Asia. */
+  
+  // Load the annual NDVIs.
+  annualNDVIs_NewCATE = Read_AnnualNDVIs_NewCATE(
+    GATE.wd_Asia_2, newCATE);
+  
+  // Load the annual ATEIs.
+  annualATEIs_Raw = Read_AnnualATEIs(GATE.wd_Asia_2);
+
+}else if (contID === 4) {
+  
+  /* Europe. */
+  
+  // Load the annual NDVIs.
+  annualNDVIs_NewCATE = Read_AnnualNDVIs_NewCATE(
+    contWD, newCATE);
+
+  // Load the annual ATEIs.
+  annualATEIs_Raw = Read_AnnualATEIs(GATE.wd_Europe_2);
+
+} else {
+  
+  /* Other continents. */
+  
+  // Load the annual NDVIs.
+  annualNDVIs_NewCATE = Read_AnnualNDVIs_NewCATE(
+    contWD, newCATE);
+  
+  // Load the annual ATEIs.
+  annualATEIs_Raw = Read_AnnualATEIs(contWD);
+}
+
+
+/* Calculate the ATEI-weighted average of elevation. */
+
+// Mask the annual ATEIs with an optimal threshold.
+var ATEI_thres = 0.5460715;
+
+var thres_Mask = annualATEIs_Raw.gt(ATEI_thres);
+
+var annualATEIs_Masked = annualATEIs_Raw
+  .updateMask(thres_Mask);
+
+// Weight the raw elevation with the masked ATEIs.
+var annual_WeightedElv = annualATEIs_Masked
+  .multiply(ALOSelv_newCATE);
+
+
+/* Combine the images by year. */
+
+var years_List = ee.List.sequence(1985, 2020);
+
+var annualImgs_List = years_List.map(function(year_Num) {
+  
+  // Convert the "year" from a Number to a String 
+  //  (without a ".").
+  var year_Int = ee.Number(year_Num).int();
+  var year_Str = ee.String(year_Int);
+  
+  // Derive the band names of NDVI and ATEI.
+  var NDVI_bandName_Str = ee.String("smdNDVI_")
+    .cat(year_Str);
+  
+  var ATEI_bandName_Str = ee.String("ATEI_")
+    .cat(year_Str);
+  
+  // Select the images of each year.
+  var annualNDVI = annualNDVIs_NewCATE.select(
+    [NDVI_bandName_Str], ["annual_NDVI"]);
+  
+  var annualATEI = annualATEIs_Masked.select(
+    [ATEI_bandName_Str], ["annual_ATEI"]);
+  
+  var annual_WtdElv = annual_WeightedElv.select(
+    [ATEI_bandName_Str], ["annual_WtdElv"]);
+  
+  // Combine the annual images.
+  var annual_Img = annualNDVI
+    .addBands(annualATEI)
+    .addBands(annual_WtdElv);
+  
+  // Store the year number as a property.
+  annual_Img = annual_Img
+    .set("Year", year_Int);
+  
+  return annual_Img;
+});
+
+var annualImgs_ImgCol = 
+  ee.ImageCollection.fromImages(annualImgs_List);
+
+
+/* Defining Reducers. */
+
+// Generate a Reducer for calculating the annual average NDVIs.
+var NDVI_meanReducer = ee.Reducer.mean().unweighted()
+  .setOutputs(["annual_AvgNDVI"]);
+
+// Define a Reducer for counting the annual NDVI pixels.
+var NDVI_countReducer = ee.Reducer.count()
+  .setOutputs(["annual_NDVI_PN"]);
+
+// Combine the unweighted mean Reducer and pixel counting Reducer.
+var NDVI_combinedReducer = NDVI_meanReducer.combine({
+  reducer2: NDVI_countReducer, 
+  sharedInputs: true
+});
+
+// Define a Reducer for summing the annual masked ATEIs.
+var ATEI_sumReducer = ee.Reducer.sum().unweighted()
+  .setOutputs(["annual_ATEI_sum"]);
+
+// Define a Reducer for summing the annual weighted elevation.
+var wtdElv_sumReducer = ee.Reducer.sum().unweighted()
+  .setOutputs(["annual_WtdElv_sum"]);
+
+// Combine the NDVI and ATEI Reducers.
+var NDVI_ATEI_combinedReducer = 
+  NDVI_combinedReducer.combine({
+    reducer2: ATEI_sumReducer, 
+    sharedInputs: false
+  });
+
+// Combine all the annual Reducers.
+var combined_AnnualReducers = 
+  NDVI_ATEI_combinedReducer.combine({
+    reducer2: wtdElv_sumReducer, 
+    sharedInputs: false
+  });
+
+// Construct a Filter to remove the annual features that
+//  have a NULL average NDVI or no NDVI pixel.
+var nonNull_Filter = ee.Filter.and(
+  ee.Filter.notNull(["annual_AvgNDVI"]),
+  ee.Filter.gt("annual_NDVI_PN", 0)
+);
+
+// Create a non-duplicate list of the Hybas IDs.
+var HybasID_list = transects_Cont.aggregate_array("Hybas_ID")
+  .distinct();
+
+
+/* Derive the annual attributes of each transect by basin. */
+
+var allYearsResults_AllBasins_List = HybasID_list.map(function(HybasID) {
+  
+  // Create a Filter of the Hybas ID.
+  var HybasID_filter = ee.Filter.eq("Hybas_ID", HybasID);
+  
+  // Identify the transects of each basin.
+  var rawTransects_perBasin = transects_Cont
+    .filter(HybasID_filter);
+  
+  
+  /* Average and count NDVI and sum ATEI and the weighted elevation by year. */
+
+  var allYearsResults_perBasin = annualImgs_ImgCol.map(function(annualImg) {
+  
+    // Apply the combined annual Reducers.
+    var oneYearResults_perBasin = annualImg.reduceRegions({
+      collection: rawTransects_perBasin, 
+      reducer: combined_AnnualReducers,
+      scale: targetPrj.scale, 
+      crs: targetPrj.crs
+    });
+    
+    // Obtain the corresponding year property.
+    var yearProperty = annualImg.get("Year");
+    
+    // Add a year property to each generated annual Feature.
+    var oneYearResults_withYear_perBasin = oneYearResults_perBasin
+      .map(function(annualFeature) {
+        
+        return annualFeature.set({
+          Year: yearProperty
+        });
+      });
+    
+    return oneYearResults_withYear_perBasin;
+  });
+
+  
+  /* Remove the generated annual features that 
+    have a NULL average NDVI or no NDVI pixel. */
+
+  var allYearsResults_nonNull_perBasin = 
+    allYearsResults_perBasin.flatten()
+      .filter(nonNull_Filter);
+  
+  
+  /* Calculate the annual NDVI pixel number ratio and 
+    the weighted average elevation for each transect. */
+  
+  var allYearsResults_withProperties_perBasin =
+    allYearsResults_nonNull_perBasin.map(function(annualFtr) {
+      
+      // Compute the pixel number ratio of each year.
+      var NDVIpixelNum = annualFtr.get("annual_NDVI_PN");
+      
+      var elvPixelNum = annualFtr.get("newCATEelv");
+      
+      var pixelNumRatio = ee.Number(NDVIpixelNum)
+        .divide(elvPixelNum);
+      
+      // Calculate the annual weighted average elevation.
+      var ATEI_sum = annualFtr.get("annual_ATEI_sum");
+      
+      var wtdElv_sum = annualFtr.get("annual_WtdElv_sum");
+      
+      var wtdAvgElv = ee.Number(wtdElv_sum)
+        .divide(ATEI_sum);
+      
+      // Derive a centroid with the properties 
+      //  to save computation resources.
+      var annualFtr_Centroid_withProperties = 
+        annualFtr.centroid().set({
+          annual_PN_ratio: pixelNumRatio,
+          annual_WtdAvgElv: wtdAvgElv
+        });
+      
+      return annualFtr_Centroid_withProperties;
+    });
+  
+  return allYearsResults_withProperties_perBasin;
+});
+
+// Convert the result a FeatureCollection.
+var allYearsResults_AllBasins_FtrCol = 
+  ee.FeatureCollection(allYearsResults_AllBasins_List)
+    .flatten();
+
+// Select properties of interest.
+var allYearsResults_AllBasins_SelectedProperties = 
+  allYearsResults_AllBasins_FtrCol
+    .select({
+      propertySelectors: ["transectID", "Year", "annual_.*"]
+    });
+
+
+/* Check or export the final result. */
+
+if (!output) {
+  
+  print(transects_Cont.aggregate_array("Regn_GMBA")
+    .distinct(),
+    transects_Cont.size());
+  
+} else {
+  
+  var outputWD = contWD + "ATE_Dynamics/";
+
+  var fileName = "AnnualFtrs_ATEIwtd_AvgElv";
+  
+  Export.table.toAsset({
+    collection: allYearsResults_AllBasins_SelectedProperties, 
+    description: fileName, 
+    assetId: outputWD
+      + fileName
+  });
+}

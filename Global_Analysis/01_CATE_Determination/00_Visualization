@@ -1,0 +1,114 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var ATECs = ee.FeatureCollection("users/treeline/Global/Elevational_Transects/Alpine_Treeline_Elevational_Transect_Centroids_v1_0"),
+    ATETs = ee.FeatureCollection("users/treeline/Global/Elevational_Transects/Alpine_Treeline_Elevational_Transects_v1_0");
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+/**
+ * Introduction:
+ * 
+ *  1) Combine and output the climate-based ATEs (CATEs) worldwide.
+ * 
+ *  2) Visualize the elevational transects and their centroids worldwide.
+ * 
+ * Update: 11/10/2022.
+ */
+
+
+/* Load module(s). */
+
+var IMG = require("users/ChenyangWei/Public:Modules/Image_Analysis&Processing");
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+
+
+/* Setup. */
+
+// Determine the target projection.
+// var targetPrj = IMG.WGS84_30m;
+
+
+/* Data loading. */
+
+// Define a function to read the CATEs in each continent.
+function Read_ContCATE(wd_Cont) {
+  var CATE = ee.Image(wd_Cont
+    + "Climate-Based_ATE/" 
+    + GATE.newCATE_fileName)
+    // .reproject(targetPrj);
+
+  return CATE;
+}
+
+// Load and combine the CATEs of all continents.
+var global_CATE = ee.ImageCollection.fromImages([
+    Read_ContCATE(GATE.wd_Africa),
+    Read_ContCATE(GATE.wd_Oceania),
+    Read_ContCATE(GATE.wd_Europe),
+    Read_ContCATE(GATE.wd_SouthAmerica),
+    Read_ContCATE(GATE.wd_NorthAmerica),
+    Read_ContCATE(GATE.wd_Asia),
+  ]).mosaic()
+  // .reproject(targetPrj);
+
+// IMG.printImgInfo("global_CATE", global_CATE);
+
+
+var output = false;
+
+if (!output) {
+  
+  // Visualize the result.
+  Map.setOptions("satellite");
+  
+  Map.setCenter(7.7537, 46.0153, 12); // Zermatt.
+  
+  Map.addLayer(global_CATE, {palette: "0000FF"}, "Broad ATEs", true, 0.5);
+  Map.addLayer(ATETs, {color: "FF0000"}, "ATETs");
+  Map.addLayer(ATECs, {color: "FFFF00"}, "ATECs");
+
+} else {
+  
+  var fileName = GATE.globalNewCATE_fileName;
+  
+  // Export the result to Asset.
+  Export.image.toAsset({
+    image: global_CATE,
+    description: fileName, 
+    assetId: GATE.wd_Global + "Climate-Based_ATE/"
+      + fileName, 
+    crs: targetPrj.crs,
+    scale: targetPrj.scale,
+    region: AOI,
+    maxPixels: IMG.maxPxNum
+  });
+  
+  // // Export the result to Drive.
+  // Export.image.toDrive({
+		// image: global_CATE,
+  // 	description: fileName,
+  // 	folder: fileName,
+  // 	region:,
+  // 	scale:,
+  // 	crs:,
+  // 	crsTransform:,
+  // 	maxPixels:,
+  // 	shardSize:,
+  // 	fileDimensions:,
+  // 	skipEmptyTiles:,
+  // 	fileFormat: "GeoTIFF"
+  // });
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

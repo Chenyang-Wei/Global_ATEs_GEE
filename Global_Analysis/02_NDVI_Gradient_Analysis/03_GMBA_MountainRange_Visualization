@@ -1,0 +1,56 @@
+/**
+ * Introduction:
+ * 
+ * 1) Visualize the GMBA mountain ranges.
+ * 
+ * 2) Display global transects by mountain range.
+ * 
+ * 
+ * Update: 5/6/2022.
+ */
+
+
+/* Load module(s). */
+
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var FC_AP = require("users/ChenyangWei/Public:Modules/FeatureCollection_Analysis&Processing");
+var VIS = require("users/ChenyangWei/Public:Modules/Visualization");
+
+
+/* Data loading. */
+
+// Set the major working directory.
+var wd_Main = GATE.wd_Global;
+
+// Load the global transects.
+var transects = ee.FeatureCollection(wd_Main
+  + "NDVI_Gradient_Analysis/"
+  + "filtered_GlobalTransects_GMBAv2_BrLv03");
+
+FC_AP.Print_FtrColInfo("transects:", 
+  transects);
+
+// Load the GMBA mountain ranges.
+var mountainRanges = ee.FeatureCollection(wd_Main
+  + "GMBA/V2_0/"
+  + "GMBA_broad_Level_03");
+
+FC_AP.Print_FtrColInfo("mountainRanges:", 
+  mountainRanges);
+
+
+/* Visualization. */
+
+Map.setOptions("satellite");
+Map.setCenter(-115.1944, 48.9588, 8);
+
+
+Map.addLayer(VIS.paintFtrCol_Edge(
+  mountainRanges, "V2ID_Broad", 2).randomVisualizer(), 
+  {}, 
+  "Mountain Ranges", true);
+
+Map.addLayer(VIS.paintFtrCol_FillANDEdge(
+  transects, "V2ID_Broad", 2).randomVisualizer(), 
+  {}, 
+  "Transects", true);

@@ -1,0 +1,388 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var Comparison = 
+    /* color: #d63000 */
+    /* shown: false */
+    ee.Geometry.MultiPoint(
+        [[-109.7622166204352, 44.23154082598232],
+         [-119.33163636919174, 53.45018719934242],
+         [-65.75715430614369, -17.23416032744941],
+         [10.486541381430584, 46.736806225689094]]);
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+/**
+ * Introduction:
+ * 
+ *  1) Visualize the raw 30-m and the smoothed 3-km
+ *    open-forest NDVIs in the climatic ATE.
+ * 
+ *  2) Visualize the raw 30-m and the smoothed 3-km
+ *    non-forested NDVIs in the climatic ATE.
+ * 
+ *  3) Visualize the raw 30-m and the smoothed 3-km
+ *    closed-forest NDVIs in the climatic ATE.
+ * 
+ * Runtime: N/A.
+ * 
+ * Update: 1/26/2022.
+*/
+
+
+/* Load module(s). */
+
+var ATEI_EA = require("users/ChenyangWei/Public:Modules/Treeline/ATEI_Estimation&Analysis.js");
+var GATE = require("users/ChenyangWei/Public:Modules/Treeline/Global_ATE.js");
+var TNA = require("users/ChenyangWei/Public:Modules/Treeline/Transect_NDVI_Analysis.js");
+var VIS = require("users/ChenyangWei/Public:Modules/General/Visualization.js");
+
+
+/* Object definition. */
+
+// Create a list of the working directories.
+var WDs_List = ATEI_EA.WDs_AllContinents_List;
+
+
+/* Function definition. */
+
+// Define a function to load the 30-m open-forest NDVI 
+//  in the new CATE of each continent.
+var Read_OpenForestNDVI_30m = function(wd_Cont) {
+  var openForestNDVI_Cont = ee.Image(wd_Cont
+    + "ATEI_Estimation/OpenForestNDVI/" 
+    + "30mTemporalMedianNDVI_OpenForests_NewCATE");
+  
+  return openForestNDVI_Cont;
+};
+
+// Define a function to load the 3-km smoothed
+//  open-forest NDVI of each continent.
+var Read_SmoothedOpenfNDVI_3km = function(wd_Cont) {
+  var smoothedNDVI_Cont = ee.Image(wd_Cont
+    + "ATEI_Estimation/OpenForestNDVI/" 
+    + "3kmSmoothed_OpenForestNDVI_NewCATE");
+  
+  return smoothedNDVI_Cont;
+};
+
+// Define a function to load the 30-m non-forested NDVI 
+//  in the new CATE of each continent.
+var Read_NonForestedNDVI_30m = function(wd_Cont) {
+  var nonForestedNDVI_Cont = ee.Image(wd_Cont
+    + "ATEI_Estimation/NonForestedNDVI/" 
+    + "30mTemporalMedianNDVI_NonForested_NewCATE");
+  
+  return nonForestedNDVI_Cont;
+};
+
+// Define a function to load the 3-km smoothed
+//  non-forested NDVI of each continent.
+var Read_SmoothedNonfNDVI_3km = function(wd_Cont) {
+  var smoothedNDVI_Cont = ee.Image(wd_Cont
+    + "ATEI_Estimation/NonForestedNDVI/" 
+    + "3kmSmoothed_NonForestedNDVI_NewCATE");
+  
+  return smoothedNDVI_Cont;
+};
+
+// Define a function to load the 30-m closed-forest NDVI 
+//  in the new CATE of each continent.
+var Read_ClosedForestNDVI_30m = function(wd_Cont) {
+  var closedForestNDVI_Cont = ee.Image(wd_Cont
+    + "ATEI_Estimation/ClosedForestNDVI/" 
+    + "30mTemporalMedianNDVI_ClosedForests_NewCATE");
+  
+  return closedForestNDVI_Cont;
+};
+
+// Define a function to load the 3-km smoothed
+//  closed-forest NDVI of each continent.
+var Read_SmoothedClosedfNDVI_3km = function(wd_Cont) {
+  var smoothedNDVI_Cont = ee.Image(wd_Cont
+    + "ATEI_Estimation/ClosedForestNDVI/" 
+    + "3kmSmoothed_ClosedForestNDVI_NewCATE");
+  
+  return smoothedNDVI_Cont;
+};
+
+// Define a function to load the annual maximum NDVI 
+//  of 2020 in continents other than North America.
+var bandName_Str = "smdNDVI_2020";
+
+var Read_AnnualNDVI_2020 = function(wd_Cont) {
+  var annualNDVI_Cont = TNA.loadAnnualNDVIs_nonNorthAmerica(wd_Cont)
+    .select(bandName_Str);
+  
+  return annualNDVI_Cont;
+};
+
+
+/* Read the 30-m NDVIs worldwide. */
+
+var openForestNDVI_30m = ee.ImageCollection.fromImages([
+  Read_OpenForestNDVI_30m(WDs_List[0]),
+  Read_OpenForestNDVI_30m(WDs_List[1]),
+  Read_OpenForestNDVI_30m(WDs_List[2]),
+  Read_OpenForestNDVI_30m(WDs_List[3]),
+  Read_OpenForestNDVI_30m(WDs_List[4]),
+  Read_OpenForestNDVI_30m(WDs_List[5])
+]).mosaic();
+
+var nonForestedNDVI_30m = ee.ImageCollection.fromImages([
+  Read_NonForestedNDVI_30m(WDs_List[0]),
+  Read_NonForestedNDVI_30m(WDs_List[1]),
+  Read_NonForestedNDVI_30m(WDs_List[2]),
+  Read_NonForestedNDVI_30m(WDs_List[3]),
+  Read_NonForestedNDVI_30m(WDs_List[4]),
+  Read_NonForestedNDVI_30m(WDs_List[5])
+]).mosaic();
+
+var closedForestNDVI_30m = ee.ImageCollection.fromImages([
+  Read_ClosedForestNDVI_30m(WDs_List[0]),
+  Read_ClosedForestNDVI_30m(WDs_List[1]),
+  Read_ClosedForestNDVI_30m(WDs_List[2]),
+  Read_ClosedForestNDVI_30m(WDs_List[3]),
+  Read_ClosedForestNDVI_30m(WDs_List[4]),
+  Read_ClosedForestNDVI_30m(WDs_List[5])
+]).mosaic();
+
+
+/* Read the 3-km smoothed NDVIs. */
+
+var smoothedOpenfNDVI_3km = ee.ImageCollection.fromImages([
+  Read_SmoothedOpenfNDVI_3km(WDs_List[0]),
+  Read_SmoothedOpenfNDVI_3km(WDs_List[1]),
+  Read_SmoothedOpenfNDVI_3km(WDs_List[2]),
+  Read_SmoothedOpenfNDVI_3km(WDs_List[3]),
+  Read_SmoothedOpenfNDVI_3km(WDs_List[4]),
+  Read_SmoothedOpenfNDVI_3km(WDs_List[5])
+]).mosaic();
+
+var smoothedNonfNDVI_3km = ee.ImageCollection.fromImages([
+  Read_SmoothedNonfNDVI_3km(WDs_List[0]),
+  Read_SmoothedNonfNDVI_3km(WDs_List[1]),
+  Read_SmoothedNonfNDVI_3km(WDs_List[2]),
+  Read_SmoothedNonfNDVI_3km(WDs_List[3]),
+  Read_SmoothedNonfNDVI_3km(WDs_List[4]),
+  Read_SmoothedNonfNDVI_3km(WDs_List[5])
+]).mosaic();
+
+var smoothedClosedfNDVI_3km = ee.ImageCollection.fromImages([
+  Read_SmoothedClosedfNDVI_3km(WDs_List[0]),
+  Read_SmoothedClosedfNDVI_3km(WDs_List[1]),
+  Read_SmoothedClosedfNDVI_3km(WDs_List[2]),
+  Read_SmoothedClosedfNDVI_3km(WDs_List[3]),
+  Read_SmoothedClosedfNDVI_3km(WDs_List[4]),
+  Read_SmoothedClosedfNDVI_3km(WDs_List[5])
+]).mosaic();
+
+
+/* Read the annual maximum NDVI in 2020 worldwide. */
+
+var annualNDVI_2020 = ee.ImageCollection.fromImages([
+  ee.Image(GATE.wd_NorthAmerica
+    + "ATEI_Estimation/"
+    + TNA.annualMaxNDVI_300mBufNewCATE_NorthAmerica_fileName)
+    .select(bandName_Str),
+  Read_AnnualNDVI_2020(WDs_List[1]),
+  Read_AnnualNDVI_2020(WDs_List[2]),
+  Read_AnnualNDVI_2020(WDs_List[3]),
+  Read_AnnualNDVI_2020(WDs_List[4]),
+  Read_AnnualNDVI_2020(GATE.wd_Asia_2)
+]).mosaic();
+
+var mask = annualNDVI_2020.mask();
+
+
+/* Calculate the difference between the annual NDVI 
+  and the smoothed NDVIs. */
+
+var smoothedOpenfNDVI_diff = annualNDVI_2020
+  .subtract(smoothedOpenfNDVI_3km);
+
+var smoothedNonfNDVI_diff = annualNDVI_2020
+  .subtract(smoothedNonfNDVI_3km);
+
+var smoothedClosedfNDVI_diff = annualNDVI_2020
+  .subtract(smoothedClosedfNDVI_3km);
+
+var valueRange = function(img, lower, upper) {
+  
+  return img.gt(lower)
+    .and(img.lt(upper)).selfMask();
+};
+
+
+/* Calculate the land-cover NDVI differences. */
+
+var Openf_Nonf_NDVIdiff = smoothedOpenfNDVI_3km
+  .subtract(smoothedNonfNDVI_3km).abs();
+
+var Openf_Closedf_NDVIdiff = smoothedOpenfNDVI_3km
+  .subtract(smoothedClosedfNDVI_3km).abs();
+
+
+/* Determined the Gaussian component in Wei et al. (2020). */
+
+var Gaussian_Comp = 
+  annualNDVI_2020.subtract(0.44).divide(0.06)
+    .pow(2)
+    .multiply(-1 / 2).exp();
+
+
+if (true) {
+  
+  // Create a "background" rectangle.
+  var background = ee.Geometry.BBox(-179.9, -80, 179.9, 80);
+  
+  // Visualize the datasets.
+  Map.setOptions("satellite");
+  // Map.centerObject(contAOI, 6);
+  // Map.setCenter(169.42, -44.0553, 12); // New Zealand.
+  
+  Map.addLayer(background, {color: "FFFFFF"}, 
+    "background", true, 0.5);
+
+  // Annual NDVI of 2020.
+  Map.addLayer(annualNDVI_2020, VIS.NDVI_vis, 
+    "annualNDVI_2020", true);
+  
+  // Open forests.
+  Map.addLayer(smoothedOpenfNDVI_3km, VIS.NDVI_vis, 
+    "smoothedOpenfNDVI_3km", false);
+
+  Map.addLayer(openForestNDVI_30m, VIS.NDVI_vis, 
+    "openForestNDVI_30m", false);
+
+  Map.addLayer(valueRange(
+    // smoothedOpenfNDVI_diff, -0.19, -0.17), 
+    smoothedOpenfNDVI_diff, -0.02, 0.02), 
+    {
+      palette: "FF0000"
+    }, 
+    "smoothedOpenfNDVI_diff", 
+    true, 0.5);
+
+  Map.addLayer(openForestNDVI_30m.mask()
+    .selfMask(), 
+    {palette: "FF8B00"}, 
+    "openForestNDVI_30m_Mask", 
+    true, 0.5);
+
+  // Map.addLayer(smoothedOpenfNDVI_diff, 
+  //   {
+  //     min: -0.19, 
+  //     max: -0.17, 
+  //     palette: "FFFFFF, FF0000, FFFFFF"
+  //   }, 
+  //   "smoothedOpenfNDVI_diff", 
+  //   true, 0.5);
+
+  // Old Gaussian component.
+  Map.addLayer(Gaussian_Comp.gt(0.5).selfMask(), 
+    {min: 0, max: 1, 
+      palette: "0000FF"}, 
+    "Gaussian_Comp", 
+    true, 0.5);
+  
+  // Land-cover NDVI differences.
+  Map.addLayer(Openf_Nonf_NDVIdiff, 
+    {min: 0, max: 0.3, 
+      palette: "0000FF, FFFFFF, FF0000"}, 
+    "Openf_Nonf_NDVIdiff", 
+    true, 1);
+  
+  Map.addLayer(Openf_Closedf_NDVIdiff, 
+    {min: 0, max: 0.3, 
+      palette: "0000FF, FFFFFF, FF0000"}, 
+    "Openf_Closedf_NDVIdiff", 
+    true, 1);
+  
+  // // Non-forested areas.
+  // Map.addLayer(smoothedNonfNDVI_3km, VIS.NDVI_vis, 
+  //   "smoothedNonfNDVI_3km", false);
+
+  // Map.addLayer(nonForestedNDVI_30m, VIS.NDVI_vis, 
+  //   "nonForestedNDVI_30m", false);
+
+  // Map.addLayer(smoothedNonfNDVI_diff, 
+  //   {
+  //     min: -0.32, 
+  //     max: 0.32, 
+  //     palette: "FF0000, FFFFFF, 0000FF, FFFFFF, FF0000"
+  //   }, 
+  //   "smoothedNonfNDVI_diff", 
+  //   true, 0.5);
+
+  // Map.addLayer(smoothedNonfNDVI_diff, 
+  //   {
+  //     min: -0.01, 
+  //     max: 0.01, 
+  //     palette: "FFFFFF, 0000FF, FFFFFF"
+  //   }, 
+  //   "smoothedNonfNDVI_diff", 
+  //   true, 0.5);
+
+  // Map.addLayer(valueRange(
+  //   smoothedNonfNDVI_diff, -0.01, 0.01), 
+  //   {
+  //     palette: "0000FF"
+  //   }, 
+  //   "smoothedNonfNDVI_diff", 
+  //   true, 1);
+
+  // // Closed forests.
+  // Map.addLayer(smoothedClosedfNDVI_3km, VIS.NDVI_vis, 
+  //   "smoothedClosedfNDVI_3km", false);
+
+  // Map.addLayer(closedForestNDVI_30m, VIS.NDVI_vis, 
+  //   "closedForestNDVI_30m", false);
+
+  // Map.addLayer(smoothedClosedfNDVI_diff, 
+  //   {
+  //     min: -0.26, 
+  //     max: -0.24, 
+  //     palette: "FFFFFF, 228B22, FFFFFF"
+  //   }, 
+  //   "smoothedClosedfNDVI_diff", 
+  //   true, 0.5);
+
+  // Map.addLayer(valueRange(
+  //   smoothedClosedfNDVI_diff, -0.01, 0.01), 
+  //   {
+  //     palette: "00FF00"
+  //   }, 
+  //   "smoothedClosedfNDVI_diff", 
+  //   true, 1);
+
+  // Map.addLayer(smoothedClosedfNDVI_3km
+  //   .subtract(smoothedOpenfNDVI_3km)
+  //   .updateMask(mask), 
+  //   {
+  //     min: -0.20, 
+  //     max: 0.20, 
+  //     palette: "FF0000, FFFFFF, 0000FF"
+  //   }, 
+  //   "Closed - Open", 
+  //   false, 1);
+
+  // Map.addLayer(smoothedOpenfNDVI_3km
+  //   .subtract(smoothedNonfNDVI_3km)
+  //   .updateMask(mask), 
+  //   {
+  //     min: -0.20, 
+  //     max: 0.20, 
+  //     palette: "FF0000, FFFFFF, 0000FF"
+  //   }, 
+  //   "Open - Non", 
+  //   false, 1);
+  
+  // Map.addLayer(smoothedClosedfNDVI_3km
+  //   .subtract(smoothedNonfNDVI_3km)
+  //   .updateMask(mask), 
+  //   {
+  //     min: -0.20, 
+  //     max: 0.20, 
+  //     palette: "FF0000, FFFFFF, 0000FF"
+  //   }, 
+  //   "Closed - Non", 
+  //   false, 1);
+}
+

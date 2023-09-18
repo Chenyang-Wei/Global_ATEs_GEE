@@ -1,0 +1,281 @@
+/*
+  Introduction:
+    1) Estimate the ATEI based on the gradients of the annual maximum and average NDVIs 
+      using a logistic regression model established in R.
+  
+  Update:
+    12/15/2020.
+  
+  Runtim: 
+  1）1984-1999：
+  2）2000-2019： 5h.
+*/
+
+
+/* Setup. */
+
+// Define the extent of North America. 
+var northAmerica = ee.Geometry.Polygon({
+    coords: [[[-165.69002926658334, 72.44551256468144],
+          [-169.40248634956492, 65.69009098298687],
+          [-172.25893166206492, 63.826281515474996],
+          [171.35638590722195, 52.855285271231274],
+          [-159.1340353549648, 17.264443722753843],
+          [-122.14862062448367, 9.59539750905343],
+          [-79.06711256993691, 6.243890041056693],
+          [-77.03677448989225, 7.40316087095261],
+          [-76.78408894301725, 8.990725120234067],
+          [-75.7244458156751, 12.403191738791786],
+          [-71.5276684719251, 13.751533985801833],
+          [-62.8264965969251, 11.651035844929385],
+          [-62.005942990095036, 9.999896817210585],
+          [-60.791953732282536, 9.96743692413247],
+          [-55.5884807162513, 13.889226127218825],
+          [-47.99315852039507, 58.68729606716915],
+          [-66.52860968724042, 71.51769835770313],
+          [-77.86650031224042, 74.25356562488685],
+          [-89.90751593724042, 74.22969620284344],
+          [-106.04844453284761, 74.3012200035139],
+          [-114.63975312659761, 74.20581277506923],
+          [-120.18954789130242, 74.88484689543225],
+          [-136.27353226630242, 74.6772015427699]]],
+    geodesic: true
+});
+
+// Asset path.
+var wdNorthA = "users/treeline/NorthAmerica_GME/";
+
+// Determine the study period.
+// Period 1: 1984-1999; Period 2: 2000-2019.
+var period_1 = true;
+
+if (period_1) {
+  // Load the the variables of annual maximum NDVIs from 1984 to 1999.
+  var maxNDVI = ee.Image(wdNorthA + "Annual_NDVI/" +
+    "medianSmdAnlMaxNDVI_gradMagDir_L5_1984to1999");
+  
+  // Load the the variables of annual average NDVIs from 2000 to 2019.
+  var avgNDVI = ee.Image(wdNorthA + "Annual_NDVI/" +
+    "medianSmdAnlAvgNDVI_gradMagDir_L5_1984to1999");
+  
+  // Determine the list of years.
+  var Years = ee.List.sequence(1984, 1999); // Period I.
+  
+} else {
+  // Load the the variables of annual maximum NDVIs from 2000 to 2019.
+  var maxL5L7 = ee.Image(wdNorthA + "Annual_NDVI/" +
+    "medianSmdAnlMaxNDVI_gradMagDir_L5L7_2000to2013");
+  
+  var maxL8 = ee.Image(wdNorthA + "Annual_NDVI/" +
+    "medianSmdAnlMaxNDVI_gradMagDir_L8_2014to2019");
+  
+  var maxNDVI = maxL5L7.addBands(maxL8);
+  
+  // Load the the variables of annual average NDVIs from 2000 to 2019.
+  var avgL5L7 = ee.Image(wdNorthA + "Annual_NDVI/" +
+    "medianSmdAnlAvgNDVI_gradMagDir_L5L7_2000to2013");
+  
+  var avgL8 = ee.Image(wdNorthA + "Annual_NDVI/" +
+    "medianSmdAnlAvgNDVI_gradMagDir_L8_2014to2019");
+  
+  var avgNDVI = avgL5L7.addBands(avgL8);
+  
+  // Determine the list of years.
+  var Years = ee.List.sequence(2000, 2019); // Period II.
+}
+
+// Load and rename the gradient direction of the mean-smoothed elevation.
+var elvDir = ee.Image(wdNorthA + "ATE_Detection/" +
+  "meanSmdElv_gradMagDir_ALOSv22").select(["direction"], ["elvDir"]);
+
+
+/* Estimate the annual ATEI. */
+
+var ATEI_list = Years.map(function(year) {
+  // When directly convert a "floating point" to a "string", 
+  // the result contains a ".", which isn't allowed in band names.
+  var yearName = ee.String(ee.Number(year).int());
+  
+  // Generate the variable names of each sampling year
+  // (shared by both the maximum and average NDVI variables).
+  var smdName = ee.String("sNDVI_").cat(yearName);
+  var magName = ee.String("mag_").cat(yearName);
+  var dirName = ee.String("dir_").cat(yearName);
+  
+  var ATEIname = ee.String("ATEI_").cat(yearName);
+  
+  
+  /* Generate the Gaussian components of ATEI. */
+
+  // Maximum NDVI.
+  var b_max = 0.4852;
+  
+  var denominator_max = -0.014792; // Negative value.
+  
+  var gausMax = maxNDVI.select(smdName)
+    .subtract(b_max).pow(2)
+    .divide(denominator_max)
+    .exp()
+    .rename("gausMax");
+  
+  // Average NDVI.
+  var b_avg = 0.1568;
+  
+  var denominator_avg = -0.0029645;
+  
+  var gausAvg = avgNDVI.select(smdName)
+    .subtract(b_avg).pow(2)
+    .divide(denominator_avg)
+    .exp()
+    .rename("gausAvg");
+  
+  
+  /* Generate the Orientation components of ATEI. */
+  
+  // Maximum NDVI.
+  var maxElvAgl = maxNDVI.select(dirName)
+    .subtract(elvDir).abs();
+  
+  var center_max = 3.0409;
+  
+  var determinedN_max = 13.5789;
+  
+  var cos_max = maxElvAgl.subtract(center_max).add(Math.PI);
+  
+  var base_max = ee.Image(1).subtract(cos_max.cos())
+    .divide(2);
+  
+  var orienMax = base_max.pow(determinedN_max)
+    .rename("orienMax");
+  
+  // Average NDVI.
+  var avgElvAgl = avgNDVI.select(dirName)
+    .subtract(elvDir).abs();
+  
+  var center_avg = 3.0423;
+  
+  var determinedN_avg = 13.8759;
+  
+  var cos_avg = avgElvAgl.subtract(center_avg).add(Math.PI);
+  
+  var base_avg = ee.Image(1).subtract(cos_avg.cos())
+    .divide(2);
+  
+  var orienAvg = base_avg.pow(determinedN_avg)
+    .rename("orienAvg");
+  
+  // Combine the three types of ATEI components.
+  var ATEIcomps = maxNDVI.select(magName).rename("maxNDVImag")
+    .addBands(gausMax)
+    .addBands(orienMax)
+    .addBands(avgNDVI.select(magName).rename("avgNDVImag"))
+    .addBands(gausAvg)
+    .addBands(orienAvg);
+  
+  
+  /* Fit the logistic regression model. */
+
+  // Determine the logit.
+  var logit = ATEIcomps.expression({
+    expression: '-3.4151 + 2093.9744 * maxNDVImag - 0.1655 * gausMax + 1.1115 * orienMax ' + 
+      '+ 1908.9281 * avgNDVImag + 3.1547 * gausAvg + 1.2713 * orienAvg',
+    map: {
+      'maxNDVImag': ATEIcomps.select('maxNDVImag'),
+      'gausMax': ATEIcomps.select('gausMax'),
+      'orienMax': ATEIcomps.select('orienMax'),
+      'avgNDVImag': ATEIcomps.select('avgNDVImag'),
+      'gausAvg': ATEIcomps.select('gausAvg'),
+      'orienAvg': ATEIcomps.select('orienAvg')
+    }
+  }); 
+  
+  // 100 fold, repeated 100 times.
+  // Accuracy: 0.8714242.
+  // Kappa: 0.7394934.
+  
+  // 10 fold, repeated 100 times.
+  // Accuracy: 0.8707928.
+  // Kappa: 0.7388478.
+  
+  var logitE = logit.exp();
+  
+  // Calculate the annual ATEI.
+  var annualATEI = logitE.divide(logitE.add(1))
+    .float() // Reduce the size of data.
+    .rename(ATEIname);
+
+  return annualATEI;
+});
+
+
+/* Convert the list of images to a multi-band image. */
+
+var ATEI_ic = ee.ImageCollection.fromImages(ATEI_list);
+
+function convert(current, previous) {
+  var converted = ee.Algorithms.If(
+    ee.Algorithms.IsEqual(previous, null), // Whether or not the first image.
+    current, // True: for the first image.
+    ee.Image(previous).addBands(current) // False: for the rest images.
+  );
+  
+  return converted;
+}
+
+var ATEI_img = ee.Image(ATEI_ic.iterate(convert));
+
+print("ATEI_img:", ATEI_img.bandTypes(), 
+  ATEI_img.projection().crs(), 
+  ATEI_img.projection().nominalScale())
+
+
+if (false) {
+  // Check the imported datasets.
+  print("maxNDVI:", maxNDVI.bandNames(), 
+    maxNDVI.projection().crs(), 
+    maxNDVI.projection().nominalScale())
+  
+  print("avgNDVI:", avgNDVI.bandNames(), 
+    avgNDVI.projection().crs(), 
+    avgNDVI.projection().nominalScale())
+
+  print("elvDir:", elvDir.bandNames(), 
+    elvDir.projection().crs(), 
+    elvDir.projection().nominalScale())
+
+  /* Visualization. */
+  
+  var point = ee.Geometry.Point([-113.49153672863031, 48.74125005784002]); // GNP.
+  
+  Map.setOptions("hybrid");
+  Map.centerObject(point, 12);
+  
+  if (period_1) {
+    Map.addLayer(ATEI_img.select("ATEI_1984"), {min: 0, max: 1, palette: "FFFFFF, FF0000"}, "ATEI_1984");
+    Map.addLayer(ATEI_img.select("ATEI_1999"), {min: 0, max: 1, palette: "FFFFFF, 0000FF"}, "ATEI_1999");
+  } else {
+    Map.addLayer(ATEI_img.select("ATEI_2000"), {min: 0, max: 1, palette: "FFFFFF, FF0000"}, "ATEI_2000");
+    Map.addLayer(ATEI_img.select("ATEI_2019"), {min: 0, max: 1, palette: "FFFFFF, 0000FF"}, "ATEI_2019");
+  }
+  
+} else if (true) {
+  
+  /* Output the result. */
+  
+  if (period_1) {
+    var fileName = "ATEI_medianSmdAnlMaxAvgNDVIs_1984to1999";
+  } else {
+    var fileName = "ATEI_medianSmdAnlMaxAvgNDVIs_2000to2019";
+  }
+  
+  Export.image.toAsset({
+    image: ATEI_img, 
+    description: fileName, 
+    assetId: wdNorthA + "Annual_ATEI/" + fileName,
+    region: northAmerica, 
+    crs: "EPSG:4326",
+    scale: 30,
+    maxPixels: 1e13
+  });
+}
+

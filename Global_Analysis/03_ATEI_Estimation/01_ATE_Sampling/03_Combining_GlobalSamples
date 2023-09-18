@@ -1,0 +1,141 @@
+/**
+ * Introduction:
+ * 
+ *  1) Add a "region" attribute to the samples in North America.
+ * 
+ *  2) Combine the samples in each continent.
+ * 
+ *  3) Check the spatial coverage of NDVI at sample points.
+ * 
+ * Runtime: < 1m.
+ * 
+ * Updated: 5/28/2023.
+*/
+
+
+/* Load module(s). */
+
+var ATEI_EA = require("users/ChenyangWei/Public:Modules/Treeline/ATEI_Estimation&Analysis.js");
+var GATE = require("users/ChenyangWei/Public:Modules/Treeline/Global_ATE.js");
+var FC_AP = require("users/ChenyangWei/Public:Modules/General/FeatureCollection_Analysis&Processing.js");
+var TNA = require("users/ChenyangWei/Public:Modules/Treeline/Transect_NDVI_Analysis.js");
+var VIS = require("users/ChenyangWei/Public:Modules/General/Visualization.js");
+
+
+/* Object definition. */
+
+// Create a list of the working directories.
+var WDs_List = ATEI_EA.WDs_AllContinents_List;
+
+
+/* Function definition. */
+
+// Define a function for adding the region name.
+var Add_Region = function(sample_Ftr) {
+  var sample_RegionAdded_Ftr = sample_Ftr
+    .set({
+      Region: "North_America"
+    });
+    
+  return sample_RegionAdded_Ftr;
+};
+
+// Import a function for checking FeatureCollections.
+var Check_FC = FC_AP.Print_FtrColInfo;
+
+// Define a function to load the annual NDVIs of 
+//  the buffered new CATE in continents 
+//  other than North America.
+var Read_AnnualNDVIs_BufferedCATE = function(wd_Cont) {
+  var annualNDVIs_Cont = TNA.loadAnnualNDVIs_nonNorthAmerica(wd_Cont);
+  
+  return annualNDVIs_Cont;
+};
+
+
+/* Dataset loading. */
+
+// Load the samples in North America.
+var samples_NorthAmerica = ee.FeatureCollection(GATE.wd_NorthAmerica
+  + "ATEI_Estimation/"
+  + "ManualRandomStratified_CombinedSamples_In30mNewCATE");
+
+// Load the samples in other continents.
+var samples_OtherContinents = ee.FeatureCollection(
+  GATE.wd_Global + 
+  "ATEI_Estimation/Manual_Sampling/" + 
+  "ManuallySampledPoints_ImgInfoAdded_No_NorthAmerica_Africa"
+);
+
+
+/* Add a "region" attribute to the samples in North America. */
+
+var samples_NorthAmerica_withRegion = samples_NorthAmerica
+  .map(Add_Region);
+
+
+/* Combine the samples in each continent. */
+
+var globalSamples = samples_NorthAmerica_withRegion
+  .merge(samples_OtherContinents);
+
+
+var output = false;
+
+if (!output) {
+  
+  /* Check the combined samples. */
+  
+  Check_FC("globalSamples:", 
+    globalSamples); // Size: 1970.
+
+  // Check the region names.
+  print(globalSamples.aggregate_array("Region")
+    .distinct()); // No Africa.
+
+  // Check the image years.
+  // print(globalSamples.aggregate_array("Year")
+  //   .distinct().sort()); // 2002 ~ 2020.
+  
+  // print(globalSamples.filter(
+  //   ee.Filter.eq("Region", "North_America"))
+  //   .aggregate_array("Year")
+  //   .distinct().sort()); // 2002 ~ 2019.
+  
+  print(globalSamples.filter(
+    ee.Filter.neq("Region", "North_America"))
+    .aggregate_array("Year")
+    .distinct().sort()); // 2009 ~ 2020.
+  
+  // Load the annual NDVIs.
+  var annualNDVIs = ee.ImageCollection.fromImages([
+    Read_AnnualNDVIs_BufferedCATE(WDs_List[1]),
+    Read_AnnualNDVIs_BufferedCATE(WDs_List[3]),
+    Read_AnnualNDVIs_BufferedCATE(WDs_List[4]),
+    Read_AnnualNDVIs_BufferedCATE(GATE.wd_Asia_2)
+  ]).mosaic();
+  
+  // Select the NDVI of one year to display.
+  Map.setOptions("Satellite");
+  
+  Map.addLayer(annualNDVIs.select("smdNDVI_2007"), 
+    VIS.NDVI_vis, 
+    "annualNDVIs");
+  
+  Map.addLayer(globalSamples, {color: "ff0000"}, 
+    "globalSamples");
+
+} else {
+  
+  /* Output the combined samples. */
+  
+  var fileName = "Raw_GlobalSamplePoints";
+  
+  Export.table.toAsset({
+    collection: globalSamples, 
+    description: fileName, 
+    assetId: GATE.wd_Global + 
+      "ATEI_Estimation/Manual_Sampling/" + 
+      fileName
+  });
+}

@@ -1,0 +1,120 @@
+/**
+ * Introduction: 
+ * 1) Select the non-forested areas within a vertical distance to the average climatic treeline. 
+ * 
+ * Date: 6/7/2020.
+ * 
+ * Launch time: 43m.
+ */ 
+
+
+/* Setup. */
+
+// Define the extent of North America. 
+var northAmerica = ee.Geometry.Polygon({
+    coords: [[[-165.69002926658334, 72.44551256468144],
+          [-169.40248634956492, 65.69009098298687],
+          [-172.25893166206492, 63.826281515474996],
+          [171.35638590722195, 52.855285271231274],
+          [-159.1340353549648, 17.264443722753843],
+          [-122.14862062448367, 9.59539750905343],
+          [-79.06711256993691, 6.243890041056693],
+          [-77.03677448989225, 7.40316087095261],
+          [-76.78408894301725, 8.990725120234067],
+          [-75.7244458156751, 12.403191738791786],
+          [-71.5276684719251, 13.751533985801833],
+          [-62.8264965969251, 11.651035844929385],
+          [-62.005942990095036, 9.999896817210585],
+          [-60.791953732282536, 9.96743692413247],
+          [-55.5884807162513, 13.889226127218825],
+          [-47.99315852039507, 58.68729606716915],
+          [-66.52860968724042, 71.51769835770313],
+          [-77.86650031224042, 74.25356562488685],
+          [-89.90751593724042, 74.22969620284344],
+          [-106.04844453284761, 74.3012200035139],
+          [-114.63975312659761, 74.20581277506923],
+          [-120.18954789130242, 74.88484689543225],
+          [-136.27353226630242, 74.6772015427699]]],
+    geodesic: true
+});
+
+// Asset paths.
+var wdNorthA = "users/treeline/North_America/CATE/";
+
+// ALOS elevation.
+var ALOSelv = ee.Image('JAXA/ALOS/AW3D30/V2_2').select('AVE_DSM');
+
+// Copernicus land cover product.
+var copernicus = ee.ImageCollection("COPERNICUS/Landcover/100m/Proba-V/Global")
+  .select('discrete_classification').first();
+
+// Select all the non-forest land cover types (0-100) except "oceans and seas" (200).
+// var nonForest = copernicus.lte(100);
+
+var openForests = copernicus.gte(121).and(copernicus.lte(126));
+var nonForest = copernicus.lte(100).or(openForests);
+
+// Projection information.
+var nonPrj = nonForest.projection();
+var nonCRS = nonPrj.crs().getInfo();
+var nonScale = nonPrj.nominalScale().getInfo();
+
+print("Non-forested land cover:", 
+  nonCRS,
+  nonScale);
+  
+// Copernicus land cover forests.
+var forests = ee.Image(wdNorthA + 
+  "CopernicusLandCover_100mAllForests_2015_GMBAv12");
+
+// Load the average climatic treeline elevation.
+var avgTLH = ee.Image(wdNorthA +
+  "avgTLH_1979to2013_1arcsec_mtRgLand_CHELSAv12_ALOSv22_GMBAv12_HansenV17");
+
+
+/* Select the non-forested areas within a vertical distance 
+  to the average climatic treeline. */ 
+
+// Calculate the absolute vertical distance.
+var absElvDist = avgTLH.subtract(ALOSelv).abs(); 
+
+// Extract areas within a vertical distance.
+var elvDistThres = 1e2; // In meters.
+
+var elvDistMask = absElvDist.lte(elvDistThres);
+
+// Extract the qualified non-forested areas.
+nonForest = nonForest.updateMask(elvDistMask).selfMask();
+
+// Band type information.
+print(nonForest.bandTypes());
+
+
+/* Visualization. */
+
+if (true) {
+  Map.setOptions("hybrid");
+  
+  Map.setCenter(-128.395, 65.0635, 6);
+  Map.addLayer(elvDistMask.selfMask(), {palette: "FF0000"}, "Original Elevation Mask");
+  Map.addLayer(nonForest, {palette: "0000FF"}, "Selected non-forested areas");
+  Map.addLayer(forests, {palette: "00FF00"}, "Forests");
+}
+
+else {
+  /* Output the result. */
+  
+  var fileName = "CopernicusLC_nonForest_absElvDistLte" + elvDistThres + "m";
+  
+  Export.image.toAsset({
+    image: nonForest,
+    description: fileName,
+    assetId: wdNorthA + 
+      fileName,
+    region: northAmerica,
+    scale: nonScale,
+    crs: nonCRS,
+    maxPixels: 1e13
+  });
+}
+

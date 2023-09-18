@@ -1,0 +1,262 @@
+/**
+ * Introduction:
+ * 
+ *  1) Smooth the ALOS elevation within the 300m-buffered climatic ATE (CATE) 
+ *    by calculating its focal median within a 10-pixel circular kernel.
+ * 
+ *  2) Calculate the median value of the smoothed annual maximum NDVIs
+ *    during 2013-2017 (FIVE years before Karger's paper submission date: May 2018).
+ * 
+ *  3) Generate the ATEI variables based on the gradients of the smoothed elevation
+ *    and the five-year NDVI median.
+ * 
+ *  4) Extract the ATEI variables at each sample point.
+ * 
+ * Update: 11/22/2022.
+ * 
+ * Runtime: 1m.
+*/
+
+
+/* Load module(s). */
+
+var IMG = require("users/ChenyangWei/Public:Modules/Image_Analysis&Processing");
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var FC_AP = require("users/ChenyangWei/Public:Modules/FeatureCollection_Analysis&Processing");
+var TNA = require("users/ChenyangWei/Public:Modules/Transect_NDVI_Analysis");
+
+
+/* Setup. */
+
+// Determine the target projection.
+var targetPrj = IMG.WGS84_30m;
+
+// Load Karger's validation points within the new CATE.
+var samples = ee.FeatureCollection(GATE.wd_Global
+  + "Validation/"
+  + "2019Karger_ValidationPoints_InNewCATE");
+
+// Define a list of the AOIs.
+var AOI_List = ee.List([
+  GATE.AOI_NorthAmerica,
+  GATE.AOI_SouthAmerica,
+  GATE.AOI_Africa,
+  GATE.AOI_Oceania,
+  GATE.AOI_Europe,
+  GATE.AOI_Asia
+]);
+
+
+/* Read the buffered new CATE. 
+  (Choose the 300-m buffer because the NDVI-smoothing kernel 
+    is a 10-pixel (10*30m) circle.) */
+
+// Define a function to load and reproject the buffered new CATE of each continent.
+var Read_BufNewCATE = function(wd_Cont) {
+  var bufNewCATE_Cont = ee.Image(wd_Cont
+    + "Climate-Based_ATE/"
+    + "300mBuffered_30mNewCATE_AOI")
+    .reproject(targetPrj);
+  
+  return bufNewCATE_Cont;
+};
+
+// Produce a list of the buffered new CATEs.
+var bufNewCATE_List = ee.List([
+  Read_BufNewCATE(GATE.wd_NorthAmerica),
+  Read_BufNewCATE(GATE.wd_SouthAmerica),
+  Read_BufNewCATE(GATE.wd_Africa),
+  Read_BufNewCATE(GATE.wd_Oceania),
+  Read_BufNewCATE(GATE.wd_Europe),
+  Read_BufNewCATE(GATE.wd_Asia)
+]);
+
+
+/* Calculate the median value of the smoothed annual maximum NDVIs 
+  during 2013-2017 in the buffered new CATE. */
+
+// Create a list of band names for 2013-2017.
+var fiveYears_List = ee.List.sequence(2013, 2017);
+
+var bandNames_List = fiveYears_List.map(function(yearNum) {
+  
+  // When directly convert a "floating point" to a "string", 
+  //  the result contains a ".", which isn't allowed in band names.
+  var yearInt = ee.Number(yearNum).int();
+  var yearString = ee.String(yearInt);
+  
+  // Define the band name of each year.
+  var bandName = ee.String("smdNDVI_").cat(yearString);
+  
+  return bandName;
+});
+
+// Calculate the median NDVI in North America.
+var medianNDVI_NorthAmerica = ee.Image(GATE.wd_NorthAmerica
+  + "ATEI_Estimation/"
+  + TNA.annualMaxNDVI_300mBufNewCATE_NorthAmerica_fileName)
+  .select(bandNames_List)
+  .reduce(ee.Reducer.median())
+  .reproject(targetPrj)
+  .rename("medianNDVI");
+
+// Define a function to calculate the median NDVIs in other continents.
+var Calculate_MedianNDVI = function(wd_Cont) {
+  var medianNDVI_Cont = TNA.loadAnnualNDVIs_nonNorthAmerica(wd_Cont)
+    .select(bandNames_List)
+    .reduce(ee.Reducer.median())
+    .reproject(targetPrj)
+    .rename("medianNDVI");
+  
+  return medianNDVI_Cont;
+};
+
+// Produce a list of the median NDVIs during 2013-2017.
+var medianNDVI_List = ee.List([
+  medianNDVI_NorthAmerica,
+  Calculate_MedianNDVI(GATE.wd_SouthAmerica),
+  Calculate_MedianNDVI(GATE.wd_Africa),
+  Calculate_MedianNDVI(GATE.wd_Oceania),
+  Calculate_MedianNDVI(GATE.wd_Europe),
+  Calculate_MedianNDVI(GATE.wd_Asia_2)
+]);
+
+
+/* Create a continent ID list. */
+
+// Derive a list of continents.
+var cont_Property = "Continent";
+
+var cont_List = samples.aggregate_array(cont_Property)
+  .distinct();
+
+// Compute the number of continents.
+var cont_Num = cont_List.size();
+
+// Generate a list of the continent IDs.
+var contID_UpperEnd = cont_Num.subtract(1);
+
+var contID_List = ee.List.sequence(0, contID_UpperEnd);
+
+
+/* Extract the ATEI variables based on the gradients of 
+  the median-smoothed elevation and the five-year NDVI median. */
+
+// Define a circular kernel of 10 pixels.
+var Kn = ee.Kernel.circle({
+  radius: 10,
+  units: "pixels"
+}); 
+
+// Generate a list of variables at all sample points.
+var sampledVarList = contID_List.map(function(contID) {
+  
+  // Obtain the continent name.
+  var cont_Name = cont_List.get(contID);
+  
+  // Determine the AOI of the continent.
+  var cont_AOI = AOI_List.get(contID);
+  
+  // Load and reproject the ALOS elevation in the AOI.
+  var ALOSelv = GATE.load_ALOSelevation(cont_AOI, targetPrj);
+
+  // Select the buffered new CATE of the continent.
+  var bufNewCATE = ee.Image(bufNewCATE_List.get(contID));
+
+  // Extract the median NDVI of the continent.
+  var medianNDVI = ee.Image(medianNDVI_List.get(contID));
+  
+
+  /* Smooth the ALOS elevation within the 300m-buffered new CATE 
+    by calculating its focal median within a 10-pixel circular kernel. */
+  
+  // Extract elevation within the buffered new CATE.
+  var bufCATEelv = ALOSelv.updateMask(bufNewCATE);
+
+  // Calculate the focal median within the kernel.
+  //  (The same metric as the NDVI smoothing operation.)
+  var smdElv = bufCATEelv.reduceNeighborhood({
+    reducer: ee.Reducer.median(),
+    kernel: Kn,
+    skipMasked: true // MASK output pixels if the corresponding input pixel is masked.
+  }).reproject(targetPrj);
+  
+
+  /* Generate the gradient direction of the smoothed elevation. */
+  
+  // Compute the elevation gradient in the X and Y directions.
+  var elvGrad = smdElv.gradient()
+    .reproject(targetPrj);
+  
+  // Compute the direction of the elevation gradient.
+  var elvDir = elvGrad.select("y").atan2(elvGrad.select("x"))
+    .reproject(targetPrj)
+    .rename("elvDir");
+
+
+  /* Create the variables based on the median NDVI. */
+  
+  // Compute the NDVI gradient in the X and Y directions.
+  var NDVIgrad = medianNDVI.gradient()
+    .reproject(targetPrj);
+  
+  // Compute the direction of the NDVI gradient.
+  var NDVIdir = NDVIgrad.select("y").atan2(NDVIgrad.select("x"))
+    .reproject(targetPrj)
+    .rename("NDVIdir");
+
+  // Compute the magnitude of the NDVI gradient. 
+  //  ("hypot" calculates the magnitude of the 2D vector [x, y].)
+  var NDVImag = NDVIgrad.select("y").hypot(NDVIgrad.select("x"))
+    .reproject(targetPrj)
+    .rename("NDVImag");
+  
+  
+  /* Collect the ATEI variables at each sample. */
+  
+  // Combine the ATEI variables.
+  var combinedVars = medianNDVI.addBands(NDVIdir)
+    .addBands(NDVImag)
+    .addBands(elvDir)
+    .reproject(targetPrj);
+  
+  // Select the samples in the continent.
+  var selectedSamples = samples.filter(ee.Filter.eq(cont_Property, cont_Name));
+  
+  // Get the variables at each selected sample.
+  var sampledVars = combinedVars.reduceRegions({
+    collection: selectedSamples, 
+    reducer: ee.Reducer.first(), 
+    scale: targetPrj.scale, 
+    crs: targetPrj.crs
+  });
+  
+  return sampledVars;
+});
+
+// Convert the list of sampled variables to a FeatureCollection.
+var sampledVarFC = ee.FeatureCollection(sampledVarList).flatten();
+
+
+if (false) {
+  // Check Karger's validation points.
+  FC_AP.Print_FtrColInfo("samples:", samples);
+  print(cont_List);
+  
+  // Check the sampled variables.
+  FC_AP.Print_FtrColInfo("sampledVarFC:", sampledVarFC);
+
+} else {
+  
+  /* Export the result to Drive. */
+  
+  var fileName = "2019Karger_ATEIvars_MedianSmdElv_FiveYrSmdNDVImedian";
+  
+  Export.table.toDrive({
+    collection: sampledVarFC,
+    description: fileName, 
+    folder: fileName,
+    fileFormat: "SHP"
+  });
+}
+

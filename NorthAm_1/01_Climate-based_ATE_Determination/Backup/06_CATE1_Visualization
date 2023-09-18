@@ -1,0 +1,107 @@
+/*
+  Introduction:
+  1) To create a custom visualization of the average climatic treeline elevation 
+    in each GMBA mountain range.
+    
+  2) To visualize the Copernicus forest elevation in each GMBA mountain range.
+    
+  3) To visualize the determined CATE.
+    
+  Date: 6/6/2020.
+*/
+
+
+/* Setup. */
+
+// Asset path.
+var wdNorthA = "users/treeline/North_America/CATE/";
+
+// Load the average climatic treeline elevation.
+var avgTLH = ee.Image(wdNorthA +
+  "avgTLH_1979to2013_1arcsec_mtRgLand_CHELSAv12_ALOSv22_GMBAv12_HansenV17");
+
+// Copernicus land cover forests at 100-m level.
+var coperForests = ee.Image(wdNorthA + 
+  "CopernicusLandCover_100mAllForests_2015_GMBAv12");
+
+// ALOS elevation.
+var ALOSelv = ee.Image('JAXA/ALOS/AW3D30/V2_2').select('AVE_DSM');
+
+// Forest elevation.
+var forestElv = ALOSelv.updateMask(coperForests);
+
+// Determined CATE.
+var cate = ee.Image(wdNorthA +
+  "CopernicusLC_allForests_absElvDistLte1000m_horiDistLte500px_forestElvPct50");
+
+// ALOS landforms.
+var landforms = ee.Image("CSP/ERGo/1_0/Global/ALOS_landforms").select('constant');
+var ridge = landforms.lte(14).selfMask().updateMask(cate);
+var lowSlopeValley = landforms.gte(31).selfMask().updateMask(cate);
+
+
+/* Visualization. */
+
+Map.setOptions("hybrid");
+
+Map.setCenter(-113.8467, 48.4961, 8);
+
+// Add the average climatic treeline elevation to the map.
+var minElv = 500;
+var maxElv = 4000;
+
+Map.addLayer(avgTLH, {min: minElv, max: maxElv}, 
+  "Original Average TLH", false);
+Map.addLayer(forestElv, {min: minElv, max: maxElv}, 
+  "Original Forest Elevation", false);
+
+// Use the terrain algorithms to compute a hillshade with 8-bit values.
+var shadeTLH = ee.Terrain.hillshade(avgTLH);
+var shadeFrts = ee.Terrain.hillshade(forestElv);
+
+Map.addLayer(shadeTLH, {}, 'TLH Hillshade', false);
+Map.addLayer(shadeFrts, {}, 'Forest Elevation Hillshade', false);
+
+// Create a custom elevation palette from hex strings.
+var elevationPalette = ['006600', '002200', 'fff700', 'ab7634', 'c4d0ff', 'ffffff'];
+// Use these visualization parameters, customized by location.
+var visParams = {min: minElv, max: maxElv, palette: elevationPalette};
+
+// Create a visualized elevation data
+var visualizedTLH = avgTLH.visualize(visParams);
+var visualizedFrts = forestElv.visualize(visParams);
+
+// Note that the visualization image doesn't require visualization parameters.
+Map.addLayer(visualizedTLH, {}, 'TLH Palette', false);
+Map.addLayer(visualizedFrts, {}, 'Forest Elevation Palette', false);
+
+// Convert the visualized elevation to HSV, 
+// first converting to [0, 1] data.
+var hsvTLH = visualizedTLH.divide(255).rgbToHsv();
+var hsvFrts = visualizedFrts.divide(255).rgbToHsv();
+
+// Select only the hue and saturation bands.
+var hsTLH = hsvTLH.select(0, 1);
+var hsFrts = hsvFrts.select(0, 1);
+
+// Convert the hillshade to [0, 1] data, 
+// as expected by the HSV algorithm.
+var vTLH = shadeTLH.divide(255);
+var vFrts = shadeFrts.divide(255);
+
+// Create a visualization image by converting back to RGB from HSV.
+// Note the cast to byte in order to export the image correctly.
+var rgbTLH = hsTLH.addBands(vTLH).hsvToRgb().multiply(255).byte();
+var rgbFrts = hsFrts.addBands(vFrts).hsvToRgb().multiply(255).byte();
+
+Map.addLayer(rgbTLH, {}, 'Styled Average TLH');
+Map.addLayer(rgbFrts, {}, 'Styled Forest Elevation');
+
+Map.addLayer(cate, {palette: "00FF00"}, 
+  "Determined CATE", false);
+
+Map.addLayer(ridge, {palette: "FF0000"}, 
+  "Ridge");
+Map.addLayer(lowSlopeValley, {palette: "0000FF"}, 
+  "Lower slope & valley");
+

@@ -1,0 +1,22 @@
+/**
+ * Introduction: 
+ * 
+ *  1) Union the boundaries of countries worldwide.
+ * 
+ * Update: 4/25/2023.
+ * 
+ * Runtime: 15m.
+*/
+
+
+// Import and union country features.
+var unioned = ee.FeatureCollection('USDOS/LSIB_SIMPLE/2017')
+  .union();
+
+// Export the unioned boundaries to Google Drive.
+Export.table.toDrive({
+  collection: unioned, 
+  description: "WorldBoundaries_LSIB_SIMPLE", 
+  folder: "WorldBoundaries_LSIB_SIMPLE", 
+  fileFormat: "SHP"
+});

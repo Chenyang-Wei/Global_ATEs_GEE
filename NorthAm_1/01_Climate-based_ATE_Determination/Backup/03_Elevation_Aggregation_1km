@@ -1,0 +1,161 @@
+/**
+ * Introduction: 
+ * 1) Aggregate the CATE elevation to 1-km grids by calculating its local average. 
+ * 2) Aggregate the surrounding forest elevation of the CATE to 1-km grids by calculating its local percentiles. 
+ * 
+ * Date: 6/21/2020.
+ */
+
+
+/* Setup. */
+
+// Define the extent of North America. 
+var northAmerica = ee.Geometry.Polygon({
+    coords: [[[-165.69002926658334, 72.44551256468144],
+          [-169.40248634956492, 65.69009098298687],
+          [-172.25893166206492, 63.826281515474996],
+          [171.35638590722195, 52.855285271231274],
+          [-159.1340353549648, 17.264443722753843],
+          [-122.14862062448367, 9.59539750905343],
+          [-79.06711256993691, 6.243890041056693],
+          [-77.03677448989225, 7.40316087095261],
+          [-76.78408894301725, 8.990725120234067],
+          [-75.7244458156751, 12.403191738791786],
+          [-71.5276684719251, 13.751533985801833],
+          [-62.8264965969251, 11.651035844929385],
+          [-62.005942990095036, 9.999896817210585],
+          [-60.791953732282536, 9.96743692413247],
+          [-55.5884807162513, 13.889226127218825],
+          [-47.99315852039507, 58.68729606716915],
+          [-66.52860968724042, 71.51769835770313],
+          [-77.86650031224042, 74.25356562488685],
+          [-89.90751593724042, 74.22969620284344],
+          [-106.04844453284761, 74.3012200035139],
+          [-114.63975312659761, 74.20581277506923],
+          [-120.18954789130242, 74.88484689543225],
+          [-136.27353226630242, 74.6772015427699]]],
+    geodesic: true
+});
+
+// Asset path.
+var wdNorthA = "users/treeline/North_America/CATE/";
+// var wd500m = wdNorthA + "AbsTLHdist_Lte500m/"; // 500-m CATE.
+var wd100m = wdNorthA + "AbsTLHdist_Lte100m/"; // 100-m CATE.
+
+// Load the forest elevation data at the 100-m level.
+// var forElv = ee.Image(wd500m + "500mCATE_3kmBuffer_100mAvgForElv"); // 500-m CATE.
+var forElv = ee.Image(wd100m + "100mCATE_3kmBuffer_100mAvgForElv"); // 100-m CATE.
+
+print("forest elevation:", forElv.bandTypes(), 
+  forElv.projection().crs(), forElv.projection().nominalScale());
+
+// Load the CATE elevation at the 30-m level.
+// var CATEelv = ee.Image(wd500m + "500mCATE_30mElv"); // 500-m CATE.
+var CATEelv = ee.Image(wd100m + "100mCATE_30mCATEelv"); // 100-m CATE.
+
+print("CATE elevation:", CATEelv.bandTypes(), 
+  CATEelv.projection().crs(), CATEelv.projection().nominalScale());
+
+
+/* Define a function to aggregate an elevation dataset to the 1-km scale. */
+
+// Determine the new resolution.
+var newScale = 1e3; // In meters.
+
+// Factor of the resolution scaling of each axis based on the 30-m dataset.
+var factor = Math.ceil(newScale / 30.92);
+  
+function aggregateElv(oldElv, rd) {
+  // Elevation aggregation.
+  var aggregated = oldElv.reduceResolution({ 
+    reducer: rd,
+    maxPixels: factor * factor
+  }).reproject({ 
+    crs: "EPSG:4326",
+    scale: newScale
+  });
+  
+  // Set the mask of each valid pixel to 1.
+  var nomask = aggregated.updateMask(aggregated.gte(-1e18));
+  
+  // Reduce the size of the dataset.
+  nomask = nomask.float();
+  
+  return nomask;
+}
+
+
+/* Aggregate the forest elevation to the 1-km level by calculating its local percentiles. */
+
+// Define a percentile reducer.
+var pctRd = ee.Reducer.percentile({
+  percentiles: [75, 90, 95, 100]
+}); // Weighted.
+
+var pctForElv = aggregateElv(forElv, pctRd);
+
+print("Aggregated forest elevation:", pctForElv.bandTypes(), 
+  pctForElv.projection().crs(), pctForElv.projection().nominalScale());
+
+
+/* Aggregate the CATE elevation to the 1-km level by calculating its local average. */
+
+var avgCATEelv = aggregateElv(CATEelv, ee.Reducer.mean());
+
+print("Aggregated CATE elevation:", avgCATEelv.bandTypes(), 
+  avgCATEelv.projection().crs(), avgCATEelv.projection().nominalScale());
+
+
+if (false) {
+  /* Visualization. */
+  
+  var elvPalette = ['006600', '002200', 'fff700', 'ab7634', 'c4d0ff', 'ffffff'];
+  var elvVis = {min: 1000, max: 3500, palette: elvPalette};
+  
+  Map.setOptions("hybrid");
+  
+  Map.setCenter(-113.655, 48.734, 10);
+  
+  Map.addLayer(forElv.select("cldForElv"), elvVis, "cldForElv", true);
+  Map.addLayer(forElv.select("allForElv"), elvVis, "allForElv", true);
+  Map.addLayer(CATEelv, elvVis, "CATEelv", true);
+  
+  Map.addLayer(pctForElv.select("cldForElv_p90"), elvVis, "cldForElv_p90", true);
+  Map.addLayer(pctForElv.select("allForElv_p90"), elvVis, "allForElv_p90", true);
+  Map.addLayer(avgCATEelv, elvVis, "avgCATEelv", true);
+}
+
+else {
+  /* Output the 1-km result. */
+  
+  // Forest elevation.
+  // var fileName1 = "500mCATE_3kmBuffer_1kmPctForElv"; // 500-m CATE.
+  var fileName1 = "100mCATE_3kmBuffer_1kmPctForElv"; // 100-m CATE.
+  
+  Export.image.toAsset({
+    image: pctForElv, 
+    description: fileName1, 
+    // assetId: wd500m + fileName1, // 500-m CATE.
+    assetId: wd100m + fileName1, // 100-m CATE.
+    region: northAmerica, 
+    crs: "EPSG:4326",
+    scale: newScale,
+    maxPixels: 1e13
+  });
+  
+  // CATE elevation.
+  // var fileName2 = "500mCATE_1kmAvgCATEelv"; // 500-m CATE.
+  var fileName2 = "100mCATE_1kmAvgCATEelv"; // 100-m CATE.
+  
+  Export.image.toAsset({
+    image: avgCATEelv, 
+    description: fileName2, 
+    // assetId: wd500m + fileName2, // 500-m CATE.
+    assetId: wd100m + fileName2, // 100-m CATE.
+    region: northAmerica, 
+    crs: "EPSG:4326",
+    scale: newScale,
+    maxPixels: 1e13
+  });
+}
+
