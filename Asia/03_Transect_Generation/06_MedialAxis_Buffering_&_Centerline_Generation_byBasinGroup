@@ -1,0 +1,160 @@
+/**
+ * Introduction:
+ *  (Note: The following operations are performed
+ *    for each group of the selected basins.)
+ * 
+ * 1) Within each basin, buffer the vectorized medial-axis pixel centroids with
+ *  the corresponding distance to the nearest ridges/valleys.
+ * 2) Construct an elevational transect centerline between
+ *  the highest non-forested point of the ridge landforms and
+ *  the lowest closed forest of the non-ridge landforms
+ *  in each qualified buffer by basin.
+ * 3) Combine the transect centerlines of all basins.
+ * 
+ * Update: 10/7/2021.
+ * 
+ * Runtime: 2m ~ 4h.
+ */
+
+
+/* Load module(s). */
+
+var IMG = require("users/ChenyangWei/Public:Modules/Image_Analysis&Processing");
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var VIS = require("users/ChenyangWei/Public:Modules/Visualization");
+
+// Set the major working directory.
+var wd_Main = GATE.wd_Asia;
+
+// Load the new CATE.
+var newCATE = ee.Image(wd_Main + "Climate-Based_ATE/" 
+  + GATE.newCATE_fileName);
+
+// Set a list of all the areas of interest in Asia.
+var AOIs = [
+  GATE.AOI_Asia_1,
+  GATE.AOI_Asia_2,
+  GATE.AOI_Asia_3,
+  GATE.AOI_Asia_4,
+  GATE.AOI_Asia_5,
+  GATE.AOI_Asia_6
+];
+
+// Target projection.
+var targetPrj = IMG.WGS84_30m;
+
+
+/* Extract the ridge and non-ridge landforms. */
+
+// Load and reproject the ALOS landforms dataset in the new CATE.
+var LF_noInvaid_newCATE = GATE.loadReproject_ALOSlandforms(targetPrj)
+  .updateMask(newCATE);
+
+// Ridges in the new CATE.
+var ridges = GATE.extractRidgeLandforms(LF_noInvaid_newCATE);
+
+// Non-ridges in the new CATE.
+var nonRidges = ridges.not();
+
+
+/* Obtain the non-forested areas of the ridge landforms and
+  the closed forests of the non-ridge landforms in the new CATE. */
+
+// Read the Land Cover datasets of 2015-2019.
+var landCover = GATE.readCoperLandCover15to19();
+
+// Extract and reproject the elevation of closed forests 
+//   (tree canopy > 70 %) in 2015-2019.
+var CF_inAllYrs = GATE.extractClosedForests_inAllYears(landCover, targetPrj);
+
+// Extract and reproject the non-forested areas in 2015-2019.
+var nonF_inAllYrs = GATE.extractNonForested_inAllYears(landCover, targetPrj);
+
+// Closed forests of the non-ridge landforms.
+var CF_nonRidges = CF_inAllYrs.updateMask(nonRidges)
+  .selfMask();
+
+// Non-forested areas of the ridge landforms.
+var nonF_ridges = nonF_inAllYrs.updateMask(ridges)
+  .selfMask();
+
+
+/* Operations by Asian AOI (1 ~ 6). */
+
+for (var AOI_ID = 1; AOI_ID <= 6; AOI_ID ++) {
+  
+  // Determine the area of interest.
+  var AOI = AOIs[AOI_ID - 1];
+
+  // Load the ALOS elevation (Version 3.2, released in January 2021) in the AOI.
+  var ALOSelv = GATE.load_ALOSelevation(AOI, targetPrj);
+  
+  // Set the working directory of the AOI.
+  var wd_AOI = GATE.wd_Asia + "Elevational_Transect_Generation/"
+    + "AOI_Asia_" + AOI_ID + "/";
+  
+
+  /* Create the image of elevation and pixel coordinates 
+    of the closed-forest and non-forested areas. */
+  
+  // Closed-forest areas.
+  var CF_elvCoords_Img = GATE.create_CF_elvCoords(ALOSelv, CF_nonRidges, targetPrj);
+  
+  // Non-forested areas.
+  var nonF_elvCoords_Img = GATE.create_nonF_elvCoords(ALOSelv, nonF_ridges, targetPrj);
+  
+  // Combine the elevation and coordinate datasets
+  //  of the two types of areas for further extracting the elevational extremes by buffer.
+  // (Note: the order of bands here should be consistent with 
+  //  the combination order of reducers.)
+  var CF_nonF_elvCoords_Img = CF_elvCoords_Img
+    .addBands(nonF_elvCoords_Img)
+    .reproject(targetPrj);
+  
+  // Generate a combined reducer for extracting the elevational extremes.
+  var combinedElvReducer = GATE.generateCombinedReducer(CF_elvCoords_Img, nonF_elvCoords_Img);
+  
+  
+  /* Operations by basin group (1 ~ 5). */
+
+  for (var basinGroupID = 1; basinGroupID <= 5; basinGroupID ++) {
+    
+    // Load the group of the selected basins.
+    var wd_BasinGroup = wd_AOI
+      + "Selected_Basin_Groups/"
+      + GATE.groupedBasins_fileName 
+      + basinGroupID;
+    
+    var selectedBasins = ee.FeatureCollection(wd_BasinGroup);
+    
+    // Load the vectorized medial-axis pixel centroids.
+    var wd_PxCtds = wd_AOI 
+      + GATE.medialAxisPxCtds_fileName + "/"
+      + GATE.medialAxisPxCtds_byBasinGroup_fileName 
+      + basinGroupID;
+    
+    var medialAxis_PxCtds = ee.FeatureCollection(wd_PxCtds);
+    
+    
+    /* Construct transect centerlines by basin. */
+    
+    // Centerline construction by basin.
+    var transectCLs = GATE.constructTransectCLs_byBasin(selectedBasins, medialAxis_PxCtds, 
+      CF_nonF_elvCoords_Img, combinedElvReducer, targetPrj);
+    
+    
+    if (true) { // true OR false.
+      //// Export the result(s) by basin group.
+      var wd_Output = wd_AOI + GATE.rawCLs_fileName + "/";
+      
+      var fileName = GATE.rawCLs_byBasinGroup_fileName + basinGroupID;
+      
+      Export.table.toAsset({
+        collection: transectCLs, 
+        description: fileName, 
+        assetId: wd_Output + fileName
+      });
+    }
+  }
+}
+

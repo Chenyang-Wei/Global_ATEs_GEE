@@ -1,0 +1,143 @@
+/**
+ * Introduction:
+ * 1) Divide the selected basins with the medial axis into several groups 
+ *  to reduce the computational complexity 
+ *  in the construction of elevational transects.
+ * 
+ * Update: 10/5/2021.
+ * 
+ * Total update number: 1.
+ * 
+ * Runtime: 1m.
+ */
+
+
+/* Load module(s). */
+
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var VIS = require("users/ChenyangWei/Public:Modules/Visualization");
+
+
+/* Data and function preparation. */
+
+// Set the working directory.
+var wd_Main = GATE.wd_Asia;
+
+// Function to read the non-duplicate basins in an AOI of Asia.
+var readBasins_Asia = VIS.readNonDuplicateBasins_AsiaAOIs;
+
+// Function to create a list of intervals for grouping the basin IDs.
+var create_basinID_intervals = GATE.create_basinID_intervals;
+
+// Function to group the HydroSHEDS basins by the self-created ID.
+var groupBasins_byID = GATE.groupBasins_byID;
+
+// Function to add the "last" HydroSHEDS basin (i.e., ID = 1, if any) 
+//  to the last group of basins.
+var addLastBasin = GATE.addLastBasin;
+
+
+
+/**** 1) Need to update. ****/
+
+// Determine the ID of the targeting Asian AOI.
+var AOI_ID = 6;
+
+/********/
+
+
+
+// Load the non-duplicate selected basins.
+var selectedBasins = readBasins_Asia(AOI_ID);
+
+
+/* Divide the selected basins into several groups. */
+
+// Add a random column as basin IDs.
+var selectedBasins_withID = selectedBasins.randomColumn("Basin_ID");
+
+// Determine the number of basin groups.
+var groupNum = 5;
+
+// Create a list of intervals for grouping the basin IDs.
+var ID_intervals = create_basinID_intervals(groupNum);
+
+// Group the selected basins by ID.
+var selectedBasins_Group_1 = groupBasins_byID(selectedBasins_withID, ID_intervals, 1);
+
+var selectedBasins_Group_2 = groupBasins_byID(selectedBasins_withID, ID_intervals, 2);
+
+var selectedBasins_Group_3 = groupBasins_byID(selectedBasins_withID, ID_intervals, 3);
+
+var selectedBasins_Group_4 = groupBasins_byID(selectedBasins_withID, ID_intervals, 4);
+
+var selectedBasins_lastGroup = groupBasins_byID(selectedBasins_withID, ID_intervals, groupNum);
+
+// Add the last basin to the last group.
+var selectedBasins_Group_5 = addLastBasin(selectedBasins_withID, selectedBasins_lastGroup);
+
+
+// true OR false.
+if (false) {
+  print("selectedBasins_withID:", selectedBasins_withID.first(),
+    selectedBasins_withID.size());
+  
+  //// Visualization.
+  Map.setOptions("satellite");
+  
+  Map.centerObject(selectedBasins, 8);
+  
+  Map.addLayer(selectedBasins_withID, 
+    {color: "FFFF00"}, 
+    "selectedBasins_withID", true);
+  
+  Map.addLayer(selectedBasins_Group_1, 
+    {color: "FF0000"}, 
+    "selectedBasins_Group_1", true);
+  
+  Map.addLayer(selectedBasins_Group_5, 
+    {color: "0000FF"}, 
+    "selectedBasins_Group_5", true);
+
+} else {
+  //// Export the result(s).
+  var fileName = GATE.groupedBasins_fileName;
+  
+  var wd_Output = wd_Main + "Elevational_Transect_Generation/"
+    + "AOI_Asia_" 
+    + AOI_ID + "/"
+    + "Selected_Basin_Groups/";
+  
+  Export.table.toAsset({
+    collection: selectedBasins_Group_1, 
+    description: fileName + 1, 
+    assetId: wd_Output + fileName + 1
+  });
+  
+  Export.table.toAsset({
+    collection: selectedBasins_Group_2, 
+    description: fileName + 2, 
+    assetId: wd_Output + fileName + 2
+  });
+  
+  Export.table.toAsset({
+    collection: selectedBasins_Group_3, 
+    description: fileName + 3, 
+    assetId: wd_Output + fileName + 3
+  });
+  
+  Export.table.toAsset({
+    collection: selectedBasins_Group_4, 
+    description: fileName + 4, 
+    assetId: wd_Output + fileName + 4
+  });
+  
+  // The last group.
+  Export.table.toAsset({
+    collection: selectedBasins_Group_5, 
+    description: fileName + groupNum, 
+    assetId: wd_Output + fileName + groupNum
+  });
+}
+
+

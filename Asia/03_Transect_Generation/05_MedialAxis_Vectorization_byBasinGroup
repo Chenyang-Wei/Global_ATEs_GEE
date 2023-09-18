@@ -1,0 +1,72 @@
+/**
+ * Introduction:
+ * 1) Vectorize pixels along the medial axis between ridges and valleys in the new CATE
+ *  to their centroids by basin.
+ * 
+ * Update: 10/7/2021.
+ * 
+ * Runtime: 1m ~ 29m.
+ */
+
+
+/* Load module(s). */
+
+var IMG = require("users/ChenyangWei/Public:Modules/Image_Analysis&Processing");
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+
+
+
+// Determine the ID of the targeting Asian AOI (1 ~ 6).
+for (var AOI_ID = 4; AOI_ID <= 6; AOI_ID ++) {
+  
+  // Determine the group ID of the selected basins (1 ~ 5).
+  for (var basinGroupID = 1; basinGroupID <= 5; basinGroupID ++) {
+    
+
+    /* Data and function preparation. */
+    
+    // Set the working directory of the AOI.
+    var wd_AOI = GATE.wd_Asia + "Elevational_Transect_Generation/"
+      + "AOI_Asia_" + AOI_ID + "/";
+    
+    // Load the medial axis between ridges and valleys in the new CATE.
+    var medialAxis = ee.Image(wd_AOI + GATE.medialAxis_fileName);
+    
+    // Determine the file path of the basin group.
+    var wd_BasinGroup = wd_AOI
+      + "Selected_Basin_Groups/"
+      + GATE.groupedBasins_fileName 
+      + basinGroupID;
+    
+    // Load the group of the selected basins.
+    var selectedBasins = ee.FeatureCollection(wd_BasinGroup);
+    
+    // Target projection.
+    var targetPrj = IMG.WGS84_30m;
+    
+    
+    /* Vectorize pixels along the medial axis between ridges and valleys 
+      to their centroids by basin. */
+    
+    var medialAxis_PxCtds = GATE.vectorizeMedialAxis_byBasin(medialAxis, selectedBasins, targetPrj);
+    
+    
+    // true OR false.
+    if (true) {
+      //// Export the result(s) by basin group.
+      var wd_Output = wd_AOI + GATE.medialAxisPxCtds_fileName + "/";
+    
+      var fileName = GATE.medialAxisPxCtds_byBasinGroup_fileName + basinGroupID;
+      
+      Export.table.toAsset({
+        collection: medialAxis_PxCtds, 
+        description: fileName, 
+        assetId: wd_Output + fileName
+      });
+    }
+
+
+  }
+
+}
+

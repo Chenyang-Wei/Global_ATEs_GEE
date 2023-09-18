@@ -1,0 +1,92 @@
+/**
+ * Introduction: 
+ * 1) Identify the area of Asia.
+ * 2) Generate and buffer the bounding box of the identified area.
+ * 
+ * Update: 6/2/2021.
+ * 
+ * Runtime: 4m.
+*/
+
+
+if (false) {
+  /* Identify the area of Asia. */
+  
+  // Import country features.
+  var worldCol = ee.FeatureCollection('USDOS/LSIB_SIMPLE/2017');
+  
+  // print("worldCol:", worldCol.aggregate_array("wld_rgn").distinct())
+  
+  // Select countries in Asia.
+  var Asia_raw = worldCol.filterMetadata('wld_rgn', 'contains', 'Asia');
+  
+  // Merge all geometries in the feature collection into one.
+  var Asia_unioned = Asia_raw.union();
+  
+  // print("Asia_unioned:", Asia_unioned)
+
+  if (false) {
+    // Visualization.
+    Map.setOptions("hybrid");
+    
+    Map.centerObject(Asia_raw, 2);
+    
+    Map.addLayer(Asia_raw, 
+      {color: "ff0000", opacity: 1}, "Asia_raw", true);
+
+  } else if (true) {
+    // Export the result.
+    var fileName = "Asia_LSIB_SIMPLE";
+    
+    Export.table.toAsset({
+      collection: Asia_unioned, 
+      description: fileName, 
+      assetId: "users/RealEarth/Asia_ATE/Climate-Based_ATE/" +
+        fileName
+    });
+  }
+  
+} else if (true) {
+  
+  /* Generate and buffer the bounding box of the identified area. */
+  
+  // Load the identified study domain.
+  var studyDomain = ee.FeatureCollection("users/RealEarth/Asia_ATE/Climate-Based_ATE/" +
+    "Asia_LSIB_SIMPLE");
+  
+  // print("studyDomain:", studyDomain)
+
+  // Generate the bounding box of the study domain.
+  var BBox = ee.Feature(studyDomain.first()).bounds();
+  
+  // print("BBox:", BBox)
+  
+  // Buffer the bounding box and then generate the buffer's bounding box.
+  var buffered_BBox = BBox.buffer(1e4).bounds();
+  
+  print("buffered_BBox:", buffered_BBox)
+  
+  // Create a rectanglar AOI based on the buffered bounding box.
+  //  (Note: the maximum longitude is set to 180 degrees.)
+  var asiaAOI = ee.Geometry.Rectangle({
+    coords: [[25.070944865790178,-12.370472853749458],
+      [180,81.37103685520522]],
+    geodesic: false
+  });
+  
+  if (true) {
+    // Vissualization.
+    Map.setOptions("hybrid");
+    
+    Map.centerObject(studyDomain, 2);
+    
+    Map.addLayer(buffered_BBox, {color: "FF0000"}, "buffered_BBox");
+    
+    Map.addLayer(BBox, {color: "0000FF"}, "BBox");
+    
+    Map.addLayer(studyDomain, {color: "FFFF00"}, "studyDomain", true);
+    
+    Map.addLayer(asiaAOI, {color: "00FF00"}, "asiaAOI");
+  }
+}
+

@@ -1,0 +1,163 @@
+/**
+ * Introduction:
+ * 
+ * 1) Buffer each selected centerline with a length between 300m and 3km
+ *  by 45m.
+ * 
+ * 2) Group the created transects by the centerline ID.
+ * 
+ * 3) Count the 30-m elevation pixels within the study domain
+ *  for each generated transect and select transects
+ *  with at least 30 study domain pixels.
+ * 
+ * Need to change: 5.
+ * 
+ * Update: 2/8/2022.
+ * 
+ * Runtime: ~10m.
+ */
+
+
+/* Load module(s). */
+
+var IMG = require("users/ChenyangWei/Public:Modules/Image_Analysis&Processing");
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var TNA = require("users/ChenyangWei/Public:Modules/Transect_NDVI_Analysis");
+var NGA = require("users/ChenyangWei/Public:Modules/NDVI_Gradient_Analysis.js");
+var FC_AP = require("users/ChenyangWei/Public:Modules/FeatureCollection_Analysis&Processing");
+
+
+/* Data and function preparation. */
+
+// Target projection.
+var targetPrj = IMG.WGS84_30m;
+
+// Load the list of all the AOIs in Asia.
+var AOIs = NGA.AOIs_List_Asia;
+
+// Set the ID (1 ~ 6) of the AOI. /**** 1) Need to change. ****/
+var AOI_ID = 6;
+
+// Set the major working directory.
+var wd_Main = GATE.wd_Asia; /**** 2) Need to change. ****/
+
+// Load the new CATE.
+var newCATE = ee.Image(wd_Main
+  + "Climate-Based_ATE/" 
+  + GATE.newCATE_fileName);
+
+// Set the working directory of the AOI.
+var wd_AOI = wd_Main
+  + "Elevational_Transect_Generation/"
+  + "AOI_Asia_" + AOI_ID
+  + "/";
+
+// Determine the universal file path of
+//  the selected transect centerlines.
+var wd_SelectedCLs = wd_AOI
+  + TNA.selectedCLs_fileName
+  + "/"
+  + TNA.selectedCLs_byBasinGroup_fileName;
+
+// Set the output directory of the AOI.
+var output_AOI = wd_Main
+  + "NDVI_Gradient_Analysis/"
+  + "AOI_Asia_" + AOI_ID
+  + "/";
+
+// Determine the area of interest.
+var AOI = AOIs[AOI_ID - 1];
+
+// Load and reproject the ALOS elevation in the new CATE.
+var ALOSelv_newCATE = GATE.load_ALOSelevation(AOI, targetPrj)
+  .updateMask(newCATE);
+
+// Name the centerline ID.
+var CLid = "CL_newID"; /**** 3) Need to check. ****/
+
+// Determine the number of transect subsets.
+/**** 4) Need to check. ****/
+// var subsetNum = 20; // AOI-1.
+// var subsetNum = 10; // AOI-2, 4.
+var subsetNum = 5; // AOI-3, 5, 6.
+
+// Generate a List of the centerline-ID Filters.
+var CLid_FilterList = NGA.Create_CLid_Filters(subsetNum, CLid);
+
+// Whether output the result(s).
+var output = true; // true OR false.
+
+
+/* Perform the following operations for each basin group. */
+
+for (var basinGroupID = 1; basinGroupID <= 5; basinGroupID ++) {
+
+  // Load the selected transect centerlines of each basin group.
+  var selectedCLs = ee.FeatureCollection(wd_SelectedCLs
+    + basinGroupID);
+  
+  
+  /* Buffer each selected centerline by 45 m. */
+  
+  var allTransects = TNA.buffer_Centerlines_by45m(selectedCLs);
+
+  
+  /* Group the created transects by the centerline ID. */
+  
+  // Define a variable for checking the total transect number.
+  var totalTransectNum = ee.Number(0);
+  
+  // Perform the following operations for each subset of transects.
+  for (var subsetID = 1; subsetID <= subsetNum; subsetID ++) {
+    
+    // Select the corresponding centerline-ID Filter.
+    var CLid_Filter = CLid_FilterList.get(subsetID - 1);
+    
+    // Extract the corresponding subset of transects.
+    var transectSubset = allTransects.filter(CLid_Filter);
+    
+    // Add up the number of transects in each subset.
+    totalTransectNum = totalTransectNum.add(transectSubset.size());
+    
+    
+    /* Count the elevation pixels within study domain for each transect
+      and select transects with at least 30 pixels. */
+    
+    var pixelCounted_TransectSubset = 
+      NGA.Count_StudyDomainPixels_perTransect(
+        transectSubset, ALOSelv_newCATE, targetPrj
+      );
+    
+    
+    if (output) {
+      
+      // Export the result(s).
+      var wd_Output = output_AOI
+        + NGA.pixelCountedTransects_FullName
+          /**** 5) Need to create. ****/
+          // "elvPixelCountedTransects_gte30pixels_300mTo3km"
+        + "/";
+      
+      var fileName = NGA.pixelCountedTransects_ShortName
+        + "_BG" + basinGroupID
+        + "_S" + subsetID;
+      
+      Export.table.toAsset({
+        collection: pixelCounted_TransectSubset, 
+        description: fileName, 
+        assetId: wd_Output
+          + fileName
+      });
+    }
+  }
+  
+  
+  if (output === false) {
+    
+    // Examine the result(s).
+    FC_AP.Print_FtrColInfo("allTransects:", allTransects);
+    
+    print("totalTransectNum:", totalTransectNum);
+  }
+}
+

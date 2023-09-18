@@ -1,0 +1,368 @@
+/**
+ * Introduction:
+ * 1) Within each previously selected basin, extract the elevations and corresponding coordinates 
+ *  of the lowest pixel of closed forests in the lower regions (lower slope or valley) and 
+ *  the highest non-forested pixel in the upper regions (upper slope or cliff) 
+ *  within each CATE segment, respectively. 
+ * 2) Select CATE segments with both elevational extremes.
+ * 3) In each selected CATE segment, generate a line string between 
+ *  the highest non-forested pixel and the lowest pixel of closed forests 
+ *  as the center line of an elevational transect.
+ * 
+ * Update: 6/24/2021.
+ * 
+ * Runtime: h.
+ */
+
+
+/* Load the required dataset(s). */
+
+// Set the 10-km buffered bounding box of the study domain.
+//  (Note: the maximum longitude is set to 180 degrees.)
+var asiaAOI = ee.Geometry.Rectangle({
+  coords: [[25.070944865790178,-12.370472853749458],
+    [180,81.37103685520522]],
+  geodesic: false
+});
+
+// Target projection.
+var targetPrj = {
+  crs: "EPSG:4326",
+  scale: 30
+};
+
+// Set the working directory.
+var wdAsia = "users/RealEarth/Asia_ATE/";
+
+// Function to print the image information.
+function printImgInfo(name, image) {
+  print(name,
+    image.bandTypes(),
+    image.projection().crs(),
+    image.projection().nominalScale());
+}
+
+// Load the segmented new CATE.
+var segCATE = ee.Image(wdAsia + "Transect_Generation/"
+  + "30mSegmentedNewCATE_distToRidgesNoCliff_NAstripesRemoved_ridgesRemoved");
+
+// printImgInfo("segCATE:", segCATE)
+
+// Load the previously selected HydroSHEDS basins ("hybas_12") 
+//  with both closed forests on the lower slope or in the valley
+//  and non-forested areas on the upper slope or the cliff
+//  within the segmented new CATE.
+var basins = ee.FeatureCollection(wdAsia + "Transect_Generation/"
+  + "Hybas12Basins_LowerClosedForests_UpperNonForested_30mSegmentedNewCATE");
+
+// print("basins:", 
+//   basins.first(),
+//   basins.size())
+
+// ALOS elevation (Version 3.2, released in January 2021) in the AOI.
+var ALOSelv = ee.ImageCollection('JAXA/ALOS/AW3D30/V3_2').select('DSM')
+  .filterBounds(asiaAOI)
+  .mosaic()
+  .reproject(targetPrj);
+
+// printImgInfo("ALOSelv:", ALOSelv)
+
+
+/* Pre-process the ALOS landform dataset. */
+
+// The landform dataset is based on the 30m "AVE" band of JAXA's ALOS DEM 
+//  (available in EE as JAXA/ALOS/AW3D30_V1_1).
+//  There are stripes in the area over 60 degrees in latitude.
+var rawLF = ee.Image('CSP/ERGo/1_0/Global/ALOS_landforms').select('constant')
+  .reproject(targetPrj);
+
+// Landforms within the segmented new CATE
+//  (with both ridges and invalid landform stripes removed).
+var CATE_LF = rawLF.updateMask(segCATE);
+
+
+/* Extract the landforms of interest in the segmented new CATE
+  (with both ridges and invalid landform stripes removed). */
+
+// Upper regions (Cliff and Upper slopes).
+var upper = CATE_LF.gte(15).and(CATE_LF.lte(24));
+
+// Lower regions (Lower slopes and Valleys).
+var lower = CATE_LF.gte(31);
+
+
+/* Load the Copernicus Global Land Cover datasets (v3.0.1) from 2015 to 2019. */
+
+// Set the file path and band name of land cover data.
+var lcPath = "COPERNICUS/Landcover/100m/Proba-V-C3/Global/";
+
+var lcName = "discrete_classification";
+
+// Function to read the annual land cover datasets.
+function readAnnualLC(year) {
+  return ee.Image(lcPath + year).select(lcName);
+}
+
+// Read the datasets of 2015-2019.
+var landCover = ee.ImageCollection.fromImages([
+  readAnnualLC(2015),
+  readAnnualLC(2016),
+  readAnnualLC(2017),
+  readAnnualLC(2018),
+  readAnnualLC(2019),
+]);
+
+
+/* Extract and reproject the elevation of closed forests 
+  (tree canopy > 70 %) in 2015-2019. */
+
+// Function to extract the annual closed forests.
+function extractCF(lcImg) {
+  return lcImg.gte(111).and(lcImg.lte(116));
+}
+
+// Annual closed forests from 2015 to 2019.
+var annualCF = landCover.map(extractCF);
+
+// Extract and reproject areas classified as closed forests 
+//  in ALL the five years.
+var CF_5yr = annualCF.min()
+  .reproject(targetPrj);
+
+
+/* Extract and reproject the non-forested areas in 2015-2019. */
+
+// Function to extract the annual non-forested areas
+//  (from "Shrubs" to "Moss and lichen").
+function extractNonF(lcImg) {
+  return lcImg.gte(20).and(lcImg.lte(100));
+}
+
+// Annual non-forested areas from 2015 to 2019.
+var annualNonF = landCover.map(extractNonF);
+
+// Extract and reproject areas classified as non-forested areas 
+//  in ALL the five years.
+var NonF_5yr = annualNonF.min()
+  .reproject(targetPrj);
+
+
+/* Obtain the qualified closed forests and non-forested areas. */
+
+// Closed forests on the lower slope or in the valley.
+var closedForests_lowerRegions = CF_5yr.updateMask(lower);
+
+// Non-forested areas on the upper slope or the cliff.
+var nonForested_upperRegions = NonF_5yr.updateMask(upper);
+
+
+/* Combine the elevations and pixel coordinates of
+  the qualified closed forests and non-forested areas, respectively. */
+
+// Get the elevation of each type of area.
+var closedForestsElv = ALOSelv.updateMask(closedForests_lowerRegions)
+  .rename("CF_Elv");
+
+var nonForestedElv = ALOSelv.updateMask(nonForested_upperRegions)
+  .rename("nonF_Elv");
+
+// Determine and rename the pixel coordinates 
+//  of each type of area.
+var rawCoords = ee.Image.pixelLonLat()
+  .reproject(targetPrj);
+
+var closedForestsCoords = rawCoords.updateMask(closedForests_lowerRegions)
+  .select(["latitude", "longitude"], 
+    ["CF_Lat", "CF_Long"]);
+
+var nonForestedCoords = rawCoords.updateMask(nonForested_upperRegions)
+  .select(["latitude", "longitude"], 
+    ["nonF_Lat", "nonF_Long"]);
+
+// Combine the elevations and pixel coordinates of each type of area.
+var CF_ElvCoords = closedForestsElv
+  .addBands(closedForestsCoords);
+
+var nonF_ElvCoords = nonForestedElv
+  .addBands(nonForestedCoords);
+
+// Combine the segmented new CATE with the elevation and coordinate datasets
+//  of the two types of areas for further extracting the elevational extremes by CATE segment
+//  (Note: the order of bands here should be consistent with the order of combined reducers
+//  in the following "reduceToVectors()" function).
+var segCATE_CF_nonF_ElvCoords = segCATE
+  .addBands(CF_ElvCoords)
+  .addBands(nonF_ElvCoords)
+  .reproject(targetPrj);
+
+// printImgInfo("segCATE_CF_nonF_ElvCoords:", 
+//   segCATE_CF_nonF_ElvCoords)
+
+// print("segCATE_CF_nonF_ElvCoords.bandNames()", 
+//   segCATE_CF_nonF_ElvCoords.bandNames())
+
+
+/*  Within each previously selected basin, extract the elevations and corresponding coordinates 
+  of the lowest pixel of closed forests in the lower regions (lower slope or valley) and 
+  the highest non-forested pixel in the upper regions (upper slope or cliff) 
+  within each CATE segment, respectively. */
+
+// Create a reducer to extract the elevation and corresponding coordinates 
+//  of the lowest pixel of closed forests in the lower regions.
+var minReducer_CFelv_Coords = ee.Reducer.min({
+  numInputs: 3
+}).setOutputs(CF_ElvCoords.bandNames());
+
+// Create a reducer to extract the elevation and corresponding coordinates 
+//  of the highest non-forested pixel in the upper regions.
+var maxReducer_nonFelv_Coords = ee.Reducer.max({
+  numInputs: 3
+}).setOutputs(nonF_ElvCoords.bandNames());
+
+// Combine the two elevation reducers
+//  (Note: the order of reducers here should be consistent with the order of combined bands
+//  in the previously generated "segCATE_CF_nonF_ElvCoords" image).
+var combinedReducer = minReducer_CFelv_Coords.combine({
+  reducer2: maxReducer_nonFelv_Coords, 
+  sharedInputs: false
+});
+// (Note: if "sharedInputs" is false, 
+//  the inputs of the combined reducer will be 
+//  those of reducer1 followed by those of reducer2.)
+
+
+// Function to extract the elevational extremes and corresponding coordinates 
+//  within each CATE segment by basin.
+function extractSegmentElvExtremesByBasin(basin) {
+  // Extract the geometry of each basin.
+  var basinGeom = basin.geometry();
+  
+  // Get the properties of interest.
+  var HYBAS_ID = basin.get("HYBAS_ID");
+  var PFAF_ID = basin.get("PFAF_ID");
+  
+  // Vectorize the segmented new CATE in the basin and 
+  //  extract the elevational extremes and corresponding coordinates 
+  //  within each vectorized segment.
+  var segmentElvMinMax = segCATE_CF_nonF_ElvCoords.reduceToVectors({
+    // The first band (i.e., the segmented new CATE) of the input image 
+    //  is expected to be an integer type; 
+    //  adjacent pixels will be in the same vector 
+    //  if they have the same value in this band.
+    reducer: combinedReducer, 
+    // Extract the minimum and maximum elevations.
+    //  The inputs of this combined reducer will be taken from 
+    //  the image's bands after dropping the first band 
+    //  (i.e., the segmented new CATE). 
+    geometry: basinGeom,
+    maxPixels: 1e13,
+    crs: "EPSG:4326",
+    scale: 30,
+    geometryType: "polygon",
+    eightConnected: false // Only pixels that share an edge are considered adjacent.
+  });
+  
+  // Extract the IDs of the basin.
+  var segmentElvMinMax_withBasinInfo = segmentElvMinMax.map(function(segment) {
+    var segment_withBasinInfo = segment.set({
+      HYBAS_ID: HYBAS_ID,
+      PFAF_ID: PFAF_ID
+    });
+    
+    return segment_withBasinInfo;
+  });
+  
+  return segmentElvMinMax_withBasinInfo;
+}
+
+// Extract the elevational extremes and corresponding coordinates by basin.
+var segmentElvExtremes = basins.map(extractSegmentElvExtremesByBasin)
+  .flatten();
+
+// print("segmentElvExtremes:", 
+//   segmentElvExtremes.limit(5))
+
+// Select CATE segments with both the minimum elevation of closed forests and 
+//  the maximum non-forested elevation.
+//  Also, the latter one should be greater than the former one.
+var selectedSegments = segmentElvExtremes.filter(ee.Filter.and(
+  ee.Filter.neq("nonF_Elv", null),
+  ee.Filter.neq("CF_Elv", null),
+  ee.Filter.greaterThan({
+    leftField: "nonF_Elv", 
+    rightField: "CF_Elv"
+  })));
+
+// print("selectedSegments:", 
+//   selectedSegments.limit(5))
+
+
+/* In each selected CATE segment, generate a line string between 
+  the highest non-forested pixel and the lowest pixel of closed forests  
+  as the center line of an elevational transect. */
+
+// Function to generate a transect center line within each selected CATE segment.
+function generateCenterLineBySegment(segment) {
+  // Extract the coordinates of pixels with 
+  // the minimum elevation of closed forests.
+  var CF_Long = segment.get("CF_Long");
+  var CF_Lat = segment.get("CF_Lat");
+
+  // Extract the coordinates of pixels with 
+  // the maximum non-forested elevation.
+  var nonF_Long = segment.get("nonF_Long");
+  var nonF_Lat = segment.get("nonF_Lat");
+
+  // Construct a line string between the closed-forest and non-forested pixels.
+  var lineString = ee.Geometry.LineString([[CF_Long, CF_Lat], 
+    [nonF_Long, nonF_Lat]]);
+
+  // Get the length of the constructed line string.
+  var cL_length = lineString.length(); // In meters.
+  
+  // Create a center line feature based on the line string with 
+  //  the properties of interest.
+  var centerLine = ee.Feature(lineString).copyProperties({
+    source: segment, 
+    exclude: ["label"]
+  }).set({
+    cL_length: cL_length
+  });
+  
+  return centerLine;
+}
+
+// Generate transect center lines by CATE segment.
+var centerLines = selectedSegments.map(generateCenterLineBySegment);
+
+// print("centerLines:", 
+//   centerLines.limit(5))
+
+
+if (false) {
+  // Visualization.
+  Map.centerObject(centerLines.first(), 12); 
+  Map.setOptions("hybrid");
+  
+  Map.addLayer(segCATE, {palette: "FFFF00"}, "segCATE", false, 0.5);
+  
+  Map.addLayer(closedForests_lowerRegions, {palette: "00FF00"}, 
+    "closedForests_lowerRegions", true, 0.5);
+  
+  Map.addLayer(nonForested_upperRegions, {palette: "0000FF"}, 
+    "nonForested_upperRegions", true, 0.5);
+
+  Map.addLayer(centerLines.limit(10), {color: "FF0000"}, "centerLines", true);
+
+} else if (true) {
+  // Export the result.
+  var fileName = "TransectCenterLines_LowerClosedForests_UpperNonForested_30mSegmentedNewCATE";
+  
+  Export.table.toAsset({
+    collection: centerLines, 
+    description: fileName, 
+    assetId: wdAsia + "Transect_Generation/"
+      + fileName
+  });
+}
+

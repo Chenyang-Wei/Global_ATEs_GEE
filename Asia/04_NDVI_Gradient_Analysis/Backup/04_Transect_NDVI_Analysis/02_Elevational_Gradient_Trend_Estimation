@@ -1,0 +1,139 @@
+/**
+ * Introduction:
+ *  (Note: The following operations are performed
+ *    for each basin group.)
+ * 
+ * 1) Estimate the annual elevational NDVI gradients of each transect from 1985 to 2020
+ *  and remove the transect features that have "NaN" gradient.
+ * 2) Estimate the temporal trend of the annual elevational NDVI gradients
+ *  of each transect.
+ * 
+ * Update: 1/6/2022.
+ * 
+ * Runtime: 3m ~ 6h.
+ */
+
+
+/* Load module(s). */
+
+var IMG = require("users/ChenyangWei/Public:Modules/Image_Analysis&Processing");
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var TNA = require("users/ChenyangWei/Public:Modules/Transect_NDVI_Analysis");
+
+
+/* Data and function preparation. */
+
+// Target projection.
+var targetPrj = IMG.WGS84_30m;
+
+// Set a list of all the areas of interest in Asia.
+var AOIs = [
+  GATE.AOI_Asia_1,
+  GATE.AOI_Asia_2,
+  GATE.AOI_Asia_3,
+  GATE.AOI_Asia_4,
+  GATE.AOI_Asia_5,
+  GATE.AOI_Asia_6
+];
+
+// Set the major working directory.
+var wd_Main = GATE.wd_Asia;
+
+// Determine the working directory of the NDVI dataset.
+var wd_NDVI = GATE.wd_Asia_2;
+
+// Load the new CATE.
+var newCATE = ee.Image(wd_Main
+  + "Climate-Based_ATE/" 
+  + GATE.newCATE_fileName);
+
+// Read the annual NDVIs in the new CATE as an Image.
+//  (Note: apply for all continents other than North America.)
+var rawAnnualNDVIs_newCATE = TNA.loadAnnualNDVIs_nonNorthAmerica(wd_NDVI)
+  .updateMask(newCATE);
+
+// Remove the annual NDVI of 1984.
+var annualNDVIs_newCATE = IMG.RemoveBands_fromImage(rawAnnualNDVIs_newCATE, 
+  ["smdNDVI_1984"]);
+
+
+/* Operations by Asian AOI (1 ~ 6). */
+
+for (var AOI_ID = 1; AOI_ID <= 6; AOI_ID ++) {
+
+  // Determine the area of interest.
+  var AOI = AOIs[AOI_ID - 1];
+  
+  // Set the working directory of the AOI.
+  var wd_AOI = wd_Main
+    + "Elevational_Transect_Generation/"
+    + "AOI_Asia_" + AOI_ID
+    + "/";
+  
+  // Determine the universal file path of
+  //  the selected transect centerlines.
+  var wd_SelectedCLs = wd_AOI
+    + TNA.selectedCLs_fileName
+    + "/"
+    + TNA.selectedCLs_byBasinGroup_fileName;
+
+  // Set the output directory of the AOI.
+  var output_AOI = wd_Main
+    + "Transect_NDVI_Analysis/"
+    + "AOI_Asia_" + AOI_ID
+    + "/";
+  
+  // Load the ALOS elevation (Version 3.2, released in January 2021)
+  //  in the new CATE.
+  var ALOSelv_newCATE = GATE.load_ALOSelevation(AOI, targetPrj)
+    .updateMask(newCATE);
+
+  // Pair the elevation with each annual NDVI as an ImageCollection.
+  var Elv_AnnualNDVIs_newCATE = TNA.pair_Elevation_AND_AnnualNDVIs(
+    ALOSelv_newCATE, annualNDVIs_newCATE
+  );
+
+
+  /* Operations by basin group (1 ~ 5). */
+  
+  for (var basinGroupID = 1; basinGroupID <= 5; basinGroupID ++) {
+  
+    // Load the selected transect centerlines.
+    var selectedCLs = ee.FeatureCollection(wd_SelectedCLs
+      + basinGroupID);
+
+    // Buffer the transect centerlines by 45 m.
+    var transects = TNA.buffer_Centerlines_by45m(selectedCLs);
+    
+    // Estimate the temporal trend of the annual elevational NDVI gradients
+    //  of each transect by basin.
+    var elvNDVIgradientTrends = TNA.estimate_ElvNDVIgradientTrends_byBasin(
+      transects, Elv_AnnualNDVIs_newCATE, targetPrj, "CL_newID"
+    );
+    
+    
+    if (false) { //// true OR false.
+    
+      print("transects:", 
+        transects.first(),
+        transects.size());
+    
+    } else { //// Export the result.
+      
+      var wd_Output = output_AOI
+        + TNA.elvNDVIgradientTrends_fileName
+        + "/";
+      
+      var fileName = TNA.gradientTrends_byBasinGroup_fileName
+        + basinGroupID;
+      
+      Export.table.toAsset({
+        collection: elvNDVIgradientTrends, 
+        description: fileName, 
+        assetId: wd_Output
+          + fileName
+      });
+    }
+  }
+}
+

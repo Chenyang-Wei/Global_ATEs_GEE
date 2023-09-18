@@ -1,0 +1,119 @@
+/**
+ * Introduction:
+ * 
+ * 1) For each transect, derive the start (min.) and end (max.) years and 
+ *  the time span of the corresponding annual Features.
+ * 
+ * 
+ * Update: 4/19/2022.
+ * 
+ * Need to update: 8.
+ * 
+ * Runtime: < 10m.
+ */
+
+
+/* Load module(s). */
+
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var NGA = require("users/ChenyangWei/Public:Modules/NDVI_Gradient_Analysis.js");
+var FC_AP = require("users/ChenyangWei/Public:Modules/FeatureCollection_Analysis&Processing");
+
+
+/* Data loading. */
+
+// Set the major working directory.
+var wd_Main = GATE.wd_Asia; 
+
+// Set the ID (1 ~ 6) of the AOI.
+var AOI_ID = 6;
+
+// Set the working directory of the AOI.
+var wd_AOI = wd_Main
+  + "NDVI_Gradient_Analysis/"
+  + "AOI_Asia_" + AOI_ID
+  + "/";
+
+// Determine the common file path of the raw transects.
+var wd_RawTransects = wd_AOI
+  + NGA.transects_GapDetected_FullName // 1) Need to update.
+  + "/"
+  + NGA.transects_GapDetected_ShortName; // 2) Need to update.
+
+// Determine the common file path of the annual Features.
+var wd_AnnualFeatures = wd_AOI
+  + NGA.filteredAnnualFeatures_FullName
+  + "/"
+  + NGA.filteredAnnualFeatures_ShortName;
+
+// Determine the number of transect subsets.
+  /**** 2) Need to check. ****/
+// var subsetNum = 20; // AOI-1.
+// var subsetNum = 10; // AOI-2, 4.
+var subsetNum = 5; // AOI-3, 5, 6.
+
+// Whether to output the result(s).
+var output = false; // true OR false.
+
+
+/* Perform the following operations for each basin group. */
+
+for (var basinGroupID = 1; basinGroupID <= 5; basinGroupID ++) {
+
+
+  /* Perform the following operations for each subset of transects. */
+  
+  for (var subsetID = 1; subsetID <= subsetNum; subsetID ++) {
+    
+    // Load each subset of the raw transects.
+    var raw_Transects = ee.FeatureCollection(wd_RawTransects
+      + "_BG" + basinGroupID
+      + "_S" + subsetID);
+    
+    // Load each subset of the annual Features.
+    var filtered_AnnualFeatures = ee.FeatureCollection(wd_AnnualFeatures
+      + "_BG" + basinGroupID
+      + "_S" + subsetID);
+    
+    
+    /* Derive the start (min.) and end (max.) years and the time span for 
+      the annual observations of each transect. */
+    
+    var centerlineID = "CL_newID";
+    
+    var transects_withObsYearVars = NGA.Analyze_ObsYears_byTransect(
+      raw_Transects, filtered_AnnualFeatures, centerlineID
+    ); // 3) Need to update.
+    
+    
+    if (output) {
+      // Export the final results.
+      
+      var wd_Output = wd_AOI
+        + NGA.transects_withObsYearVars_FullName // 4) Need to update.
+          // "transects_withObsYearVars_MovWinTempVars_GapDetected_MedianFiltered" // 5) Need to update.
+        + "/";
+      
+      var fileName = NGA.transects_withObsYearVars_ShortName // 6) Need to update.
+        + "_BG" + basinGroupID
+        + "_S" + subsetID;
+      
+      Export.table.toAsset({
+        collection: transects_withObsYearVars, // 7) Need to update.
+        description: fileName, 
+        assetId: wd_Output
+          + fileName
+      });
+    }
+  }
+}
+
+
+if (!output) {
+  // Examine the last subset of data.
+  
+  print("raw_Transects:", raw_Transects.size());
+  
+  FC_AP.Print_FtrColInfo("transects_withObsYearVars:", transects_withObsYearVars); // 8) Need to update.
+}
+

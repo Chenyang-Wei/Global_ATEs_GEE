@@ -1,0 +1,67 @@
+/**
+ * Introduction:
+ * 1) Combine the mid-quarter segment buffers of all basin groups in all AOIs
+ *  into one FeatureCollection.
+ * 
+ * Update: 10/13/2021.
+ * 
+ * Runtime:
+ */
+
+
+/* Load module(s). */
+
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var VIS = require("users/ChenyangWei/Public:Modules/Visualization");
+
+
+/* Read and combine the mid-quarter segment buffers of all basin groups in all AOIs. */
+
+// Combine the mid-quarter segment buffers by AOI and basin group.
+var allBuffers = ee.List([]);
+
+for (var AOI_ID = 1; AOI_ID <= 6; AOI_ID ++) {
+  // Set the working directory of the AOI.
+  var wd_AOI = GATE.wd_Asia 
+    + "Elevational_Transect_Generation/"
+    + "AOI_Asia_" + AOI_ID + "/";
+  
+  for (var basinGroupID = 1; basinGroupID <= 5; basinGroupID ++) {
+    // Load the buffers of mid-quarter segments of the basin group.
+    var wd_Buffers = wd_AOI 
+      + GATE.midQuarterBuffers_fileName + "/"
+      + GATE.midQuarterBuffers_byBasinGroup_fileName
+      + basinGroupID;
+    
+    var buffers_perBasinGroup = ee.FeatureCollection(wd_Buffers);
+    
+    allBuffers = allBuffers.add(buffers_perBasinGroup);
+  }
+}
+
+var allBuffers_Flattened = ee.FeatureCollection(allBuffers).flatten();
+
+
+if (true) { // true OR false.
+  print("allBuffers_Flattened:", 
+    allBuffers_Flattened.size(),
+    allBuffers_Flattened.first());
+  
+  VIS.centerAsia(12);
+  
+  Map.addLayer(allBuffers_Flattened, {color: "FF0000"}, "allBuffers_Flattened");
+
+} else {
+  //// Export the result.
+  var fileName = GATE.midQuarterBuffers_AllBasinGroups_fileName;
+  
+  var wd_Output = GATE.wd_Asia 
+    + "Elevational_Transect_Generation/";
+  
+  Export.table.toAsset({
+    collection: allBuffers_Flattened, 
+    description: fileName, 
+    assetId: wd_Output + fileName
+  });
+}
+

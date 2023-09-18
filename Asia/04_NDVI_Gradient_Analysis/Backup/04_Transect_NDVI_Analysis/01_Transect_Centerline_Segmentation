@@ -1,0 +1,94 @@
+/**
+ * Introduction:
+ * 1) Divide each transect centerline into two equal segments.
+ * 2) Buffer each centerline segment by 45 m.
+ * 
+ * Update: 1/5/2022.
+ * 
+ * Runtime: 1m ~ 30m.
+ */
+
+
+/* Load module(s). */
+
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var TNA = require("users/ChenyangWei/Public:Modules/Transect_NDVI_Analysis");
+
+
+/* Data and function preparation. */
+
+// Set the major working directory.
+var wd_Main = GATE.wd_Asia;
+
+
+/* Operations by Asian AOI (1 ~ 6). */
+
+for (var AOI_ID = 1; AOI_ID <= 6; AOI_ID ++) {
+  
+  // Set the working directory of the AOI.
+  var wd_AOI = wd_Main
+    + "Elevational_Transect_Generation/"
+    + "AOI_Asia_" + AOI_ID
+    + "/";
+  
+  // Determine the universal file path of
+  //  the selected transect centerlines.
+  var wd_SelectedCLs = wd_AOI
+    + TNA.selectedCLs_fileName
+    + "/"
+    + TNA.selectedCLs_byBasinGroup_fileName;
+
+  // Set the output directory of the AOI.
+  var output_AOI = wd_Main
+    + "Transect_NDVI_Analysis/"
+    + "AOI_Asia_" + AOI_ID
+    + "/";
+  
+
+  /* Operations by basin group (1 ~ 5). */
+  
+  for (var basinGroupID = 1; basinGroupID <= 5; basinGroupID ++) {
+    
+    // Load the selected transect centerlines.
+    var selectedCLs = ee.FeatureCollection(wd_SelectedCLs
+      + basinGroupID);
+
+
+    /* Divide each transect centerline into two equal segments. */
+    
+    var CLsegments = TNA.divide_Centerlines_byBasin(selectedCLs, "CL_newID");
+    
+    
+    /* Buffer each centerline segment by 45 m. */
+    
+    var transectSegments = TNA.buffer_Centerlines_by45m(CLsegments);
+  
+  
+    if (false) { //// true OR false.
+    
+      print("selectedCLs:", 
+        selectedCLs.first(),
+        selectedCLs.size());
+    
+      print("transectSegments:", 
+        transectSegments.first());
+    
+    } else { //// Export the result.
+      
+      var wd_Output = output_AOI
+        + TNA.transectSegments_fileName
+        + "/";
+      
+      var fileName = TNA.transectSegments_byBasinGroup_fileName
+        + basinGroupID;
+      
+      Export.table.toAsset({
+        collection: transectSegments, 
+        description: fileName, 
+        assetId: wd_Output
+          + fileName
+      });
+    }
+  }
+}
+

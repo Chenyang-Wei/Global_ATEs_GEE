@@ -1,0 +1,45 @@
+/**
+ * Introduction:
+ * 1) Divide the Asia AOI into 6 segments to reduce the size of data
+ *  processed each time.
+ * 
+ * Update: 9/29/2021.
+ */
+
+
+/* Load module(s). */
+
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var VIS = require("users/ChenyangWei/Public:Modules/Visualization");
+
+
+/* Data and function preparation. */
+
+// Load the original area of interest.
+var Asia = GATE.AOI_Asia;
+
+// Set the working directory.
+var wd_Main = GATE.wd_Asia;
+
+// Load the new CATE.
+var newCATE = ee.Image(wd_Main + "Climate-Based_ATE/" 
+  + GATE.newCATE_fileName);
+
+
+if (true) { // true OR false.
+  
+  //// Visualization.
+  VIS.centerAsia(3);
+  
+  Map.addLayer(Asia, {color: "FFFF00"}, "Asia");
+  
+  Map.addLayer(GATE.AOI_Asia_1, {color: "0000FF"}, "AOI_Asia_1");
+  Map.addLayer(GATE.AOI_Asia_2, {color: "0000FF"}, "AOI_Asia_2");
+  Map.addLayer(GATE.AOI_Asia_3, {color: "0000FF"}, "AOI_Asia_3");
+  Map.addLayer(GATE.AOI_Asia_4, {color: "0000FF"}, "AOI_Asia_4");
+  Map.addLayer(GATE.AOI_Asia_5, {color: "0000FF"}, "AOI_Asia_5");
+  Map.addLayer(GATE.AOI_Asia_6, {color: "0000FF"}, "AOI_Asia_6");
+  
+  Map.addLayer(newCATE, {palette: "FF0000"}, "newCATE", true);
+}
+

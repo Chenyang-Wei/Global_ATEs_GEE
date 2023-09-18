@@ -1,0 +1,80 @@
+/**
+ * Introduction:
+ *  (Note: The following operations are performed
+ *    by Asian AOI and basin group.)
+ * 
+ * 1) Add the Asian AOI ID and the basin group ID to each transect 
+ *  and combine them with the corresponding centerline ID.
+ * 2) Extract the mid-quarter segment around the centroid 
+ *  of each transect centerline. 
+ * 
+ * Update: 10/8/2021.
+ * 
+ * Runtime: 1m ~ 30m.
+ */
+
+
+/* Load module(s). */
+
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+
+// Set the major working directory.
+var wd_Main = GATE.wd_Asia;
+
+
+/* Operations by Asian AOI (1 ~ 6). */
+
+for (var AOI_ID = 1; AOI_ID <= 6; AOI_ID ++) {
+  
+  // Set the working directory of the AOI.
+  var wd_AOI = GATE.wd_Asia 
+    + "Elevational_Transect_Generation/"
+    + "AOI_Asia_" + AOI_ID + "/";
+  
+  
+  /* Operations by basin group (1 ~ 5). */
+
+  for (var basinGroupID = 1; basinGroupID <= 5; basinGroupID ++) {
+    
+    // Load the raw transect centerlines of the basin group.
+    var wd_RawCLs = wd_AOI 
+      + GATE.rawCLs_fileName + "/"
+      + GATE.rawCLs_byBasinGroup_fileName 
+      + basinGroupID;
+    
+    var rawCLs = ee.FeatureCollection(wd_RawCLs);
+
+
+    /* Add the Asian AOI ID and the basin group ID to each transect
+      and combine them with the corresponding centerline ID. */
+    
+    var rawCLs_withIDs = GATE.add_AoiID_BasinGroupID_toCenterlines(rawCLs, 
+      AOI_ID, basinGroupID);
+    
+    
+    /* Extract the mid-quarter segment of each transect centerline. */
+    
+    var midQuarterSegments = GATE.extractMidQuarterSegments(rawCLs_withIDs);
+
+
+    if (false) { // true OR false.
+      print("rawCLs:", rawCLs.size());
+      
+      print("midQuarterSegments:", midQuarterSegments.size(),
+        midQuarterSegments.first());
+    
+    } else {
+      //// Export the result(s) by basin group.
+      var wd_Output = wd_AOI + GATE.midQuarters_fileName + "/";
+      
+      var fileName = GATE.midQuarters_byBasinGroup_fileName + basinGroupID;
+      
+      Export.table.toAsset({
+        collection: midQuarterSegments, 
+        description: fileName, 
+        assetId: wd_Output + fileName
+      });
+    }
+  }
+}
+

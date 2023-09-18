@@ -1,0 +1,72 @@
+/**
+ * Introduction:
+ * 1) Union the buffers of the mid-quarter segments by basin group.
+ * 
+ * Update: 10/12/2021.
+ * 
+ * Runtime:
+ */
+
+
+/* Load module(s). */
+
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+
+
+/* Operations by Asian AOI (1 ~ 6). */
+
+for (var AOI_ID = 1; AOI_ID <= 6; AOI_ID ++) {
+  
+  // Set the working directory of the AOI.
+  var wd_AOI = GATE.wd_Asia 
+    + "Elevational_Transect_Generation/"
+    + "AOI_Asia_" + AOI_ID + "/";
+  
+  
+  /* Operations by basin group (1 ~ 5). */
+
+  for (var basinGroupID = 1; basinGroupID <= 5; basinGroupID ++) {
+    
+    // Load the buffers of mid-quarter segments of the basin group.
+    var wd_Buffers = wd_AOI 
+      + GATE.midQuarterBuffers_fileName + "/"
+      + GATE.midQuarterBuffers_byBasinGroup_fileName
+      + basinGroupID;
+    
+    var midQuarterBuffers = ee.FeatureCollection(wd_Buffers);
+    
+    
+    /* Union the buffers of the mid-quarter segments. */
+  
+    var multiPolygon_BufferUnion = midQuarterBuffers.union();
+    
+    
+    if (false) { // true OR false.
+      print("AOI_ID:", AOI_ID);
+      
+      print("basinGroupID:", basinGroupID);
+      
+      // print("midQuarterBuffers:",
+      //   midQuarterBuffers.size());
+      
+      // print("multiPolygon_BufferUnion:", 
+      //   multiPolygon_BufferUnion.size());
+    
+    } else {
+      //// Export the result(s) by basin group.
+      var wd_Output = wd_AOI
+        + GATE.multiPolygon_BufferUnion_fileName
+        + "/";
+      
+      var fileName = GATE.multiPolygon_BufferUnion_byBasinGroup_fileName
+        + basinGroupID;
+      
+      Export.table.toAsset({
+        collection: multiPolygon_BufferUnion, 
+        description: fileName, 
+        assetId: wd_Output + fileName
+      });
+    }
+  }
+}
+

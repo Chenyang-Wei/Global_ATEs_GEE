@@ -1,0 +1,373 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var t_1 = ee.FeatureCollection("users/RealEarth/Asia_ATE/elvNDVIgradientTrends_1"),
+    t_2_1 = ee.FeatureCollection("users/RealEarth/Asia_ATE/elvNDVIgradientTrends_2_1"),
+    t_2_2 = ee.FeatureCollection("users/RealEarth/Asia_ATE/elvNDVIgradientTrends_2_2"),
+    t_2_3 = ee.FeatureCollection("users/RealEarth/Asia_ATE/elvNDVIgradientTrends_2_3"),
+    t_2_4 = ee.FeatureCollection("users/RealEarth/Asia_ATE/elvNDVIgradientTrends_2_4"),
+    geom = 
+    /* color: #d63000 */
+    /* shown: false */
+    /* displayProperties: [
+      {
+        "type": "rectangle"
+      }
+    ] */
+    ee.Geometry.Polygon(
+        [[[131.23825311014116, 68.18510891826449],
+          [131.23825311014116, 67.37504573268225],
+          [134.62204217264116, 67.37504573268225],
+          [134.62204217264116, 68.18510891826449]]], null, false);
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+print(t_1.first(), t_1.size())
+
+/* Load module(s). */
+
+var IMG = require("users/ChenyangWei/Public:Modules/Image_Analysis&Processing");
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var TNA = require("users/ChenyangWei/Public:Modules/Transect_NDVI_Analysis");
+
+
+/* Data and function preparation. */
+
+// Target projection.
+var targetPrj = IMG.WGS84_30m;
+
+// Set a list of all the areas of interest in Asia.
+var AOIs = [
+  GATE.AOI_Asia_1,
+  GATE.AOI_Asia_2,
+  GATE.AOI_Asia_3,
+  GATE.AOI_Asia_4,
+  GATE.AOI_Asia_5,
+  GATE.AOI_Asia_6
+];
+
+// Set the major working directory.
+var wd_Main = GATE.wd_Asia;
+
+// Determine the working directory of the NDVI dataset.
+var wd_NDVI = GATE.wd_Asia_2;
+
+// Load the new CATE.
+var newCATE = ee.Image(wd_Main
+  + "Climate-Based_ATE/" 
+  + GATE.newCATE_fileName);
+
+// Read the annual NDVIs in the new CATE as an Image.
+//  (Note: apply for all continents other than North America.)
+var annualNDVIs_newCATE = TNA.loadAnnualNDVIs_nonNorthAmerica(wd_NDVI)
+  .updateMask(newCATE);
+
+print(annualNDVIs_newCATE)
+
+/* Re-run the operations for AOI-1, which were failed in the first run. */
+
+// The tasks of AOI-1 were failed in the first run.
+var AOI_ID = 1;
+
+// Determine the area of interest.
+var AOI = AOIs[AOI_ID - 1];
+
+// Load the ALOS elevation (Version 3.2, released in January 2021)
+//  in the new CATE.
+var ALOSelv_newCATE = GATE.load_ALOSelevation(AOI, targetPrj)
+  .updateMask(newCATE);
+
+print(ALOSelv_newCATE)
+
+// Set the working directory of the AOI.
+var wd_AOI = wd_Main
+  + "Elevational_Transect_Generation/"
+  + "AOI_Asia_" + AOI_ID
+  + "/";
+
+// Determine the universal file path of
+//  the locally steepest transect centerlines.
+var wd_SteepestCLs = wd_AOI
+  + GATE.allSteepestCLs_fileName
+  + "/"
+  + GATE.steepestCLs_byBasinGroup_fileName;
+
+
+/* Operations for each basin group of AOI-1. */
+
+
+// for (var basinGroupID = 1; basinGroupID <= 5; basinGroupID ++) {
+
+//   // Load the locally steepest transect centerlines.
+//   var steepestCLs = ee.FeatureCollection(wd_SteepestCLs
+//     + basinGroupID);
+  
+//   Map.addLayer(steepestCLs, {color: "FF0000"}, "steepestCLs " + basinGroupID);
+// }
+
+
+// Load the locally steepest transect centerlines.
+var steepestCLs = ee.FeatureCollection(wd_SteepestCLs
+  + 1);
+
+// Buffer the transect centerlines by 45 m.
+var transects = TNA.buffer_Centerlines_by45m(steepestCLs);
+
+// Pair the elevation with each annual NDVI as an ImageCollection.
+var Elv_AnnualNDVIs_newCATE = TNA.pair_Elevation_AND_AnnualNDVIs(
+  ALOSelv_newCATE, annualNDVIs_newCATE
+);
+
+var groupSize = 1e4;
+
+// Create a list of the centerline IDs.
+var CLid_Name = "CL_newID";
+
+var CLid_FullList = transects.aggregate_array(CLid_Name);
+
+
+var groupIndex = 5;
+
+// Determine the start and end indices of each sub-list of the centerline IDs.
+var CLid_StartIndex = (groupIndex - 1) * groupSize;
+
+var CLid_EndIndex = groupIndex * groupSize;
+
+// Derive a sub-list of the centerline IDs.
+var CLid_SubList = CLid_FullList.slice({
+  start: CLid_StartIndex, 
+  end: CLid_EndIndex
+});
+
+// Get the corresponding sub-list of transects.
+var transects_SubList = transects.filter(ee.Filter.inList({
+  leftField: CLid_Name, 
+  rightValue: CLid_SubList
+}));
+
+// Estimate the temporal trend of the annual elevational NDVI gradients
+//  of each transect in the sub-list by basin.
+var elvNDVIgradientTrends = TNA.estimate_ElvNDVIgradientTrends_byBasin(
+  transects_SubList, Elv_AnnualNDVIs_newCATE, targetPrj, CLid_Name
+);
+
+var idList = transects_SubList.aggregate_array(CLid_Name);
+
+// Derive a sub-list of the centerline IDs.
+var idSubList_1 = idList.slice({
+  start: 0, 
+  end: 5000
+});
+
+// Derive a sub-list of the centerline IDs.
+var idSubList_2_1 = idList.slice({
+  start: 5000, 
+  end: 6000
+});
+
+// Derive a sub-list of the centerline IDs.
+var idSubList_2_2 = idList.slice({
+  start: 6000, 
+  end: 7000
+});
+
+// Derive a sub-list of the centerline IDs.
+var idSubList_2_3 = idList.slice({
+  start: 7000, 
+  end: 8000
+});
+
+// Derive a sub-list of the centerline IDs.
+var idSubList_2_4 = idList.slice({
+  start: 8000, 
+  end: 9000
+});
+
+// Derive a sub-list of the centerline IDs.
+var idSubList_2_5 = idList.slice({
+  start: 9000, 
+  end: 10000
+});
+
+// Get the corresponding sub-list of transects.
+var SubList_1 = transects_SubList.filter(ee.Filter.inList({
+  leftField: CLid_Name, 
+  rightValue: idSubList_1
+}));
+
+// Get the corresponding sub-list of transects.
+var SubList_2_1 = transects_SubList.filter(ee.Filter.inList({
+  leftField: CLid_Name, 
+  rightValue: idSubList_2_1
+}));
+
+// Get the corresponding sub-list of transects.
+var SubList_2_2 = transects_SubList.filter(ee.Filter.inList({
+  leftField: CLid_Name, 
+  rightValue: idSubList_2_2
+}));
+
+// Get the corresponding sub-list of transects.
+var SubList_2_3 = transects_SubList.filter(ee.Filter.inList({
+  leftField: CLid_Name, 
+  rightValue: idSubList_2_3
+}));
+
+// Get the corresponding sub-list of transects.
+var SubList_2_4 = transects_SubList.filter(ee.Filter.inList({
+  leftField: CLid_Name, 
+  rightValue: idSubList_2_4
+}));
+
+// Get the corresponding sub-list of transects.
+var SubList_2_5 = transects_SubList.filter(ee.Filter.inList({
+  leftField: CLid_Name, 
+  rightValue: idSubList_2_5
+}));
+
+var SubList_2_5_0 = SubList_2_5.filterBounds(geom);
+
+var l1 = SubList_2_5.aggregate_array("CL_newID");
+
+var l2 = SubList_2_5_0.aggregate_array("CL_newID");
+
+print(l1.removeAll(l2))
+
+var SubList_2_5_1 = SubList_2_5.filter(ee.Filter.inList("CL_newID", l1.removeAll(l2)));
+
+// Estimate the temporal trend of the annual elevational NDVI gradients
+//  of each transect in the sub-list by basin.
+var elvNDVIgradientTrends_1 = TNA.estimate_ElvNDVIgradientTrends_byBasin(
+  SubList_1, Elv_AnnualNDVIs_newCATE, targetPrj, CLid_Name
+);
+
+var elvNDVIgradientTrends_2_1 = TNA.estimate_ElvNDVIgradientTrends_byBasin(
+  SubList_2_1, Elv_AnnualNDVIs_newCATE, targetPrj, CLid_Name
+);
+
+var elvNDVIgradientTrends_2_2 = TNA.estimate_ElvNDVIgradientTrends_byBasin(
+  SubList_2_2, Elv_AnnualNDVIs_newCATE, targetPrj, CLid_Name
+);
+
+var elvNDVIgradientTrends_2_3 = TNA.estimate_ElvNDVIgradientTrends_byBasin(
+  SubList_2_3, Elv_AnnualNDVIs_newCATE, targetPrj, CLid_Name
+);
+
+var elvNDVIgradientTrends_2_4 = TNA.estimate_ElvNDVIgradientTrends_byBasin(
+  SubList_2_4, Elv_AnnualNDVIs_newCATE, targetPrj, CLid_Name
+);
+
+var elvNDVIgradientTrends_2_5 = TNA.estimate_ElvNDVIgradientTrends_byBasin(
+  SubList_2_5, Elv_AnnualNDVIs_newCATE, targetPrj, CLid_Name
+);
+
+var elvNDVIgradientTrends_2_5_0 = TNA.estimate_ElvNDVIgradientTrends_byBasin(
+  SubList_2_5_0, Elv_AnnualNDVIs_newCATE, targetPrj, CLid_Name
+);
+
+var elvNDVIgradientTrends_2_5_1 = TNA.estimate_ElvNDVIgradientTrends_byBasin(
+  SubList_2_5_1, Elv_AnnualNDVIs_newCATE, targetPrj, CLid_Name
+);
+
+Export.table.toAsset({
+  collection: elvNDVIgradientTrends_1, 
+  description: "elvNDVIgradientTrends_1", 
+  assetId: wd_Main
+    + "elvNDVIgradientTrends_1"
+});
+
+// Export.table.toAsset({
+//   collection: elvNDVIgradientTrends_2_1, 
+//   description: "elvNDVIgradientTrends_2_1", 
+//   assetId: wd_Main
+//     + "elvNDVIgradientTrends_2_1"
+// });
+
+// Export.table.toAsset({
+//   collection: elvNDVIgradientTrends_2_2, 
+//   description: "elvNDVIgradientTrends_2_2", 
+//   assetId: wd_Main
+//     + "elvNDVIgradientTrends_2_2"
+// });
+
+// Export.table.toAsset({
+//   collection: elvNDVIgradientTrends_2_3, 
+//   description: "elvNDVIgradientTrends_2_3", 
+//   assetId: wd_Main
+//     + "elvNDVIgradientTrends_2_3"
+// });
+
+// Export.table.toAsset({
+//   collection: elvNDVIgradientTrends_2_4, 
+//   description: "elvNDVIgradientTrends_2_4", 
+//   assetId: wd_Main
+//     + "elvNDVIgradientTrends_2_4"
+// });
+
+// Export.table.toAsset({
+//   collection: elvNDVIgradientTrends_2_5, 
+//   description: "elvNDVIgradientTrends_2_5", 
+//   assetId: wd_Main
+//     + "elvNDVIgradientTrends_2_5"
+// });
+
+Export.table.toAsset({
+  collection: elvNDVIgradientTrends_2_5_1, 
+  description: "elvNDVIgradientTrends_2_5_1", 
+  assetId: wd_Main
+    + "elvNDVIgradientTrends_2_5_1"
+});
+
+// var test = ALOSelv_newCATE.reduceRegions({
+//   collection: transects_SubList, 
+//   reducer: ee.Reducer.mean(), 
+//   scale: targetPrj.scale, 
+//   crs: targetPrj.crs
+// });
+// print(test.size())
+
+var groupIndex = 6;
+
+// Determine the start and end indices of each sub-list of the centerline IDs.
+var CLid_StartIndex = (groupIndex - 1) * groupSize;
+
+var CLid_EndIndex = groupIndex * groupSize;
+
+// Derive a sub-list of the centerline IDs.
+var CLid_SubList = CLid_FullList.slice({
+  start: CLid_StartIndex, 
+  end: CLid_EndIndex
+});
+
+// Get the corresponding sub-list of transects.
+var transects_SubList_2 = transects.filter(ee.Filter.inList({
+  leftField: CLid_Name, 
+  rightValue: CLid_SubList
+}));
+
+
+// Map.centerObject(transects_SubList.first(), 10);
+Map.setOptions("satellite");
+
+var ALOSelv = ee.ImageCollection('JAXA/ALOS/AW3D30/V3_2').select('DSM')
+    .filterBounds(AOI)
+    .mosaic();
+
+Map.addLayer(ALOSelv, {min: 0, max: 1500, palette: "0000FF, FFFFFF, FFFF00"}, "ALOSelv");
+
+// Remove the high-latitude stripes of invalid landforms  
+//  in the landform dataset (based on the ALOS DEM V1.1).
+var ALOSv11 = ee.Image("JAXA/ALOS/AW3D30_V1_1").select("AVE");
+
+var mask = ALOSv11.mask();
+
+// Map.addLayer(ALOSelv_newCATE.gte(-1e18).eq(0).selfMask(), {palette: "00FFFF"}, "ALOSelv_newCATE");
+Map.addLayer(mask.eq(0).selfMask(), {palette: "FFFF00"}, "mask");
+
+
+Map.addLayer(transects_SubList, {color: "FF0000"}, "transects_SubList");
+Map.addLayer(SubList_2_5_0, {color: "00FF00"}, "SubList_2_5_0");
+Map.addLayer(SubList_2_5_1, {color: "00FFFF"}, "SubList_2_5_1");
+Map.addLayer(transects_SubList_2, {color: "0000FF"}, "transects_SubList_2");
+// Map.addLayer(t_1, {color: "00FFFF"}, "t_1");
+// Map.addLayer(t_2_1, {color: "00FFFF"}, "t_2_1");
+// Map.addLayer(t_2_2, {color: "00FFFF"}, "t_2_2");
+// Map.addLayer(t_2_3, {color: "00FFFF"}, "t_2_3");
+// Map.addLayer(t_2_4, {color: "00FFFF"}, "t_2_4");
+

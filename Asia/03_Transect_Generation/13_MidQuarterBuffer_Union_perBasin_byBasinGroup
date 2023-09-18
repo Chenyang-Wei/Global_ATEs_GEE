@@ -1,0 +1,78 @@
+/**
+ * Introduction:
+ * 1) Union the mid-segment buffers of each basin into one MultiPolygon
+ *  by Asian AOI and basin group.
+ * 
+ * Update: 10/20/2021.
+ * 
+ * Runtime: 1m ~ 33m.
+ */
+
+
+/* Load module(s). */
+
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+
+
+/* Data and function preparation. */
+
+// Set the major working directory.
+var wd_Main = GATE.wd_Asia 
+  + "Elevational_Transect_Generation/";
+
+
+/* Operations by Asian AOI (1 ~ 6). */
+
+for (var AOI_ID = 1; AOI_ID <= 6; AOI_ID ++) {
+  
+  // Set the working directory of the AOI.
+  var wd_AOI = wd_Main
+    + "AOI_Asia_" + AOI_ID + "/";
+  
+  // Determine the universal file path of the mid-segment buffers with Hybas IDs.
+  var wd_Buffers = wd_AOI
+    + GATE.midQuarterBuffers_withHybasIDs_fileName
+    + "/"
+    + GATE.midQuarterBuffers_withHybasIDs_byBasinGroup_fileName;
+
+  
+  /* Operations by basin group (1 ~ 5). */
+  
+  for (var basinGroupID = 1; basinGroupID <= 5; basinGroupID ++) {
+    
+    // Load the mid-segment buffers with Hybas IDs of each basin group.
+    var midQuarterBuffers_withIDs = ee.FeatureCollection(wd_Buffers
+      + basinGroupID);
+    
+  
+    /* Union the mid-segment buffers of each basin into one MultiPolygon. */
+    
+    var unioned_MidQuarterBuffers = GATE.unionMidSegmentBuffers_perBasin(midQuarterBuffers_withIDs);
+  
+  
+    if (false) { // true OR false.
+      
+      print("basinGroupID:", basinGroupID);
+      
+      print("midQuarterBuffers_withIDs:", 
+        midQuarterBuffers_withIDs.first(),
+        midQuarterBuffers_withIDs.size());
+  
+    } else {
+      //// Export the results by basin group.
+      var wd_Output = wd_AOI
+        + GATE.unionedMultiPolygons_perBasin_fileName
+        + "/";
+      
+      var fileName = GATE.unionedMultiPolygons_perBasin_byBasinGroup_fileName
+        + basinGroupID;
+      
+      Export.table.toAsset({
+        collection: unioned_MidQuarterBuffers, 
+        description: fileName, 
+        assetId: wd_Output + fileName
+      });
+    }
+  }
+}
+

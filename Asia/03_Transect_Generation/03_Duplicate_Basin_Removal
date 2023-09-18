@@ -1,0 +1,113 @@
+/**
+ * Introduction:
+ * 1) Identify the selected basins in each AOI of Asia that
+ *  are not in the selected basins in any other region.
+ * 
+ * Update: 10/5/2021.
+ * 
+ * Total update number: 1.
+ * 
+ * Runtime: 1m ~
+ */
+
+
+/* Load module(s). */
+
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var VIS = require("users/ChenyangWei/Public:Modules/Visualization");
+
+
+/* Data and function preparation. */
+
+// Set the working directory.
+var wd_Main = GATE.wd_Asia;
+
+// Function to read the selected basins in an AOI of Asia.
+var readBasins_Asia = VIS.readSelectedBasins_AsiaAOIs;
+
+// Function to read the selected basins in a continent, except Asia.
+var readBasins = VIS.readSelectedBasins;
+
+
+
+/**** 1) Need to update. ****/
+
+// Set the number of the targeting Asian AOI.
+var AOI_ID = 6;
+
+// Load other basins in Asia that may intersect the BOIs.
+// var basins_Int_4 = readBasins_Asia(4);
+
+// var basins_Int_5 = readBasins_Asia(5);
+
+// var basins_Int_6 = readBasins_Asia(6);
+
+// var basins_Int_Asian = basins_Int_6;
+
+// Load the basins out of Asia that may intersect the BOIs.
+// var basins_NorthAmerica = readBasins(GATE.wd_NorthAmerica);
+
+// var basins_Oceania = readBasins(GATE.wd_Oceania);
+
+var basins_Africa = readBasins(GATE.wd_Africa);
+
+var basins_Europe = readBasins(GATE.wd_Europe);
+
+var basins_Int_NonAsian = basins_Africa.merge(basins_Europe);
+
+// Combine all the basins that may intersect the BOIs.
+// var basins_Int = basins_Int_Asian
+//   .merge(basins_Int_NonAsian);
+
+var basins_Int = basins_Int_NonAsian;
+
+// var basins_Int = basins_Int_Asian;
+
+/********/
+
+
+
+/* Identify the BOIs that are not in the basins of the surrounding regions. */
+
+// Load the basins of interest (BOIs) in the targeting AOI.
+var rawBOIs = readBasins_Asia(AOI_ID);
+
+// Identify the non-duplicate BOIs.
+var nonDuplicate_BOIs = GATE.identify_NonDuplicate_BOIs(rawBOIs, basins_Int);
+
+
+if (false) { // true OR false.
+  print("rawBOIs:", rawBOIs.size());
+  
+  print("nonDuplicate_BOIs:", nonDuplicate_BOIs.size());
+
+  //// Visualization.
+  Map.setOptions("satellite");
+  
+  Map.centerObject(rawBOIs, 2);
+  
+  Map.addLayer(basins_Int, {color: "FF0000"},
+    "basins_Int");
+  
+  Map.addLayer(rawBOIs, {color: "FFFF00"},
+    "rawBOIs");
+  
+  Map.addLayer(nonDuplicate_BOIs, {color: "0000FF"},
+    "nonDuplicate_BOIs");
+  
+} else {
+  //// Export the result(s).
+  // Set the directory of the targeting Asian AOI.
+  var wd_AOI = wd_Main + "Elevational_Transect_Generation/"
+    + "AOI_Asia_" 
+    + AOI_ID + "/";
+
+  var fileName = GATE.nonDuplicateBasins_fileName;
+  
+  Export.table.toAsset({
+    collection: nonDuplicate_BOIs, 
+    description: fileName, 
+    assetId: wd_AOI + fileName
+  });
+}
+

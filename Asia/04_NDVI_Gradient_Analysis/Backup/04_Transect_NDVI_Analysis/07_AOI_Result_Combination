@@ -1,0 +1,50 @@
+/**
+ * Introduction:
+ * 1) Combine the transect-level results of
+ *  all the AOIs of Asia into one dataset.
+ * 
+ * Update: 1/28/2022.
+ * 
+ * Runtime: 1h (shared).
+*/
+
+
+/* Load module(s). */
+
+var TNA = require("users/ChenyangWei/Public:Modules/Transect_NDVI_Analysis");
+var FC_AP = require("users/ChenyangWei/Public:Modules/FeatureCollection_Analysis&Processing");
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+
+
+/* Data preparation. */
+
+// Set the major working directory.
+var wd_Main = GATE.wd_Asia;
+
+// Load and combine the transect-level results of all AOIs.
+var transectResult = TNA.LoadAOIdata_Asia(
+  TNA.transects_withBothSegments_fileName,
+  TNA.transects_withBothSegments_byBasinGroup_fileName);
+
+
+/* Final output. */
+
+if (false) { //// true OR false.
+
+  FC_AP.Print_FtrColInfo("transectResult:", 
+    transectResult);
+
+} else { //// Export the result(s).
+  
+  var fileName = TNA.combinedTransects_withBothSegments_fileName;
+  
+  Export.table.toAsset({
+    collection: transectResult, 
+    description: fileName, 
+    assetId: wd_Main
+      + "Transect_NDVI_Analysis/"
+      + fileName
+  });
+  
+}
+

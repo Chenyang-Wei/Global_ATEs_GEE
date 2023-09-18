@@ -1,0 +1,118 @@
+/**
+ * Introduction:
+ * 
+ * 1) Count the raw 30-m elevation pixels within each transect.
+ * 
+ * 2) For each transect, compute the ratio between the pixel numbers of 
+ *  the "study domain" elevation and the raw elevation.
+ * 
+ * 
+ * Update: 4/6/2022.
+ * 
+ * Runtime: < 10m.
+ */
+
+
+/* Load module(s). */
+
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var NGA = require("users/ChenyangWei/Public:Modules/NDVI_Gradient_Analysis.js");
+var FC_AP = require("users/ChenyangWei/Public:Modules/FeatureCollection_Analysis&Processing");
+var IMG = require("users/ChenyangWei/Public:Modules/Image_Analysis&Processing");
+
+
+/* Data loading. */
+
+// Set the major working directory.
+var wd_Main = GATE.wd_Asia; 
+
+// Set the ID (1 ~ 6) of the AOI.
+var AOI_ID = 6;
+
+// Set the working directory of the AOI.
+var wd_AOI = wd_Main
+  + "NDVI_Gradient_Analysis/"
+  + "AOI_Asia_" + AOI_ID
+  + "/";
+
+// Determine the common file path of the raw transects.
+var wd_RawTransects = wd_AOI
+  + NGA.transects_MovWinTempVars_FullName
+  + "/"
+  + NGA.transects_MovWinTempVars_ShortName;
+
+// Determine the number of transect subsets.
+// var subsetNum = 20; // AOI-1.
+// var subsetNum = 10; // AOI-2, 4.
+var subsetNum = 5; // AOI-3, 5, 6.
+
+// Whether to output the result(s).
+var output = true; // true OR false.
+
+// Load the list of all the AOIs in Asia.
+var AOIs = NGA.AOIs_List_Asia;
+
+// Determine the area of interest.
+var AOI = AOIs[AOI_ID - 1];
+
+// Target projection.
+var targetPrj = IMG.WGS84_30m;
+
+// Load and reproject the raw ALOS elevation.
+var raw_ALOSelv = GATE.load_ALOSelevation(AOI, targetPrj);
+
+
+/* Perform the following operations for each basin group. */
+
+for (var basinGroupID = 1; basinGroupID <= 5; basinGroupID ++) {
+
+
+  /* Perform the following operations for each subset of transects. */
+  
+  for (var subsetID = 1; subsetID <= subsetNum; subsetID ++) {
+    
+    // Load each subset of the raw transects.
+    var raw_Transects = ee.FeatureCollection(wd_RawTransects
+      + "_BG" + basinGroupID
+      + "_S" + subsetID);
+    
+    
+    /* For each transect, count the raw 30-m elevation pixels and 
+      compute the ratio between the pixel numbers of 
+      the "study domain" elevation and the raw elevation. */
+    
+    var transects_withPixelNumRatio = 
+      NGA.Compute_StudyDomainRawElv_PixelNumRatio_perTransect(
+        raw_Transects, raw_ALOSelv, targetPrj
+      );
+    
+    
+    if (output) {
+      // Export the final results.
+      
+      var wd_Output = wd_AOI
+        + NGA.transects_GapDetected_FullName
+          // "transects_GapDetected_NDVImedianFiltered_withMovWinTemporalVars"
+        + "/";
+      
+      var fileName = NGA.transects_GapDetected_ShortName
+        + "_BG" + basinGroupID
+        + "_S" + subsetID;
+      
+      Export.table.toAsset({
+        collection: transects_withPixelNumRatio, 
+        description: fileName, 
+        assetId: wd_Output
+          + fileName
+      });
+    }
+  }
+}
+
+
+if (!output) {
+  // Examine the last subset of data.
+  
+  FC_AP.Print_FtrColInfo("raw_Transects:", raw_Transects);
+}
+

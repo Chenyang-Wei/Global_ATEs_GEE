@@ -1,0 +1,73 @@
+/**
+ * Introduction:
+ * 1) Combine the raw centerlines with the new IDs of all basin groups in all AOIs
+ *  into one FeatureCollection.
+ * 2) Add a new ID column to the combined centerlines.
+ * 
+ * Update: 10/13/2021.
+ * 
+ * Runtime: 4h.
+ */
+
+
+/* Load module(s). */
+
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var VIS = require("users/ChenyangWei/Public:Modules/Visualization");
+
+
+/* Combine the raw centerlines of all basin groups in all AOIs. */
+
+// Combine the raw centerlines by AOI and basin group.
+var allRawCLs = ee.List([]);
+
+for (var AOI_ID = 1; AOI_ID <= 6; AOI_ID ++) {
+  // Set the working directory of the AOI.
+  var wd_AOI = GATE.wd_Asia 
+    + "Elevational_Transect_Generation/"
+    + "AOI_Asia_" + AOI_ID + "/";
+  
+  for (var basinGroupID = 1; basinGroupID <= 5; basinGroupID ++) {
+    // Read the raw centerlines of the basin group.
+    var wd_RawCLs = wd_AOI 
+      + GATE.rawCLs_fileName + "/"
+      + GATE.rawCLs_byBasinGroup_fileName
+      + basinGroupID;
+    
+    var rawCLs_perBasinGroup = ee.FeatureCollection(wd_RawCLs);
+    
+    allRawCLs = allRawCLs.add(rawCLs_perBasinGroup);
+  }
+}
+
+var allRawCLs_Combined = ee.FeatureCollection(allRawCLs).flatten();
+
+
+/* Add a new ID column to the combined centerlines. */
+
+var allRawCLs_withNewID = allRawCLs_Combined.randomColumn("CL_newID");
+
+
+if (false) { // true OR false.
+  print("allRawCLs_withNewID:", 
+    allRawCLs_withNewID.size(),
+    allRawCLs_withNewID.first());
+  
+  VIS.centerAsia(12);
+  
+  Map.addLayer(allRawCLs_withNewID, {color: "FF0000"}, "allRawCLs_withNewID");
+
+} else {
+  //// Export the result.
+  var fileName = GATE.rawCLs_AllBasinGroups_fileName;
+  
+  var wd_Output = GATE.wd_Asia 
+    + "Elevational_Transect_Generation/";
+  
+  Export.table.toAsset({
+    collection: allRawCLs_withNewID, 
+    description: fileName, 
+    assetId: wd_Output + fileName
+  });
+}
+

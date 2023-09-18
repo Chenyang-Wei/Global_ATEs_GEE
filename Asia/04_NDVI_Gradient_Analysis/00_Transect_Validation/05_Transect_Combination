@@ -1,0 +1,91 @@
+/**
+ * Introduction:
+ * 
+ *  1) Combine all transects with the segment variables 
+ *    for Asia.
+ * 
+ * 
+ * Update: 8/4/2022.
+ * 
+ * Runtime: 1h (shared).
+ */
+
+
+/* Setup. */
+
+// Load module(s).
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var TNA = require("users/ChenyangWei/Public:Modules/Transect_NDVI_Analysis");
+
+// Set the major working directory.
+var wd_Main = GATE.wd_Asia
+  + "Elevational_Transect_Generation/";
+
+// Determine the transect names.
+var transects_FullName = TNA.transects_withBothSegments_FullName;
+
+var transects_ShortName = TNA.transects_withBothSegments_ShortName;
+
+
+/* 1) Combine all transects with the segment variables 
+  for Asia. */
+
+// Create an empty List to store the combination result.
+var combinedTransects_List = ee.List([]);
+
+//// Combine the transects by AOI. 
+for (var AOI_ID = 1; AOI_ID <= 6; AOI_ID ++) {
+
+  // Set the working directory of the AOI.
+  var wd_AOI = wd_Main
+    + "AOI_Asia_" + AOI_ID
+    + "/";
+  
+  // Determine the universal file path of transects.
+  var wd_BasinGroup = wd_AOI
+    + transects_FullName
+    + "/"
+    + transects_ShortName;
+
+  //// Combine the transects by basin group.
+  for (var basinGroupID = 1; basinGroupID <= 5; basinGroupID ++) {
+  
+    // Load the transects of each basin group.
+    var transects_perBasinGroup = ee.FeatureCollection(wd_BasinGroup
+      + "_BasinGroup_"
+      + basinGroupID);
+    
+    // Add the loaded FeatureCollection to the combination result.
+    combinedTransects_List = combinedTransects_List
+      .add(transects_perBasinGroup);
+  }
+}
+
+// Convert the produced FeatureCollection List to a FeatureCollection.
+var combinedTransects_FtrCol = ee.FeatureCollection(
+  combinedTransects_List
+).flatten();
+
+// Whether test the algorithm.
+var test = false; // true OR false.
+
+
+if (test) { //// Check the datasets.
+
+  print("combinedTransects_FtrCol:", 
+    combinedTransects_FtrCol.first(),
+    combinedTransects_FtrCol.size());
+  
+} else { //// Export the result(s).
+  
+  var fileName = transects_FullName + "_Asia";
+  
+  Export.table.toAsset({
+    collection: combinedTransects_FtrCol, 
+    description: fileName, 
+    assetId: wd_Main
+      + fileName
+  });
+}
+
+

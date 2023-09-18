@@ -1,0 +1,112 @@
+/**
+ * Introduction:
+ * 
+ *  1) Divide each transect centerline into two equal segments.
+ * 
+ *  2) Buffer each centerline segment by 45 m.
+ * 
+ * 
+ * Need to check: 5.
+ * 
+ * Update: 7/28/2022.
+ * 
+ * Runtime: 1m ~ 27m.
+ */
+
+
+/* Setup. */
+
+// Load module(s).
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var TNA = require("users/ChenyangWei/Public:Modules/Transect_NDVI_Analysis");
+
+// Set the major working directory.
+var wd_Main = GATE.wd_Asia   /**** 1) Need to change. ****/
+  + "Elevational_Transect_Generation/";
+
+// Name the centerline ID.
+var CLid = "CL_newID";   /**** 2) Need to check. ****/
+
+// Whether output the result(s).
+var output = true; // true OR false.
+
+
+/* Perform the following operations for each AOI. */
+
+for (var AOI_ID = 1; AOI_ID <= 6; AOI_ID ++) {
+
+  // Set the working directory of the AOI.
+  var wd_AOI = wd_Main
+    + "AOI_Asia_" + AOI_ID
+    + "/";   /**** 3) Need to change. ****/
+  
+  // Determine the universal file path of
+  //  the selected transect centerlines.
+  var wd_SelectedCLs = wd_AOI
+    + TNA.selectedCLs_fileName
+    + "/"
+    + TNA.selectedCLs_byBasinGroup_fileName;   /**** 4) Need to check. ****/
+  
+  
+  /* Perform the following operations for each basin group. */
+  
+  for (var basinGroupID = 1; basinGroupID <= 5; basinGroupID ++) {
+  
+    // Load the selected transect centerlines of each basin group.
+    var selectedCLs = ee.FeatureCollection(wd_SelectedCLs
+      + basinGroupID);
+    
+  
+    /* 1) Divide each transect centerline into two equal segments. */
+    
+    var CLsegments = TNA.divide_Centerlines_byBasin(selectedCLs, CLid);
+    
+    
+    /* 2) Buffer each centerline segment by 45 m. */
+    
+    var transectSegments = TNA.buffer_Centerlines_by45m(CLsegments);
+  
+  
+    if (!output) { //// Check the result(s).
+    
+      print("selectedCLs:", 
+        selectedCLs.size());
+    
+      print("transectSegments:", 
+        transectSegments.first());
+    
+    } else { //// Export the result(s).
+      
+      var wd_Output = wd_AOI
+        + TNA.transectSegments_FullName   /**** 5) Need to create. ****/
+        // "transectSegments_MiddleDivided".
+        + "/";
+      
+      var fileName = TNA.transectSegments_ShortName
+        + "_BasinGroup_"
+        + basinGroupID;
+      
+      Export.table.toAsset({
+        collection: transectSegments, 
+        description: fileName, 
+        assetId: wd_Output
+          + fileName
+      });
+    }
+  }
+}
+
+
+/* Check the result(s). */
+
+if (!output) {
+
+  print("selectedCLs:", 
+    selectedCLs.first());
+
+  Map.setOptions("satellite");
+  Map.centerObject(selectedCLs.first(), 10);
+  
+  Map.addLayer(selectedCLs, {color: "FF0000"}, "selectedCLs");
+}
+

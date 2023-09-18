@@ -1,0 +1,118 @@
+/**
+ * Introduction:
+ * 1) Identify the locally steepest centerline based on
+ *  the individual Polygons of the unioned mid-segment buffers
+ *  of each basin by Asian AOI and basin group.
+ * 
+ * Update: 10/28/2021.
+ * 
+ * Runtime: 1m ~ 2h.
+ */
+
+
+/* Load module(s). */
+
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+
+
+/* Data and function preparation. */
+
+// Set the major working directory.
+var wd_Main = GATE.wd_Asia 
+  + "Elevational_Transect_Generation/";
+
+
+/* Operations by Asian AOI (1 ~ 6). */
+
+for (var AOI_ID = 1; AOI_ID <= 6; AOI_ID ++) {
+  
+  // Set the working directory of the AOI.
+  var wd_AOI = wd_Main
+    + "AOI_Asia_" + AOI_ID + "/";
+
+  // Determine the universal file path of
+  //  the individual Polygons of the unioned mid-segment buffers
+  //  of each basin.
+  var wd_IndivPlgs = wd_AOI
+    + GATE.unionedIndivPlgs_perBasin_fileName
+    + "/"
+    + GATE.unionedIndivPlgs_perBasin_byBasinGroup_fileName;
+  
+  // Determine the universal file path of
+  //  the mid-quarter segments with Hybas IDs.
+  var wd_MidQuarters = wd_AOI
+    + GATE.midQuarters_withHybasIDs_fileName
+    + "/"
+    + GATE.midQuarters_withHybasIDs_byBasinGroup_fileName;
+  
+  // Determine the universal file path of
+  //  the centerlines with Hybas IDs.
+  var wd_CLs = wd_AOI
+    + GATE.CLs_withHybasIDs_fileName
+    + "/"
+    + GATE.CLs_withHybasIDs_byBasinGroup_fileName;
+
+
+  /* Operations by basin group (1 ~ 5). */
+  
+  for (var basinGroupID = 1; basinGroupID <= 5; basinGroupID ++) {
+  
+    // Load the individual Polygons of the unioned mid-segment buffers
+    //  of each basin.
+    var unionedBuffers_IndivPlgs = ee.FeatureCollection(wd_IndivPlgs
+      + basinGroupID);
+  
+    // Load the mid-quarter segments with Hybas IDs.
+    var midQuarters_withHybasIDs = ee.FeatureCollection(wd_MidQuarters
+      + basinGroupID);
+    
+    // Load the centerlines with Hybas IDs.
+    var CLs_withHybasIDs = ee.FeatureCollection(wd_CLs
+      + basinGroupID);
+  
+  
+    /* Identify the locally steepest centerlines based on
+      the individual Polygons of the unioned mid-segment buffers
+      of each basin. */
+    
+    var allSteepestCLs = GATE.identifySteepestCLs_byBasin_NorthAmerica_Asia(
+      unionedBuffers_IndivPlgs, midQuarters_withHybasIDs, CLs_withHybasIDs
+    );
+  
+
+    if (false) { // true OR false.
+      print("basinGroupID:", basinGroupID);
+    
+      print("unionedBuffers_IndivPlgs:", 
+        unionedBuffers_IndivPlgs.first(),
+        unionedBuffers_IndivPlgs.size());
+    
+      print("midQuarters_withHybasIDs:", 
+        midQuarters_withHybasIDs.first(),
+        midQuarters_withHybasIDs.size());
+    
+      print("CLs_withHybasIDs:", 
+        CLs_withHybasIDs.first(),
+        CLs_withHybasIDs.size());
+    
+      print("allSteepestCLs:", 
+        allSteepestCLs.first());
+    
+    } else {
+      //// Export the results by basin group.
+      var wd_Output = wd_AOI
+        + GATE.allSteepestCLs_fileName
+        + "/";
+      
+      var fileName = GATE.steepestCLs_byBasinGroup_fileName
+        + basinGroupID;
+      
+      Export.table.toAsset({
+        collection: allSteepestCLs, 
+        description: fileName, 
+        assetId: wd_Output + fileName
+      });
+    }
+  }
+}
+

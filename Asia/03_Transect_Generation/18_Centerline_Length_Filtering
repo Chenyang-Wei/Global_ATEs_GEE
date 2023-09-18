@@ -1,0 +1,83 @@
+/**
+ * Introduction:
+ * 1) Select transect centerlines with length between 300m and 3km.
+ * 
+ * Update: 1/5/2022.
+ * 
+ * Runtime: 1m ~ 4m.
+ */
+
+
+/* Load module(s). */
+
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var TNA = require("users/ChenyangWei/Public:Modules/Transect_NDVI_Analysis");
+
+
+/* Data and function preparation. */
+
+// Set the major working directory.
+var wd_Main = GATE.wd_Asia;
+
+
+/* Operations by Asian AOI (1 ~ 6). */
+
+for (var AOI_ID = 1; AOI_ID <= 6; AOI_ID ++) {
+  
+  // Set the working directory of the AOI.
+  var wd_AOI = wd_Main
+    + "Elevational_Transect_Generation/"
+    + "AOI_Asia_" + AOI_ID
+    + "/";
+  
+  // Determine the universal file path of
+  //  the locally steepest transect centerlines.
+  var wd_SteepestCLs = wd_AOI
+    + GATE.allSteepestCLs_fileName
+    + "/"
+    + GATE.steepestCLs_byBasinGroup_fileName;
+
+
+  /* Operations by basin group (1 ~ 5). */
+  
+  for (var basinGroupID = 1; basinGroupID <= 5; basinGroupID ++) {
+    
+    // Load the locally steepest transect centerlines.
+    var steepestCLs = ee.FeatureCollection(wd_SteepestCLs
+      + basinGroupID);
+    
+  
+    /* Select transect centerlines with length between 300m and 3km. */
+    
+    var selectedCLs = TNA.filter_TransectCLlength(steepestCLs);
+    
+    
+    if (false) { //// true OR false.
+    
+      print("steepestCLs:", 
+        steepestCLs.first(),
+        steepestCLs.size());
+    
+      print("selectedCLs:", 
+        selectedCLs.first(),
+        selectedCLs.size());
+    
+    } else { //// Export the result.
+      
+      var wd_Output = wd_AOI
+        + TNA.selectedCLs_fileName
+        + "/";
+      
+      var fileName = TNA.selectedCLs_byBasinGroup_fileName
+        + basinGroupID;
+      
+      Export.table.toAsset({
+        collection: selectedCLs, 
+        description: fileName, 
+        assetId: wd_Output
+          + fileName
+      });
+    }
+  }
+}
+

@@ -1,0 +1,60 @@
+/**
+ * Introduction:
+ * 1) Identify the centroid of each transect centerline. 
+ * 
+ * Update: 10/13/2021.
+ * 
+ * Total update number: 2.
+ * 
+ * Runtime: 1h.
+ */
+
+
+/* Load module(s). */
+
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var VIS = require("users/ChenyangWei/Public:Modules/Visualization");
+
+
+/* Data and function preparation. */
+
+// Set the major working directory.
+var wd_Main = GATE.wd_Asia 
+  + "Elevational_Transect_Generation/"; /**** 1) Need to update. ****/
+
+// Load the raw transect centerlines.
+var rawCLs = ee.FeatureCollection(wd_Main
+  + GATE.rawCLs_AllBasinGroups_fileName);
+
+
+/* Identify the centroid of each transect centerline. */
+
+var CL_centroids = GATE.identify_Centerline_Centroids(rawCLs);
+
+
+if (false) { // true OR false.
+  print("rawCLs:", 
+    rawCLs.size(),
+    rawCLs.first());
+  
+  print("CL_centroids:", 
+    CL_centroids.size(),
+    CL_centroids.first());
+  
+  VIS.centerAsia(12); /**** 2) Need to update. ****/
+  
+  Map.addLayer(rawCLs, {color: "FF0000"}, "rawCLs");
+  
+  // Map.addLayer(CL_centroids, {color: "FFFF00"}, "CL_centroids");
+
+} else {
+  //// Export the result.
+  var fileName = GATE.centroids_AllRawCLs_fileName;
+  
+  Export.table.toAsset({
+    collection: CL_centroids, 
+    description: fileName, 
+    assetId: wd_Main + fileName
+  });
+}
+

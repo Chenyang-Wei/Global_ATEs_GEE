@@ -1,0 +1,192 @@
+/**
+ * Introduction:
+ * 
+ * 1) Count the raw 30-m elevation pixels within each transect.
+ * 
+ * 2) For each transect, compute the ratio between the pixel numbers of 
+ *  the "study domain" elevation and the raw elevation.
+ * 
+ * 3) Choose the annual Features with a pixel number ratio (NDVI/elevation 
+ *  in the study domain) greater than or equal to 1 (i.e., no gap in NDVI).
+ * 
+ * 4) Calculate the long-term NDVI median for the no-gap annual Features 
+ *  of each transect.
+ * 
+ * 5) For each transect, select the no-gap annual Features with NDVI over 
+ *  (i.e., greater than) 50% of the corresponding long-term NDVI median. 
+ * 
+ * 6) For each selected annual Feature, generate a 6-year (or >= 4-year)
+ *  moving window consisting of the annual NDVIs of the current year and 
+ *  the following 5 (or >= 3) years. 
+ * 
+ * 7) Compute the maximum annual-NDVI standard deviation of all the 6-year 
+ *  (or >= 4-year) moving windows for each transect.
+ * 
+ * 8) For each transect, estimate the long-term means, SDs, and trends, and 
+ *  the observation numbers of the elevational NDVI gradients and 
+ *  spatial average NDVIs of the selected annual Features, respectively.
+ * 
+ * 9) Calculate the ratio between the max. moving-window NDVI SD and 
+ *  the long-term NDVI mean for each transect.
+ * 
+ * 
+ * Need to update: 2.
+ * 
+ * Update: 3/30/2022.
+ * 
+ * Runtime:
+ */
+
+
+/* Load module(s). */
+
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var NGA = require("users/ChenyangWei/Public:Modules/NDVI_Gradient_Analysis.js");
+var FC_AP = require("users/ChenyangWei/Public:Modules/FeatureCollection_Analysis&Processing");
+
+
+/* Data loading. */
+
+// Set the major working directory.
+var wd_Main = GATE.wd_Asia; /**** 1) Need to change. ****/
+
+// Set the ID (1 ~ 6) of the AOI.
+var AOI_ID = 6;
+
+// Set the working directory of the AOI.
+var wd_AOI = wd_Main
+  + "NDVI_Gradient_Analysis/"
+  + "AOI_Asia_" + AOI_ID
+  + "/";
+
+// Determine the common file path of the raw transects.
+var wd_RawTransects = wd_AOI
+  + NGA.pixelCountedTransects_FullName
+  + "/"
+  + NGA.pixelCountedTransects_ShortName;
+
+// Determine the common file path of the annual Features.
+var wd_AnnualFeatures = wd_AOI
+  + NGA.annualFeatures_FullName
+  + "/"
+  + NGA.annualFeatures_ShortName;
+
+// Determine the number of transect subsets.
+  /**** 2) Need to check. ****/
+// var subsetNum = 20; // AOI-1.
+// var subsetNum = 10; // AOI-2, 4.
+var subsetNum = 5; // AOI-3, 5, 6.
+
+// Whether to output the result(s).
+var output = true; // true OR false.
+
+
+
+/**** Update on 3/30/2022 - 1. ****/
+
+var IMG = require("users/ChenyangWei/Public:Modules/Image_Analysis&Processing");
+
+// Load the list of all the AOIs in Asia.
+var AOIs = NGA.AOIs_List_Asia;
+
+// Determine the area of interest.
+var AOI = AOIs[AOI_ID - 1];
+
+// Target projection.
+var targetPrj = IMG.WGS84_30m;
+
+// Load and reproject the raw ALOS elevation.
+var raw_ALOSelv = GATE.load_ALOSelevation(AOI, targetPrj);
+
+/**** Update on 3/30/2022 - 1. ****/
+
+
+
+/* Perform the following operations for each basin group. */
+
+for (var basinGroupID = 1; basinGroupID <= 5; basinGroupID ++) {
+
+
+  /* Perform the following operations for each subset of transects. */
+  
+  for (var subsetID = 1; subsetID <= subsetNum; subsetID ++) {
+    
+    // Load each subset of the raw transects.
+    var raw_Transects = ee.FeatureCollection(wd_RawTransects
+      + "_BG" + basinGroupID
+      + "_S" + subsetID);
+    
+    // Load each subset of the annual Features.
+    var annualFeatures = ee.FeatureCollection(wd_AnnualFeatures
+      + "_BG" + basinGroupID
+      + "_S" + subsetID);
+    
+
+
+    /**** Update on 3/30/2022 - 2. ****/
+    
+    /* For each transect, count the raw 30-m elevation pixels and 
+      compute the ratio between the pixel numbers of 
+      the "study domain" elevation and the raw elevation. */
+    
+    var transects_withPixelNumRatio = 
+      NGA.Compute_StudyDomainRawElv_PixelNumRatio_perTransect(
+        raw_Transects, raw_ALOSelv, targetPrj
+      );
+    
+    
+    /* Choose the annual Features with no gap in NDVI, and select 
+      the no-gap annual Features with NDVI > 50% of the corresponding 
+      long-term NDVI median. */
+    
+    var centerlineID = "CL_newID"; /**** 3/30/2022 ****/
+    
+    var filtered_AnnualFeatures = NGA.Filter_AnnualNDVIs_NoGap_GtHalfMedian(
+      annualFeatures, centerlineID
+    );
+    
+    
+    /* Perform the temporal analyses and the moving-window detection
+      for the selected annual Features of each transect. */
+    
+    var transects_MaxMovWinSD_TemporalVars = 
+      NGA.Perform_AnnualFeature_MovWinDetection_TemporalAnalyses(
+        transects_withPixelNumRatio, filtered_AnnualFeatures, centerlineID
+      );
+    
+    /**** Update on 3/30/2022 - 2. ****/
+    
+    
+    
+    if (output) {
+      // Export the final results.
+      
+      var wd_Output = wd_AOI
+        + NGA.transects_MovWinTempVars_FullName
+          /**** 3/30/2022 ****/
+          // "transects_GtHalfNoGapNDVImedian_withMaxMovWinNDVIsd_TemporalVars"
+        + "/";
+      
+      var fileName = NGA.transects_MovWinTempVars_ShortName
+        + "_BG" + basinGroupID
+        + "_S" + subsetID;
+      
+      Export.table.toAsset({
+        collection: transects_MaxMovWinSD_TemporalVars, 
+        description: fileName, 
+        assetId: wd_Output
+          + fileName
+      });
+    }
+  }
+}
+
+
+if (!output) {
+  // Examine the last subset of data.
+  
+  print("raw_Transects:", raw_Transects.size());
+  
+  print("annualFeatures:", annualFeatures.size());
+}
+  

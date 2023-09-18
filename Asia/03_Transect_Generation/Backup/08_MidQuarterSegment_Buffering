@@ -1,0 +1,67 @@
+/**
+ * Introduction:
+ * 1) Buffer the mid-quarter segments by Asian AOI and basin group.
+ * 
+ * Update: 10/12/2021.
+ * 
+ * Runtime: 1m ~ 1h.
+ */
+
+
+/* Load module(s). */
+
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+
+// Set the major working directory.
+var wd_Main = GATE.wd_Asia;
+
+
+/* Operations by Asian AOI (1 ~ 6). */
+
+for (var AOI_ID = 1; AOI_ID <= 6; AOI_ID ++) {
+  
+  // Set the working directory of the AOI.
+  var wd_AOI = GATE.wd_Asia 
+    + "Elevational_Transect_Generation/"
+    + "AOI_Asia_" + AOI_ID + "/";
+  
+  
+  /* Operations by basin group (1 ~ 5). */
+
+  for (var basinGroupID = 1; basinGroupID <= 5; basinGroupID ++) {
+    
+    // Load the mid-quarter segments of the basin group.
+    var wd_MidQuarters = wd_AOI 
+      + GATE.midQuarters_fileName + "/"
+      + GATE.midQuarters_byBasinGroup_fileName
+      + basinGroupID;
+    
+    var midQuarters = ee.FeatureCollection(wd_MidQuarters);
+    
+    
+    /* Buffer the mid-quarter segments. */
+    
+    var buffered_MidQuarters = GATE.bufferMidSegments(midQuarters);
+    
+    
+    if (false) { // true OR false.
+      print("midQuarters:", midQuarters.size());
+      
+      print("buffered_MidQuarters:", 
+        buffered_MidQuarters.size());
+    
+    } else {
+      //// Export the result(s) by basin group.
+      var wd_Output = wd_AOI + GATE.midQuarterBuffers_fileName + "/";
+      
+      var fileName = GATE.midQuarterBuffers_byBasinGroup_fileName + basinGroupID;
+      
+      Export.table.toAsset({
+        collection: buffered_MidQuarters, 
+        description: fileName, 
+        assetId: wd_Output + fileName
+      });
+    }
+  }
+}
+

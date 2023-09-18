@@ -1,0 +1,456 @@
+/**
+ * Introduction:
+ *  (Note: The following operations are performed
+ *    for each basin group.)
+ * 
+ * 1) Estimate the annual elevational NDVI gradients of each transect
+ *  and remove the transect features that have the "NaN" gradient.
+ * 2) Estimate the temporal trend of the annual elevational NDVI gradients
+ *  of each transect.
+ * 
+ * Update: 11/11/2021.
+ * 
+ * Runtime: 
+ * 1) 4m ~ 6h, the AOIs with failed tasks: AOI-1 (basin group ID: 1 ~ 5)
+ *  and AOI-3 (basin group ID: 5).
+ * 
+ */
+
+
+/* Load module(s). */
+
+var IMG = require("users/ChenyangWei/Public:Modules/Image_Analysis&Processing");
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var TNA = require("users/ChenyangWei/Public:Modules/Transect_NDVI_Analysis");
+
+
+/* Data and function preparation. */
+
+// Target projection.
+var targetPrj = IMG.WGS84_30m;
+
+// Set a list of all the areas of interest in Asia.
+var AOIs = [
+  GATE.AOI_Asia_1,
+  GATE.AOI_Asia_2,
+  GATE.AOI_Asia_3,
+  GATE.AOI_Asia_4,
+  GATE.AOI_Asia_5,
+  GATE.AOI_Asia_6
+];
+
+// Set the major working directory.
+var wd_Main = GATE.wd_Asia;
+
+// Determine the working directory of the NDVI dataset.
+var wd_NDVI = GATE.wd_Asia_2;
+
+// Load the new CATE.
+var newCATE = ee.Image(wd_Main
+  + "Climate-Based_ATE/" 
+  + GATE.newCATE_fileName);
+
+// Read the annual NDVIs in the new CATE as an Image.
+//  (Note: apply for all continents other than North America.)
+var annualNDVIs_newCATE = TNA.loadAnnualNDVIs_nonNorthAmerica(wd_NDVI)
+  .updateMask(newCATE);
+
+
+// /* Round 1: Operations by Asian AOI (1 ~ 6). */
+
+// for (var AOI_ID = 1; AOI_ID <= 6; AOI_ID ++) {
+
+
+/* Round 2: Re-run the script for the AOIs with failed tasks (AOI-1 and AOI-3). */
+
+// // Round 2-1:
+// var AOI_ID = 3;
+
+// Round 2-2:
+var AOI_ID = 1;
+
+  // Determine the area of interest.
+  var AOI = AOIs[AOI_ID - 1];
+  
+  // Set the working directory of the AOI.
+  var wd_AOI = wd_Main
+    + "Elevational_Transect_Generation/"
+    + "AOI_Asia_" + AOI_ID
+    + "/";
+  
+  // Determine the universal file path of
+  //  the locally steepest transect centerlines.
+  var wd_SteepestCLs = wd_AOI
+    + GATE.allSteepestCLs_fileName
+    + "/"
+    + GATE.steepestCLs_byBasinGroup_fileName;
+
+  // Set the output directory of the AOI.
+  var output_AOI = wd_Main
+    + "Transect_NDVI_Analysis/"
+    + "AOI_Asia_" + AOI_ID
+    + "/";
+  
+  // Load the ALOS elevation (Version 3.2, released in January 2021)
+  //  in the new CATE.
+  var ALOSelv_newCATE = GATE.load_ALOSelevation(AOI, targetPrj)
+    .updateMask(newCATE);
+
+  // Pair the elevation with each annual NDVI as an ImageCollection.
+  var Elv_AnnualNDVIs_newCATE = TNA.pair_Elevation_AND_AnnualNDVIs(
+    ALOSelv_newCATE, annualNDVIs_newCATE
+  );
+
+
+  // /* Round 1: Operations by basin group (1 ~ 5). */
+  
+  // for (var basinGroupID = 1; basinGroupID <= 5; basinGroupID ++) {
+  
+  
+  // /* Round 2-1: Re-run the script for the failed basin group (ID: 5) of AOI-3. */
+  
+  // var basinGroupID = 5;
+    
+  //   // Load the locally steepest transect centerlines.
+  //   var steepestCLs = ee.FeatureCollection(wd_SteepestCLs
+  //     + basinGroupID);
+    
+  //   // Buffer the transect centerlines by 45 m.
+  //   var transects = TNA.buffer_Centerlines_by45m(steepestCLs);
+    
+  //   // Estimate the temporal trend of the annual elevational NDVI gradients
+  //   //  of each transect by basin.
+  //   var elvNDVIgradientTrends = TNA.estimate_ElvNDVIgradientTrends_byBasin(
+  //     transects, Elv_AnnualNDVIs_newCATE, targetPrj, "CL_newID"
+  //   );
+    
+    
+  //   if (false) { //// true OR false.
+    
+  //     print("transects:", 
+  //       transects.first(),
+  //       transects.size());
+    
+  //   } else { //// Export the result.
+      
+  //     var wd_Output = output_AOI
+  //       + TNA.elvNDVIgradientTrends_fileName
+  //       + "/";
+      
+  //     var fileName = TNA.gradientTrends_byBasinGroup_fileName
+  //       + basinGroupID;
+      
+  //     Export.table.toAsset({
+  //       collection: elvNDVIgradientTrends, 
+  //       description: fileName, 
+  //       assetId: wd_Output
+  //         + fileName
+  //     });
+  //   }
+  // }
+  
+
+  /* Round 2-2: Re-run the script for the failed basin group (ID: 1 ~ 5) of AOI-1. */
+  
+  for (var basinGroupID = 1; basinGroupID <= 5; basinGroupID ++) {
+    
+    // Load the locally steepest transect centerlines.
+    var steepestCLs = ee.FeatureCollection(wd_SteepestCLs
+      + basinGroupID);
+    
+    // Buffer the transect centerlines by 45 m.
+    var transects = TNA.buffer_Centerlines_by45m(steepestCLs);
+    
+    
+    /* Estimate the temporal NDVI-gradient trends by Hybas-ID sub-list. */
+    
+    // Create a non-duplicate list of the Hybas IDs.
+    var HybasID_fullList = transects.aggregate_array("Hybas_ID")
+      .distinct();
+    
+    // Determine the size of each Hybas-ID sub-list.
+    var fullListSize = HybasID_fullList.size();
+    
+    var subListNum = 12;
+    
+    var subListSize = fullListSize.divide(subListNum).round();
+    
+    // Derive the index end of each Hybas-ID sub-list.
+    var subListEnd_1 = subListSize;
+    
+    var subListEnd_2 = subListSize.multiply(2);
+    
+    var subListEnd_3 = subListSize.multiply(3);
+    
+    var subListEnd_4 = subListSize.multiply(4);
+    
+    var subListEnd_5 = subListSize.multiply(5);
+    
+    var subListEnd_6 = subListSize.multiply(6);
+    
+    var subListEnd_7 = subListSize.multiply(7);
+    
+    var subListEnd_8 = subListSize.multiply(8);
+    
+    var subListEnd_9 = subListSize.multiply(9);
+    
+    var subListEnd_10 = subListSize.multiply(10);
+    
+    var subListEnd_11 = subListSize.multiply(11);
+    
+    var subListEnd_12 = fullListSize;
+    
+    // Divide the Hybas-ID list into a set of sub-lists.
+    var HybasID_subList_1 = HybasID_fullList.slice({
+      start: 0, 
+      end: subListEnd_1
+    });
+    
+    var HybasID_subList_2 = HybasID_fullList.slice({
+      start: subListEnd_1, 
+      end: subListEnd_2
+    });
+    
+    var HybasID_subList_3 = HybasID_fullList.slice({
+      start: subListEnd_2, 
+      end: subListEnd_3
+    });
+    
+    var HybasID_subList_4 = HybasID_fullList.slice({
+      start: subListEnd_3, 
+      end: subListEnd_4
+    });
+    
+    var HybasID_subList_5 = HybasID_fullList.slice({
+      start: subListEnd_4, 
+      end: subListEnd_5
+    });
+    
+    var HybasID_subList_6 = HybasID_fullList.slice({
+      start: subListEnd_5, 
+      end: subListEnd_6
+    });
+    
+    var HybasID_subList_7 = HybasID_fullList.slice({
+      start: subListEnd_6, 
+      end: subListEnd_7
+    });
+    
+    var HybasID_subList_8 = HybasID_fullList.slice({
+      start: subListEnd_7, 
+      end: subListEnd_8
+    });
+    
+    var HybasID_subList_9 = HybasID_fullList.slice({
+      start: subListEnd_8, 
+      end: subListEnd_9
+    });
+    
+    var HybasID_subList_10 = HybasID_fullList.slice({
+      start: subListEnd_9, 
+      end: subListEnd_10
+    });
+    
+    var HybasID_subList_11 = HybasID_fullList.slice({
+      start: subListEnd_10, 
+      end: subListEnd_11
+    });
+    
+    var HybasID_subList_12 = HybasID_fullList.slice({
+      start: subListEnd_11, 
+      end: subListEnd_12
+    });
+    
+    // Estimate the temporal trend of the annual elevational NDVI gradients
+    //  of each transect for each Hybas-ID sub-list of Asia.
+    var elvNDVIgradientTrends_SubList_1 = TNA.estimate_ElvNDVIgradientTrends_byHybasIDsubList_forAsia(
+      transects, Elv_AnnualNDVIs_newCATE, targetPrj, "CL_newID", HybasID_subList_1
+    );
+    
+    var elvNDVIgradientTrends_SubList_2 = TNA.estimate_ElvNDVIgradientTrends_byHybasIDsubList_forAsia(
+      transects, Elv_AnnualNDVIs_newCATE, targetPrj, "CL_newID", HybasID_subList_2
+    );
+    
+    var elvNDVIgradientTrends_SubList_3 = TNA.estimate_ElvNDVIgradientTrends_byHybasIDsubList_forAsia(
+      transects, Elv_AnnualNDVIs_newCATE, targetPrj, "CL_newID", HybasID_subList_3
+    );
+    
+    var elvNDVIgradientTrends_SubList_4 = TNA.estimate_ElvNDVIgradientTrends_byHybasIDsubList_forAsia(
+      transects, Elv_AnnualNDVIs_newCATE, targetPrj, "CL_newID", HybasID_subList_4
+    );
+    
+    var elvNDVIgradientTrends_SubList_5 = TNA.estimate_ElvNDVIgradientTrends_byHybasIDsubList_forAsia(
+      transects, Elv_AnnualNDVIs_newCATE, targetPrj, "CL_newID", HybasID_subList_5
+    );
+    
+    var elvNDVIgradientTrends_SubList_6 = TNA.estimate_ElvNDVIgradientTrends_byHybasIDsubList_forAsia(
+      transects, Elv_AnnualNDVIs_newCATE, targetPrj, "CL_newID", HybasID_subList_6
+    );
+    
+    var elvNDVIgradientTrends_SubList_7 = TNA.estimate_ElvNDVIgradientTrends_byHybasIDsubList_forAsia(
+      transects, Elv_AnnualNDVIs_newCATE, targetPrj, "CL_newID", HybasID_subList_7
+    );
+    
+    var elvNDVIgradientTrends_SubList_8 = TNA.estimate_ElvNDVIgradientTrends_byHybasIDsubList_forAsia(
+      transects, Elv_AnnualNDVIs_newCATE, targetPrj, "CL_newID", HybasID_subList_8
+    );
+    
+    var elvNDVIgradientTrends_SubList_9 = TNA.estimate_ElvNDVIgradientTrends_byHybasIDsubList_forAsia(
+      transects, Elv_AnnualNDVIs_newCATE, targetPrj, "CL_newID", HybasID_subList_9
+    );
+    
+    var elvNDVIgradientTrends_SubList_10 = TNA.estimate_ElvNDVIgradientTrends_byHybasIDsubList_forAsia(
+      transects, Elv_AnnualNDVIs_newCATE, targetPrj, "CL_newID", HybasID_subList_10
+    );
+    
+    var elvNDVIgradientTrends_SubList_11 = TNA.estimate_ElvNDVIgradientTrends_byHybasIDsubList_forAsia(
+      transects, Elv_AnnualNDVIs_newCATE, targetPrj, "CL_newID", HybasID_subList_11
+    );
+    
+    var elvNDVIgradientTrends_SubList_12 = TNA.estimate_ElvNDVIgradientTrends_byHybasIDsubList_forAsia(
+      transects, Elv_AnnualNDVIs_newCATE, targetPrj, "CL_newID", HybasID_subList_12
+    );
+    
+    
+    if (false) { //// true OR false.
+    
+      print("transects:", 
+        transects.first());
+    
+      print("full list:", 
+        fullListSize);
+    
+      print("sub-lists:", 
+        HybasID_subList_1.size(),
+        HybasID_subList_2.size(),
+        HybasID_subList_3.size(),
+        HybasID_subList_4.size(),
+        HybasID_subList_5.size(),
+        HybasID_subList_6.size(),
+        HybasID_subList_7.size(),
+        HybasID_subList_8.size(),
+        HybasID_subList_9.size(),
+        HybasID_subList_10.size(),
+        HybasID_subList_11.size(),
+        HybasID_subList_12.size());
+    
+    } else { //// Export the result.
+      
+      var wd_Output = output_AOI
+        + TNA.elvNDVIgradientTrends_fileName
+        + "/";
+      
+      var uniFileName = TNA.gradientTrends_byBasinGroup_fileName
+        + basinGroupID;
+      
+      var fileName_1 = uniFileName + "_SubList_1";
+      
+      var fileName_2 = uniFileName + "_SubList_2";
+      
+      var fileName_3 = uniFileName + "_SubList_3";
+      
+      var fileName_4 = uniFileName + "_SubList_4";
+      
+      var fileName_5 = uniFileName + "_SubList_5";
+      
+      var fileName_6 = uniFileName + "_SubList_6";
+      
+      var fileName_7 = uniFileName + "_SubList_7";
+      
+      var fileName_8 = uniFileName + "_SubList_8";
+      
+      var fileName_9 = uniFileName + "_SubList_9";
+      
+      var fileName_10 = uniFileName + "_SubList_10";
+      
+      var fileName_11 = uniFileName + "_SubList_11";
+      
+      var fileName_12 = uniFileName + "_SubList_12";
+      
+      Export.table.toAsset({
+        collection: elvNDVIgradientTrends_SubList_1, 
+        description: fileName_1, 
+        assetId: wd_Output
+          + fileName_1
+      });
+      
+      Export.table.toAsset({
+        collection: elvNDVIgradientTrends_SubList_2, 
+        description: fileName_2, 
+        assetId: wd_Output
+          + fileName_2
+      });
+      
+      Export.table.toAsset({
+        collection: elvNDVIgradientTrends_SubList_3, 
+        description: fileName_3, 
+        assetId: wd_Output
+          + fileName_3
+      });
+      
+      Export.table.toAsset({
+        collection: elvNDVIgradientTrends_SubList_4, 
+        description: fileName_4, 
+        assetId: wd_Output
+          + fileName_4
+      });
+      
+      Export.table.toAsset({
+        collection: elvNDVIgradientTrends_SubList_5, 
+        description: fileName_5, 
+        assetId: wd_Output
+          + fileName_5
+      });
+      
+      Export.table.toAsset({
+        collection: elvNDVIgradientTrends_SubList_6, 
+        description: fileName_6, 
+        assetId: wd_Output
+          + fileName_6
+      });
+      
+      Export.table.toAsset({
+        collection: elvNDVIgradientTrends_SubList_7, 
+        description: fileName_7, 
+        assetId: wd_Output
+          + fileName_7
+      });
+      
+      Export.table.toAsset({
+        collection: elvNDVIgradientTrends_SubList_8, 
+        description: fileName_8, 
+        assetId: wd_Output
+          + fileName_8
+      });
+      
+      Export.table.toAsset({
+        collection: elvNDVIgradientTrends_SubList_9, 
+        description: fileName_9, 
+        assetId: wd_Output
+          + fileName_9
+      });
+      
+      Export.table.toAsset({
+        collection: elvNDVIgradientTrends_SubList_10, 
+        description: fileName_10, 
+        assetId: wd_Output
+          + fileName_10
+      });
+      
+      Export.table.toAsset({
+        collection: elvNDVIgradientTrends_SubList_11, 
+        description: fileName_11, 
+        assetId: wd_Output
+          + fileName_11
+      });
+      
+      Export.table.toAsset({
+        collection: elvNDVIgradientTrends_SubList_12, 
+        description: fileName_12, 
+        assetId: wd_Output
+          + fileName_12
+      });
+    }
+  }
+// }
+

@@ -1,0 +1,85 @@
+/**
+ * Introduction:
+ * 1) Convert the MultiPolygon of the unioned mid-segment buffer of each basin
+ *  to a set of individual Polygons
+ *  by Asian AOI and basin group.
+ * 
+ * Update: 10/20/2021.
+ * 
+ * Runtime: 1m ~ 16m.
+ */
+
+
+/* Load module(s). */
+
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+
+
+/* Data and function preparation. */
+
+// Set the major working directory.
+var wd_Main = GATE.wd_Asia 
+  + "Elevational_Transect_Generation/";
+
+
+/* Operations by Asian AOI (1 ~ 6). */
+
+for (var AOI_ID = 1; AOI_ID <= 6; AOI_ID ++) {
+  
+  // Set the working directory of the AOI.
+  var wd_AOI = wd_Main
+    + "AOI_Asia_" + AOI_ID + "/";
+  
+  // Determine the universal file path of
+  //  the MultiPolygons of the unioned mid-segment buffers.
+  var wd_MultiPlgs = wd_AOI
+    + GATE.unionedMultiPolygons_perBasin_fileName
+    + "/"
+    + GATE.unionedMultiPolygons_perBasin_byBasinGroup_fileName;
+
+  
+  /* Operations by basin group (1 ~ 5). */
+  
+  for (var basinGroupID = 1; basinGroupID <= 5; basinGroupID ++) {
+    
+    // Load the MultiPolygons of the unioned mid-segment buffers
+    //   of each basin group.
+    var unionedBuffers_MultiPlgs = ee.FeatureCollection(wd_MultiPlgs
+      + basinGroupID);
+  
+
+    /* Convert the MultiPolygon of the unioned mid-segment buffer 
+      of each basin to a set of individual Polygons. */
+    
+    var unionedBuffers_IndivPlgs = GATE.multiPolygon_Conversion(unionedBuffers_MultiPlgs);
+
+
+    if (false) { // true OR false.
+      
+      print("basinGroupID:", basinGroupID);
+      
+      print("unionedBuffers_MultiPlgs:", 
+        unionedBuffers_MultiPlgs.first(),
+        unionedBuffers_MultiPlgs.size());
+    
+      print("unionedBuffers_IndivPlgs:", 
+        unionedBuffers_IndivPlgs.first());
+  
+    } else {
+      //// Export the results by basin group.
+      var wd_Output = wd_AOI
+        + GATE.unionedIndivPlgs_perBasin_fileName
+        + "/";
+      
+      var fileName = GATE.unionedIndivPlgs_perBasin_byBasinGroup_fileName
+        + basinGroupID;
+      
+      Export.table.toAsset({
+        collection: unionedBuffers_IndivPlgs, 
+        description: fileName, 
+        assetId: wd_Output + fileName
+      });
+    }
+  }
+}
+
