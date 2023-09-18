@@ -77,8 +77,3 @@ Your branch is up to date with 'origin/main'.
 nothing to commit, working tree clean
 
 24) Close Git Bash, and check the repository on GitHub.com.
-
-
-
-
-
