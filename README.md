@@ -7,9 +7,9 @@ Leveraging the cloud computing platform Google Earth Engine, this project aims t
 
 ## Built With
 
-- Google Earth Engine
+- [Google Earth Engine](https://earthengine.google.com/)
 
 
 ## Author
 
-**Chenyang Wei**
+**Chenyang Wei** - [@Chenyang_Wei](https://twitter.com/Chenyang_Wei)
