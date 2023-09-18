@@ -1,7 +1,15 @@
-## Analyses of alpine treeline ecotones in Europe
+# Global Alpine Treeline Ecotones
 
-### Alpine treeline elevational transect construction
+## Project Description
 
-### Treeline vegetation gradient analysis
+This project aims to investigate Alpine Treeline Ecotones (ATEs) worldwide with Google Earth Engine.
 
-### Treeline identification and monitoring
+
+## Built With
+
+- Google Earth Engine
+
+
+## Author
+
+**Chenyang Wei**
