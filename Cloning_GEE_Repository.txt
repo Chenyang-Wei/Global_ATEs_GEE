@@ -1,4 +1,4 @@
-1) Create a repository in GitHub, such as "Global_Alpine_Treeline_Ecotones".
+1) Create a repository in GitHub, such as "Global_ATEs".
 
 2) Open a local folder, such as "c/Git/GitHub_Repo".
 
@@ -7,10 +7,10 @@
 4) In the GitHub repository, click "Code" and select "SSH".
 
 5) Copy the SSH code, such as:
-git@github.com:Chenyang-Wei/Global_Apine_Treeline_Ecotones.git
+git@github.com:Chenyang-Wei/Global_ATEs.git
 
 6) Input the following line in Git Bash:
-git clone git@github.com:Chenyang-Wei/Global_Apine_Treeline_Ecotones.git
+git clone git@github.com:Chenyang-Wei/Global_ATEs.git
 
 7) After cloning the repository, close Git Bash and then open Git Bash in another local folder, 
 such as "c/Git/GEE_Repo/Treeline".
