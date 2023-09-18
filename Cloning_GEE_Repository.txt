@@ -1,0 +1,84 @@
+1) Create a repository in GitHub, such as "Global_Alpine_Treeline_Ecotones".
+
+2) Open a local folder, such as "c/Git/GitHub_Repo".
+
+3) Click "Open Git Bash here".
+
+4) In the GitHub repository, click "Code" and select "SSH".
+
+5) Copy the SSH code, such as:
+git@github.com:Chenyang-Wei/Global_Apine_Treeline_Ecotones.git
+
+6) Input the following line in Git Bash:
+git clone git@github.com:Chenyang-Wei/Global_Apine_Treeline_Ecotones.git
+
+7) After cloning the repository, close Git Bash and then open Git Bash in another local folder, 
+such as "c/Git/GEE_Repo/Treeline".
+
+8) Access the account on earthengine.googlesource.com, such as: 
+https://earthengine.googlesource.com/users/ChenyangWei/
+
+9) Click "Generate Password" and then "Allow".
+
+10) Copy the code in the second blue block (the lower one) for authentication, such as:
+
+eval 'set +o history' 2>/dev/null || setopt HIST_IGNORE_SPACE 2>/dev/null
+ touch ~/.gitcookies
+ chmod 0600 ~/.gitcookies
+
+ git config --global http.cookiefile ~/.gitcookies
+
+ tr , \\t <<\__END__ >>~/.gitcookies
+earthengine.googlesource.com,FALSE,/,TRUE,2147483647,o,git-chenyangwei.cwei.gmail.com=1//05jRAxY_9E5puCgYIARAAGAUSNwF-L9IrHqj1AGffSyNUTj6tfpQ2gbOIrc54aa-L_Gf8CAwZej6Ie0sMwev05ADOHum_xKvVBLE
+__END__
+eval 'set -o history' 2>/dev/null || unsetopt HIST_IGNORE_SPACE 2>/dev/null
+
+11) Paste the copied code in Git Bash.
+
+12) Choose a GEE repository (e.g., "Europe_ATE") to clone from:
+https://earthengine.googlesource.com/users/ChenyangWei/
+
+13) Input the "Git Clone" command in Git Bash, such as:
+git clone https://earthengine.googlesource.com/users/ChenyangWei/Europe_ATE
+
+14) After cloning the GEE repository, close Git Bash.
+
+15) Create a new folder under the local GitHub repository, 
+such as "c/Git/GitHub_Repo/Global_Apine_Treeline_Ecotones/Europe_ATE".
+
+16) Copy and paste the local GEE repository files (not the entire folder) 
+into the created local folder, i.e., 
+"c/Git/GitHub_Repo/Global_Apine_Treeline_Ecotones/Europe_ATE".
+
+17) Open Git Bash in the GitHub repository folder, i.e., 
+"c/Git/GitHub_Repo/Global_Apine_Treeline_Ecotones", 
+there should be a branch name (e.g., "main") at the end of the directory.
+
+18) Check the status with the following line:
+git status
+
+19) Track all the copied GEE repository files with the following line:
+git add .
+
+20) Commit the changes using the following line:
+git commit -m "Add the copied GEE scripts of Europe_ATE (20230918)"
+
+21) Check the status and should see the following messages:
+
+Your branch is ahead of 'origin/main' by 1 commit.
+nothing to commit, working tree clean
+
+22) Publish the local commits to GitHub:
+git push origin main
+
+23) Check the status and should see the following information:
+
+Your branch is up to date with 'origin/main'.
+nothing to commit, working tree clean
+
+24) Close Git Bash, and check the repository on GitHub.com.
+
+
+
+
+
