@@ -1,0 +1,103 @@
+/**
+ * Introduction:
+ * 
+ * 1) For each transect, derive the start (min.) and end (max.) years and 
+ *  the time span of the corresponding annual Features.
+ * 
+ * 
+ * Update: 4/19/2022.
+ * 
+ * Need to update: 8.
+ * 
+ * Runtime: < 5m.
+ */
+
+
+/* Load module(s). */
+
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var NGA = require("users/ChenyangWei/Public:Modules/NDVI_Gradient_Analysis.js");
+var FC_AP = require("users/ChenyangWei/Public:Modules/FeatureCollection_Analysis&Processing");
+
+
+/* Data loading. */
+
+// Set the major working directory.
+var wd_Main = GATE.wd_SouthAmerica; 
+
+// Determine the common file path of the raw transects.
+var wd_RawTransects = wd_Main
+  + "NDVI_Gradient_Analysis/"
+  + NGA.transects_GapDetected_FullName // 1) Need to update.
+  + "/"
+  + NGA.transects_GapDetected_ShortName // 2) Need to update.
+  + "_S";
+
+// Determine the common file path of the annual Features.
+var wd_AnnualFeatures = wd_Main
+  + "NDVI_Gradient_Analysis/"
+  + NGA.filteredAnnualFeatures_FullName
+  + "/"
+  + NGA.filteredAnnualFeatures_ShortName
+  + "_S";
+
+// Determine the number of transect subsets.
+var subsetNum = 30; 
+
+// Whether to output the result(s).
+var output = true; // true OR false.
+
+
+/* Perform the following operations for each subset of the annual Features. */
+
+for (var subsetID = 1; subsetID <= subsetNum; subsetID ++) {
+  
+  // Load each subset of the raw transects.
+  var raw_Transects = ee.FeatureCollection(wd_RawTransects
+    + subsetID);
+  
+  // Load each subset of the annual Features.
+  var filtered_AnnualFeatures = ee.FeatureCollection(wd_AnnualFeatures
+    + subsetID);
+  
+  
+  /* Derive the start (min.) and end (max.) years and the time span for 
+    the annual observations of each transect. */
+  
+  var centerlineID = "CL_ID";
+  
+  var transects_withObsYearVars = NGA.Analyze_ObsYears_byTransect(
+    raw_Transects, filtered_AnnualFeatures, centerlineID
+  ); // 3) Need to update.
+  
+  
+  if (output) {
+    // Export the final results.
+    
+    var wd_Output = wd_Main
+      + "NDVI_Gradient_Analysis/"
+      + NGA.transects_withObsYearVars_FullName // 4) Need to update.
+        // "transects_withObsYearVars_MovWinTempVars_GapDetected_MedianFiltered" // 5) Need to update.
+      + "/";
+    
+    var fileName = NGA.transects_withObsYearVars_ShortName // 6) Need to update.
+      + "_S" + subsetID;
+    
+    Export.table.toAsset({
+      collection: transects_withObsYearVars, // 7) Need to update.
+      description: fileName, 
+      assetId: wd_Output
+        + fileName
+    });
+  }
+}
+
+
+if (!output) {
+  // Examine the last subset of data.
+  
+  print("raw_Transects:", raw_Transects.size());
+  
+  FC_AP.Print_FtrColInfo("transects_withObsYearVars:", transects_withObsYearVars); // 8) Need to update.
+}
+

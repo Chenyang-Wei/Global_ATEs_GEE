@@ -1,0 +1,71 @@
+/**
+ * Introduction:
+ * 1) Aggregate the three types of temporal trends
+ *  of the selected TLUs in each basin.
+ * 
+ * Update: 12/10/2021.
+ * 
+ * Total update number:
+ * 
+ * Runtime:
+ */
+
+
+/* Load module(s). */
+
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var TNA = require("users/ChenyangWei/Public:Modules/Transect_NDVI_Analysis");
+
+
+/* Data and function preparation. */
+
+// Set the major working directory.
+var wd_Main = GATE.wd_SouthAmerica; /**** 1) Need to update. ****/
+
+// Load the selected transects with the information 
+//  on the corresponding lower and upper segments.
+var selectedTLUs = ee.FeatureCollection(wd_Main
+  + "Transect_NDVI_Analysis/"
+  + TNA.selectedTLUs_fileName);
+
+// Load the selected basins.
+var selectedBasins = ee.FeatureCollection(wd_Main
+  + "Elevational_Transect_Generation/"
+  + GATE.selectedBasins_fileName);
+
+
+/* Aggregate the three types of temporal trends
+  of the selected TLUs in each basin. */
+
+var aggregatedTrends_byBasin = TNA.aggregate_TLUsTrends_byBasin(
+  selectedTLUs, selectedBasins, "CL_ID"
+);
+
+
+if (true) { //// true OR false.
+
+  print("selectedTLUs:", 
+    selectedTLUs.first(),
+    selectedTLUs.size());
+
+  print("selectedBasins:", 
+    selectedBasins.first(),
+    selectedBasins.size());
+
+  print("aggregatedTrends_byBasin:", 
+    aggregatedTrends_byBasin.first(),
+    aggregatedTrends_byBasin.size());
+
+} else { //// Export the result.
+  
+  var fileName = TNA.basinGradientTrends_fileName;
+  
+  Export.table.toAsset({
+    collection: aggregatedTrends_byBasin, 
+    description: fileName, 
+    assetId: wd_Main
+      + "Transect_NDVI_Analysis/"
+      + fileName
+  });
+}
+

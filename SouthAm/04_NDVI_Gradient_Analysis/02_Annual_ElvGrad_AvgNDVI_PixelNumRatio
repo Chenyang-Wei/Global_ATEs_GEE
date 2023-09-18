@@ -1,0 +1,151 @@
+/**
+ * Introduction:
+ * 
+ * 1) Estimate the annual elevational gradients of NDVIs from 1985 to 2020
+ *  for each transect and remove the generated annual Features
+ *  that have a "NaN" elevational gradient.
+ * 
+ * 2) Calculate the annual spatial average NDVIs of each transect
+ *  from 1985 to 2020 and remove the generated annual Features
+ *  that have a NULL average NDVI.
+ * 
+ * 3) Count the 30-m annual NDVI pixels within the study domain
+ *  for each transect and remove the generated annual Features
+ *  that have no NDVI pixel.
+ * 
+ * 4) Compute the ratio between the NDVI pixel number and
+ *  the elevation pixel number for each annual Feature.
+ * 
+ * Need to change: 4.
+ * 
+ * Update: 2/11/2022.
+ * 
+ * Runtime: 2h ~ 6h.
+ */
+
+
+/* Load module(s). */
+
+var IMG = require("users/ChenyangWei/Public:Modules/Image_Analysis&Processing");
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var TNA = require("users/ChenyangWei/Public:Modules/Transect_NDVI_Analysis");
+var NGA = require("users/ChenyangWei/Public:Modules/NDVI_Gradient_Analysis.js");
+var FC_AP = require("users/ChenyangWei/Public:Modules/FeatureCollection_Analysis&Processing");
+
+
+/* Data loading. */
+
+// Target projection.
+var targetPrj = IMG.WGS84_30m;
+
+// Set the area of interest.
+var AOI = GATE.AOI_SouthAmerica; /**** 1) Need to change. ****/
+
+// Set the major working directory.
+var wd_Main = GATE.wd_SouthAmerica; /**** 2) Need to change. ****/
+
+// Load the new CATE.
+var newCATE = ee.Image(wd_Main
+  + "Climate-Based_ATE/" 
+  + GATE.newCATE_fileName);
+
+// Load and reproject the ALOS elevation in the new CATE.
+var ALOSelv_newCATE = GATE.load_ALOSelevation(AOI, targetPrj)
+  .updateMask(newCATE);
+
+// Read the annual NDVIs in the new CATE as an Image.
+//  (Note: apply for all continents other than North America.)
+var rawAnnualNDVIs_newCATE = TNA.loadAnnualNDVIs_nonNorthAmerica(wd_Main)
+  .updateMask(newCATE);
+
+// Remove the annual NDVI of 1984.
+var annualNDVIs_newCATE = IMG.RemoveBands_fromImage(rawAnnualNDVIs_newCATE, 
+  ["smdNDVI_1984"]);
+
+// Determine the common file path of the subsets of transects.
+var wd_TransectSubsets = wd_Main
+  + "NDVI_Gradient_Analysis/"
+  + NGA.pixelCountedTransects_FullName
+  + "/"
+  + NGA.pixelCountedTransects_ShortName
+  + "_S";
+
+
+/* Data preprocessing. */
+
+// Combine the elevation dataset (1 band, non-repeated) and
+//  the annual-NDVI data (2 bands, repeated) as an ImageCollection.
+var Elv_AnnualNDVIs_newCATE = NGA.Combine_Elevation_AnnualNDVIs(
+  ALOSelv_newCATE, annualNDVIs_newCATE
+);
+
+// Determine the number of transect subsets.
+var subsetNum = 30; /**** 3) Need to check. ****/
+
+// Whether use a small sample to test the code.
+var smallSample = false; // true OR false.
+
+// Whether output the result(s).
+var output = true; // true OR false.
+
+
+/* Perform the following operations for each subset of transects. */
+
+for (var subsetID = 1; subsetID <= subsetNum; subsetID ++) {
+  
+  // Load each subset of transects.
+  var transectSubset = ee.FeatureCollection(wd_TransectSubsets
+    + subsetID);
+  
+  
+  /* Use a small sample to test the code. */
+  
+  if (smallSample && !output) {
+    var sampleSize = 5;
+    
+    transectSubset = transectSubset.limit(sampleSize);
+  }
+
+
+  /* Compute the elevational gradient, spatial average, and pixel number
+    of NDVIs and the ratio between the NDVI and elevation pixel numbers
+    of each year for each transect. */
+
+  var annualFeatures = 
+    NGA.Compute_Annual_ElvGrad_AvgNDVI_PixelNumRatio_perTransect(
+      transectSubset, Elv_AnnualNDVIs_newCATE, targetPrj
+    );
+  
+  
+  if (output) {
+    // Export the final result(s).
+    
+    var wd_Output = wd_Main
+      + "NDVI_Gradient_Analysis/"
+      + NGA.annualFeatures_FullName
+        /**** 4) Need to create. ****/
+        // "annualFeatures_ElvGrad_AvgNDVI_PixelNumRatio"
+      + "/";
+    
+    var fileName = NGA.annualFeatures_ShortName
+      + "_S" + subsetID;
+    
+    Export.table.toAsset({
+      collection: annualFeatures, 
+      description: fileName, 
+      assetId: wd_Output
+        + fileName
+    });
+    
+  } else if (smallSample) {
+    // Examine the testing result(s).
+    
+    FC_AP.Print_FtrColInfo("annualFeatures:", annualFeatures);
+
+  } else {
+    // Examine the regular data.
+    
+    print("transectSubset:", transectSubset.size());
+  }
+}
+

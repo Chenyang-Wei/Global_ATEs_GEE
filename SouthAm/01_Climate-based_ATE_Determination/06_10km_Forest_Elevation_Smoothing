@@ -1,0 +1,84 @@
+/**
+ * Introduction: 
+ * 1) Smooth the 10-km closed forest elevation by calculating its focal average 
+ *  within a 10-pixel circle. 
+ * 
+ * Update: 6/4/2021.
+ * 
+ * Runtime: 1m.
+ */
+
+
+/* Load the required dataset(s). */
+
+// Set the 10-km buffered bounding box of the study domain.
+var saAOI = ee.Geometry.Rectangle({
+  coords: [[-109.61604935443158,-56.00583412286005],
+    [-28.68239728959196,13.47877305668919]],
+  geodesic: false
+});
+
+// Set the working directory.
+var wdSA = "users/ATE/South_America_ATE/";
+
+// Function to print the image information.
+function printImgInfo(name, image) {
+  print(name,
+    image.bandTypes(),
+    image.projection().crs(),
+    image.projection().nominalScale());
+}
+
+// Load the closed forest elevation at the 10-km level.
+var rawElv = ee.Image(wdSA + "Climate-Based_ATE/"
+  + "ClosedForestsALLyears_BufRawCATE_10000mMeanElv");
+
+// printImgInfo("rawElv:", rawElv)
+
+
+/* Calculate the focal average elevation. */
+
+// Generate a mean reducer.
+var meanRd = ee.Reducer.mean();
+
+// Smooth the raw elevation.
+var smdElv = rawElv.reduceNeighborhood({
+  reducer: meanRd,
+  kernel: ee.Kernel.circle(10), // Default unit: "pixels".
+  skipMasked: false // Do NOT mask output pixels if the corresponding input pixel is masked.
+}).reproject({ 
+  crs: "EPSG:4326",
+  scale: 1e4
+});
+
+// printImgInfo("smdElv:", smdElv)
+
+
+if (false) {
+  // Visualization.
+  var elvPalette = ['006600', '002200', 'fff700', 'ab7634', 'c4d0ff', 'ffffff'];
+  var elvVis = {min: 2500, max: 4000, palette: elvPalette};
+  
+  Map.setOptions("hybrid");
+  Map.setCenter(-78.34291, -2.00503, 8);
+  
+  Map.addLayer(smdElv, elvVis, "Smoothed elevation", true);
+  Map.addLayer(rawElv, elvVis, "Raw elevation", true);
+}
+
+else if (true) {
+  // Export the result.
+  var fileName = "ClosedForestsALLyears_BufRawCATE_10kmMeanElv_10pxCircleMean";
+  
+  Export.image.toAsset({
+    image: smdElv,
+    description: fileName, 
+    assetId: wdSA + "Climate-Based_ATE/"
+      + fileName, 
+    crs: "EPSG:4326",
+    scale: 1e4,
+    region: saAOI,
+    maxPixels: 1e13
+  }); 
+}
+

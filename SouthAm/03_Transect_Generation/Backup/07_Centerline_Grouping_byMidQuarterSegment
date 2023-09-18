@@ -1,0 +1,76 @@
+/**
+ * Introduction:
+ * 1) Group transect centerlines with mid-segments within 90m to one another
+ *  and then select the centerline with the largest elevational range 
+ *  (the "steepest") in each group.
+ * 
+ * Update: 10/1/2021.
+ * 
+ * Runtime: Failed after running 8h.
+ * 
+ * Error: Execution failed; out of memory. (Error code: 8)
+ */
+
+
+/* Load module(s). */
+
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var VIS = require("users/ChenyangWei/Public:Modules/Visualization");
+
+
+
+/**** 1) The following section needs to be updated. ****/
+
+// Set the working directory.
+var wd_Main = GATE.wd_SouthAmerica;
+
+/**** The section above needs to be updated. ****/
+
+
+
+/* Data and function preparation. */
+
+// Load the raw transect centerlines.
+var rawCLs = ee.FeatureCollection(wd_Main + "Elevational_Transect_Generation/"
+  + GATE.rawCLs_fileName);
+
+// Load the mid-quarter segments.
+var midQuarters = ee.FeatureCollection(wd_Main + "Elevational_Transect_Generation/"
+  + GATE.midQuarters_fileName);
+
+
+/* Group transect centerlines with mid-segments within 90m to one another
+  and then select the centerline with the largest elevational range 
+  (the "steepest") in each group. */
+
+var steepestCLs = GATE.selectSteepestCLs_GroupedByMidSegment(midQuarters, rawCLs);
+
+
+if (false) { // true OR false.
+  print("rawCLs:", rawCLs.size());
+  
+  print("midQuarters:", midQuarters.size());
+  
+  //// Visualization.
+  VIS.centerSouthAmerica(13); /**** 2) Need to update. ****/
+  
+  Map.addLayer(rawCLs, 
+    {color: "FF0000"}, 
+    "rawCLs", true);
+  
+  Map.addLayer(midQuarters, 
+    {color: "FFFF00"}, 
+    "midQuarters", true);
+
+} else {
+  //// Export the result(s).
+  var fileName = GATE.steepestCLs_fileName;
+  
+  Export.table.toAsset({
+    collection: steepestCLs, 
+    description: fileName, 
+    assetId: wd_Main + "Elevational_Transect_Generation/"
+      + fileName
+  });
+}
+

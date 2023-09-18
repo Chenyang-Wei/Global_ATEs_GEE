@@ -1,0 +1,68 @@
+/* Load module(s). */
+
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var VIS = require("users/ChenyangWei/Public:Modules/Visualization");
+
+
+/* Data and function preparation. */
+
+// Set the major working directory.
+var wd_Main = GATE.wd_SouthAmerica
+  + "Elevational_Transect_Generation/"; /**** 1) Need to update. ****/
+
+// Load the mid-quarter segments.
+var midQuarters = ee.FeatureCollection(wd_Main
+  + GATE.midQuarters_fileName);
+
+// Load the selected basins.
+var selectedBasins = ee.FeatureCollection(wd_Main
+  + GATE.selectedBasins_fileName);
+
+// Load the centerline centroids with Hybas IDs.
+var CLcentroids_withHybasIDs = ee.FeatureCollection(wd_Main
+  + GATE.CLcentroids_withHybasIDs_fileName);
+
+// Load the unioned mid-segment buffers.
+var unioned_MidQuarterBuffers = ee.FeatureCollection(wd_Main
+  + GATE.unionedMultiPolygons_perBasin_fileName);
+
+
+// Load the individual Polygons of the unioned mid-segment buffers
+//  of each basin.
+var unionedBuffers_IndivPlgs = ee.FeatureCollection(wd_Main
+  + GATE.unionedIndivPlgs_perBasin_fileName);
+
+// Load the mid-quarter segments with Hybas IDs.
+var midQuarters_withHybasIDs = ee.FeatureCollection(wd_Main
+  + GATE.midQuarters_withHybasIDs_fileName);
+
+// Load the centerlines with Hybas IDs.
+var CLs_withHybasIDs = ee.FeatureCollection(wd_Main
+  + GATE.CLs_withHybasIDs_fileName);
+
+
+if (true) { // true OR false.
+
+  print("CLcentroids_withHybasIDs:", 
+    CLcentroids_withHybasIDs.size());
+  
+  print("selectedBasins:", 
+    selectedBasins.size());
+  
+  print("unioned_MidQuarterBuffers:", 
+    unioned_MidQuarterBuffers.size(),
+    unioned_MidQuarterBuffers.first());
+  
+  VIS.centerSouthAmerica(13);
+  
+  Map.addLayer(selectedBasins, {color: "FFFFFF"}, "selectedBasins");
+  
+  Map.addLayer(unionedBuffers_IndivPlgs, {color: "0000FF"}, "unionedBuffers_IndivPlgs");
+
+  Map.addLayer(CLs_withHybasIDs, {color: "FF0000"}, "CLs_withHybasIDs");
+
+  Map.addLayer(midQuarters_withHybasIDs, {color: "FFFF00"}, "midQuarters_withHybasIDs");
+  
+  // Map.addLayer(unioned_MidQuarterBuffers, {color: "FF0000"}, "unioned_MidQuarterBuffers");
+
+}

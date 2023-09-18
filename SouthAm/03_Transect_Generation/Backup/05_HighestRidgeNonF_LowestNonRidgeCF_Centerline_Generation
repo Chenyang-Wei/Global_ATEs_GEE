@@ -1,0 +1,134 @@
+/**
+ * Introduction:
+ * 1) Construct an elevational transect centerline between
+ *  the highest non-forested spot of the ridge landforms and
+ *  the lowest closed forest of the non-ridge landforms
+ *  in each qualified buffer of the medial-axis pixel centroids.
+ * 
+ * Update: 9/30/2021.
+ * 
+ * Runtime: Failed after running 3h.
+ * 
+ * Error: Image.reduceRegions: Computed value is too large. (Error code: 3)
+ */
+
+
+/* Load module(s). */
+
+var IMG = require("users/ChenyangWei/Public:Modules/Image_Analysis&Processing");
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var VIS = require("users/ChenyangWei/Public:Modules/Visualization");
+
+
+
+/**** 1) The following section needs to be updated. ****/
+
+// Set the area of interest.
+var AOI = GATE.AOI_SouthAmerica;
+
+// Set the working directory.
+var wd_Main = GATE.wd_SouthAmerica;
+
+/**** The section above needs to be updated. ****/
+
+
+
+/* Data and function preparation. */
+
+// Load the buffered medial-axis pixel centroids.
+var buffered_MedCtds = ee.FeatureCollection(wd_Main + "Elevational_Transect_Generation/"
+  + GATE.distBufferedPxCtds_fileName);
+
+// Load the new CATE.
+var newCATE = ee.Image(wd_Main + "Climate-Based_ATE/" 
+  + GATE.newCATE_fileName);
+
+// Target projection.
+var targetPrj = IMG.WGS84_30m;
+
+
+/* Extract the ridge and non-ridge landforms. */
+
+// Load and reproject the ALOS landforms dataset in the new CATE.
+var LF_noInvaid_newCATE = GATE.loadReproject_ALOSlandforms(targetPrj)
+  .updateMask(newCATE);
+
+// Ridges in the new CATE.
+var ridges = GATE.extractRidgeLandforms(LF_noInvaid_newCATE);
+
+// Non-ridges in the new CATE.
+var nonRidges = ridges.not();
+
+
+/* Obtain the non-forested areas of the ridge landforms and
+  the closed forests of the non-ridge landforms in the new CATE. */
+
+// Read the Land Cover datasets of 2015-2019.
+var landCover = GATE.readCoperLandCover15to19();
+
+// Extract and reproject the elevation of closed forests 
+//   (tree canopy > 70 %) in 2015-2019.
+var CF_inAllYrs = GATE.extractClosedForests_inAllYears(landCover, targetPrj);
+
+// Extract and reproject the non-forested areas in 2015-2019.
+var nonF_inAllYrs = GATE.extractNonForested_inAllYears(landCover, targetPrj);
+
+// Closed forests of the non-ridge landforms.
+var CF_nonRidges = CF_inAllYrs.updateMask(nonRidges)
+  .selfMask();
+
+// Non-forested areas of the ridge landforms.
+var nonF_ridges = nonF_inAllYrs.updateMask(ridges)
+  .selfMask();
+
+
+/* Select the buffers of the medial-axis pixel centroids
+  with the two elevational extremes.*/
+
+// Load the ALOS elevation (Version 3.2, released in January 2021) in the AOI.
+var ALOSelv = GATE.load_ALOSelevation(AOI, targetPrj);
+
+// Extract the elevational extremes by buffer.
+var selectedBuffers_withElvMinMax = GATE.extractElvMinMax_byBuffer(ALOSelv, 
+  CF_nonRidges, nonF_ridges, targetPrj, buffered_MedCtds);
+
+
+/* Construct an elevational transect centerline 
+  between the upper and lower endpoints 
+  in each selected buffer. */
+
+var transectCLs = GATE.constructTransectCLs_byBuffer(selectedBuffers_withElvMinMax);
+
+
+if (true) { // true OR false.
+  print("buffered_MedCtds:", buffered_MedCtds.first(),
+    buffered_MedCtds.size());
+  
+  //// Visualization.
+  VIS.centerSouthAmerica(13); /**** 2) Need to update. ****/
+  
+  Map.addLayer(newCATE, {palette: "FFA500"}, 
+    "newCATE", true, 0.5);
+  
+  Map.addLayer(nonF_ridges, {palette: "0000FF"}, 
+    "nonF_ridges", true);
+  
+  Map.addLayer(CF_nonRidges, {palette: "00FF00"}, 
+    "CF_nonRidges", true);
+  
+  Map.addLayer(buffered_MedCtds, 
+    {color: "00FFFF"}, 
+    "buffered_MedCtds", true, 0.5);
+
+} else {
+  var fileName = GATE.rawCLs_fileName;
+  
+  //// Export the result(s).
+  Export.table.toAsset({
+    collection: transectCLs, 
+    description: fileName, 
+    assetId: wd_Main + "Elevational_Transect_Generation/"
+      + fileName
+  });
+}
+

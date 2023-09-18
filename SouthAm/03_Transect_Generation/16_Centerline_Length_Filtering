@@ -1,0 +1,57 @@
+/**
+ * Introduction:
+ * 1) Select transect centerlines with length between 300m and 3km.
+ * 
+ * Update: 1/5/2022.
+ * 
+ * Total update number: 1.
+ * 
+ * Runtime: 4m.
+ */
+
+
+/* Load module(s). */
+
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var TNA = require("users/ChenyangWei/Public:Modules/Transect_NDVI_Analysis");
+
+
+/* Data and function preparation. */
+
+// Set the major working directory.
+var wd_Main = GATE.wd_SouthAmerica; /**** 1) Need to update. ****/
+
+// Load the locally steepest transect centerlines.
+var steepestCLs = ee.FeatureCollection(wd_Main
+  + "Elevational_Transect_Generation/"
+  + GATE.allSteepestCLs_fileName);
+
+
+/* Select transect centerlines with length between 300m and 3km. */
+
+var selectedCLs = TNA.filter_TransectCLlength(steepestCLs);
+
+
+if (false) { //// true OR false.
+
+  print("steepestCLs:", 
+    steepestCLs.first(),
+    steepestCLs.size());
+
+  print("selectedCLs:", 
+    selectedCLs.first(),
+    selectedCLs.size());
+
+} else { //// Export the result.
+  
+  var fileName = TNA.selectedCLs_fileName;
+  
+  Export.table.toAsset({
+    collection: selectedCLs, 
+    description: fileName, 
+    assetId: wd_Main
+      + "Elevational_Transect_Generation/"
+      + fileName
+  });
+}
+

@@ -1,0 +1,77 @@
+/**
+ * Introduction:
+ * 1) Aggregate the estimated NDVI elevational-gradient trends
+ *  of the transects in each basin.
+ * 
+ * Update: 11/23/2021.
+ * 
+ * Total update number: 1.
+ * 
+ * Runtime: 1m.
+ */
+
+
+/* Load module(s). */
+
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var TNA = require("users/ChenyangWei/Public:Modules/Transect_NDVI_Analysis");
+
+
+/* Data and function preparation. */
+
+// Set the major working directory.
+var wd_Main = GATE.wd_SouthAmerica; /**** 1) Need to update. ****/
+
+// Load the estimated NDVI elevational-gradient trends of transects.
+var rawGradTrends_Transects = ee.FeatureCollection(wd_Main
+  + "Transect_NDVI_Analysis/"
+  + TNA.elvNDVIgradientTrends_fileName);
+
+// Load the selected basins.
+var selectedBasins = ee.FeatureCollection(wd_Main
+  + "Elevational_Transect_Generation/"
+  + GATE.selectedBasins_fileName);
+
+
+/* Aggregate the estimated NDVI elevational-gradient trends. */
+
+// Select transects meeting the following criteria:
+//  1) The centerline length is between 300 m (10 px) and 6,000 m (200 px).
+//  2) The number of NDVI elevational-gradient observations is at least 10.
+var selectedGradTrends_Transects = TNA.select_TransectGradTrends(rawGradTrends_Transects);
+
+// Aggregate the gradient trends of the selected transects by basin.
+var aggregatedGradTrends_Basins = TNA.aggregate_TransectGradTrends_byBasin(
+  selectedGradTrends_Transects, selectedBasins, "CL_ID"
+);
+
+
+if (false) { //// true OR false.
+
+  print("rawGradTrends_Transects:", 
+    rawGradTrends_Transects.first(),
+    rawGradTrends_Transects.size());
+
+  print("selectedGradTrends_Transects:", 
+    selectedGradTrends_Transects.size());
+
+  print("selectedBasins:", 
+    selectedBasins.size());
+
+  print("aggregatedGradTrends_Basins:", 
+    aggregatedGradTrends_Basins.first(),
+    aggregatedGradTrends_Basins.size());
+
+} else { //// Export the result.
+  
+  var fileName = TNA.basinGradientTrends_fileName;
+  
+  Export.table.toAsset({
+    collection: aggregatedGradTrends_Basins, 
+    description: fileName, 
+    assetId: wd_Main
+      + "Transect_NDVI_Analysis/"
+      + fileName
+  });
+}
+

@@ -1,0 +1,109 @@
+/**
+ * Introduction:
+ * 1) Estimate the annual elevational NDVI gradients of each transect.
+ * 2) Remove the annual features that have a "NaN" gradient.
+ * 3) Select the properties of interest from the generated FeatureCollection.
+ * 
+ * Update: 11/3/2021.
+ * 
+ * Total update number: 4.
+ * 
+ * Runtime:
+ */
+
+
+/* Load module(s). */
+
+var IMG = require("users/ChenyangWei/Public:Modules/Image_Analysis&Processing");
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var VIS = require("users/ChenyangWei/Public:Modules/Visualization");
+
+
+/* Data and function preparation. */
+
+// Target projection.
+var targetPrj = IMG.WGS84_30m;
+
+// Set the area of interest.
+var AOI = GATE.AOI_SouthAmerica; /**** 1) Need to update. ****/
+
+// Set the major working directory.
+var wd_Main = GATE.wd_SouthAmerica; /**** 2) Need to update. ****/
+
+// Load the locally steepest transect centerlines.
+var steepestCLs = ee.FeatureCollection(wd_Main
+  + "Elevational_Transect_Generation/"
+  + GATE.allSteepestCLs_fileName);
+
+// Load the new CATE.
+var newCATE = ee.Image(wd_Main
+  + "Climate-Based_ATE/" 
+  + GATE.newCATE_fileName);
+
+// Load the ALOS elevation (Version 3.2, released in January 2021)
+//  in the new CATE.
+var ALOSelv_newCATE = GATE.load_ALOSelevation(AOI, targetPrj)
+  .updateMask(newCATE);
+
+
+/* Determine the annual elevational gradient of the NDVI
+  of each transect by basin. */
+
+// Buffer the transect centerlines by 45 m.
+var transects = GATE.bufferCLs_by45m(steepestCLs);
+
+// Read the annual NDVIs in the new CATE as an Image.
+//  (Note: apply for all continents other than North America.)
+var annualNDVIs_newCATE = VIS.readAnnualNDVIs_nonNorthAmerica(wd_Main)
+  .updateMask(newCATE);
+
+// Pair the elevation with each annual NDVI
+//  as an ImageCollection.
+var Elv_AnnualNDVIs_newCATE = GATE.combine_Elevation_AnnualNDVIs(ALOSelv_newCATE, annualNDVIs_newCATE);
+
+// Estimate the annual elevational NDVI gradients of each transect
+//  and remove the annual features that have a "NaN" gradient
+//  by basin.
+var annualElvNDVIgradients_nonNaN = GATE.estimateAnnualElvNDVIgradients_RemoveNaN_byBasin(
+  transects, Elv_AnnualNDVIs_newCATE, targetPrj
+);
+
+// Select the properties of interest.
+//  (Note: apply for all continents except North America and Asia.)
+var annualElvNDVIgradients_PropertiesSelected = GATE.selectProperties_fromAnnualElvNDVIgradients(
+  annualElvNDVIgradients_nonNaN, "CL_ID"
+);
+
+
+if (false) { // true OR false.
+
+  print("transects:", 
+    transects.first(),
+    transects.size());
+
+  print("annualElvNDVIgradients_PropertiesSelected:", 
+    annualElvNDVIgradients_PropertiesSelected.first());
+
+  VIS.centerSouthAmerica(13); /**** 3) Need to update. ****/
+  
+  var NDVIname = "smdNDVI_1990";
+  
+  Map.addLayer(annualNDVIs_newCATE.select(NDVIname), 
+    VIS.NDVI_vis, NDVIname);
+  
+  Map.addLayer(transects, {color: "0000FF"},
+    "transects", true);
+
+} else {
+  //// Export the result.
+  var fileName = GATE.annualElvNDVIgradients_nonNaN_PropertiesSelected_fileName;
+  
+  Export.table.toAsset({
+    collection: annualElvNDVIgradients_PropertiesSelected, 
+    description: fileName, 
+    assetId: wd_Main
+      + "Transect_NDVI_Analysis/"  /**** 4) Need to create. ****/
+      + fileName
+  });
+}
+

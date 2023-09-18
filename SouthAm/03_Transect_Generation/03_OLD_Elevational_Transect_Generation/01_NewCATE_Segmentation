@@ -1,0 +1,171 @@
+/**
+ * Introduction:
+ * 1) Segment the 30-m new CATE based on the distance to mountain ridge pixels 
+ *  in the ALOS landform dataset.
+ * 
+ * Update: 6/10/2021.
+ * 
+ * Runtime: 1h.
+ * 
+ * Notes: The high-latitude stripes with no valid data in the ALOS landform dataset 
+ *  can cause some problems in the segmented areas. 
+ *  So, they need to be removed.
+ */
+
+
+/* Load the required dataset(s). */
+
+// Set the 10-km buffered bounding box of the study domain.
+var saAOI = ee.Geometry.Rectangle({
+  coords: [[-109.61604935443158,-56.00583412286005],
+    [-28.68239728959196,13.47877305668919]],
+  geodesic: false
+});
+
+// Target projection.
+var targetPrj = {
+  crs: "EPSG:4326",
+  scale: 30
+};
+
+// Set the working directory.
+var wdSA = "users/ATE/South_America_ATE/";
+
+// Function to print the image information.
+function printImgInfo(name, image) {
+  print(name,
+    image.bandTypes(),
+    image.projection().crs(),
+    image.projection().nominalScale());
+}
+
+// Load the new CATE.
+var newCATE = ee.Image(wdSA + "Climate-Based_ATE/" 
+  + "30mNewCATE_gteSmd10kmCForestElv_3kmCForestBuffer_AOI");
+
+// printImgInfo("newCATE:", newCATE)
+
+
+/* Pre-process the ALOS landform dataset. */
+
+// The landform dataset is based on the 30m "AVE" band of JAXA's ALOS DEM 
+//  (available in EE as JAXA/ALOS/AW3D30_V1_1).
+//  There are stripes in the area over 60 degrees in latitude.
+var rawLF = ee.Image('CSP/ERGo/1_0/Global/ALOS_landforms').select('constant')
+  .reproject(targetPrj);
+
+// Remove the high-latitude NA (invalid) stripes 
+//  in the landform dataset (based on the ALOS DEM V1.1).
+var ALOSv11 = ee.Image("JAXA/ALOS/AW3D30_V1_1").select("AVE")
+  .reproject(targetPrj);
+
+var maskedLF = rawLF.updateMask(ALOSv11.mask());
+
+// printImgInfo("maskedLF:", maskedLF)
+
+
+/* Extract the landforms of mountain ridges in the new CATE.
+  Including: peak/ridge (warm/normal/cool) and mountain/divide. */
+
+// Masked landforms within the new CATE.
+var CATE_LF = maskedLF.updateMask(newCATE);
+
+// Extract the mountain ridge pixels.
+//  Pixel values: 11 ~ 14.
+//  No cliff (15), because its shape is normally irregular and 
+//  its distribution is more random than the peak/ridge or the mountain/divide.
+var ridge = CATE_LF.lte(14);
+
+// printImgInfo("ridge:", ridge)
+
+// Non-ridge pixels within the CATE.
+var nonRidge = ridge.not();
+
+// printImgInfo("nonRidge:", nonRidge)
+
+
+/* Caculate the distance to the extracted ridge pixels 
+  at each pixel in the new CATE. */
+
+// The reasons for choosing the ridge pixels rather than the valley ones:
+//  1) The ridge pixels are mostly located at the center of local study area and 
+//    are surrounded by the valley pixels. 
+//  2) The distribution pattern of the ridge pixels is more regular than 
+//    that of the valley ones.
+//  3) Most valley pixels are not contained in the new CATE due to its generation metric.
+var ridgeDist = ridge.fastDistanceTransform({
+  neighborhood: 200,
+  units: "pixels",
+  metric: "squared_euclidean" // Get the distance in the squared number of 30-m pixels.
+}).reproject(targetPrj);
+
+// printImgInfo("ridgeDist:", ridgeDist)
+
+
+/* Segment the new CATE based on the distance to the ridge pixels. */
+
+// Define a Laplacian, or isotropic-edge-detection kernel.
+var laplacian = ee.Kernel.laplacian8({ 
+  normalize: false 
+});
+
+// Apply the Laplacian edge-detection kernel to detect the boundary of the ridge distance.
+var edgy = ridgeDist.convolve(laplacian)
+  .reproject(targetPrj);
+
+// printImgInfo("edgy:", edgy)
+
+// Segment the new CATE based on the distance boundary.
+var segmented = edgy.gt(0).selfMask();
+
+// printImgInfo("segmented:", segmented)
+
+// Remove the ridge pixels from the segmentation result.
+var ridgeRemoved = segmented.updateMask(nonRidge)
+  .rename("segmented_newCATE");
+
+// printImgInfo("ridgeRemoved:", ridgeRemoved)
+
+
+if (false) {
+  // Visualization.
+  var LFvis = {
+    min: 11.0,
+    max: 42.0,
+    palette: [
+      '141414', '383838', '808080', 'EBEB8F', 'F7D311', 'AA0000', 'D89382',
+      'DDC9C9', 'DCCDCE', '1C6330', '68AA63', 'B5C98E', 'E1F0E5', 'a975ba',
+      '6f198c'
+    ],
+  };
+
+  Map.setOptions("hybrid");
+  Map.setCenter(-78.34291, -2.00503, 13);
+  
+  Map.addLayer(newCATE, {palette: "00FFFF"}, "newCATE", true);
+  
+  Map.addLayer(ridgeDist, {min: 0, max: 10000}, "ridgeDist", false);
+  
+  Map.addLayer(edgy, {}, "edgy", false);
+  Map.addLayer(segmented, {palette: "FF0000"}, "segmented", false);
+  Map.addLayer(ridgeRemoved, {palette: "FFFF00"}, "ridgeRemoved", true);
+  
+  Map.addLayer(nonRidge.selfMask(), {palette: "00FF00"}, "nonRidge", false);
+  Map.addLayer(ridge.selfMask(), {palette: "0000FF"}, "ridge", true);
+
+} else if (true) {
+  // Export the result.
+  var fileName = "30mSegmentedNewCATE_distToRidgesNoCliff_NAstripesRemoved_ridgesRemoved"; 
+  
+  Export.image.toAsset({
+    image: ridgeRemoved,
+    description: fileName, 
+    assetId: wdSA + "Transect_Generation/"
+      + fileName, 
+    crs: "EPSG:4326",
+    scale: 30,
+    region: saAOI,
+    maxPixels: 1e13
+  }); 
+}
+

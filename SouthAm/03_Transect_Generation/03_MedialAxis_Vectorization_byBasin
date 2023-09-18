@@ -1,0 +1,74 @@
+/**
+ * Introduction:
+ * 1) Vectorize pixels along the medial axis between ridges and valleys in the new CATE
+ *  to their centroids by basin.
+ * 
+ * Update: 9/29/2021.
+ * 
+ * Runtime: 28m.
+ */
+
+
+/* Load module(s). */
+
+var IMG = require("users/ChenyangWei/Public:Modules/Image_Analysis&Processing");
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var VIS = require("users/ChenyangWei/Public:Modules/Visualization");
+
+
+
+/**** The following section needs to be updated. ****/
+
+// Set the working directory.
+var wd_Main = GATE.wd_SouthAmerica;
+
+/**** The section above needs to be updated. ****/
+
+
+
+/* Data and function preparation. */
+
+// Load the medial axis between ridges and valleys in the new CATE.
+var medialAxis = ee.Image(wd_Main + "Elevational_Transect_Generation/"
+  + GATE.medialAxis_fileName);
+
+// Load the selected basins.
+var selectedBasins = ee.FeatureCollection(wd_Main + "Elevational_Transect_Generation/"
+  + GATE.selectedBasins_fileName);
+
+// Target projection.
+var targetPrj = IMG.WGS84_30m;
+
+
+/* Vectorize pixels along the medial axis between ridges and valleys 
+  to their centroids by basin. */
+
+var medialAxis_PxCtds = GATE.vectorizeMedialAxis_byBasin(medialAxis, selectedBasins, targetPrj);
+
+
+// true OR false.
+if (false) {
+  print("selectedBasins:", selectedBasins.first(),
+    selectedBasins.size());
+  
+  print("medialAxis_PxCtds:", medialAxis_PxCtds.first());
+  
+  //// Visualization.
+  VIS.centerSouthAmerica(6); ////// Need to update.
+  
+  Map.addLayer(selectedBasins, 
+    {color: "FFFF00"}, 
+    "selectedBasins", true);
+
+} else {
+  //// Export the result.
+  var fileName = GATE.medialAxisPxCtds_fileName;
+  
+  Export.table.toAsset({
+    collection: medialAxis_PxCtds, 
+    description: fileName, 
+    assetId: wd_Main + "Elevational_Transect_Generation/"
+      + fileName
+  });
+}
+

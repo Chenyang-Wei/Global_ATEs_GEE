@@ -1,0 +1,91 @@
+/**
+ * Introduction: 
+ * 1) Identify the area of South America.
+ * 2) Generate and buffer the bounding box of the identified area.
+ * 
+ * Update: 6/2/2021.
+ * 
+ * Runtime: 2m.
+*/
+
+
+if (false) {
+  /* Identify the area of South America. */
+  
+  // Import country features.
+  var worldCol = ee.FeatureCollection('USDOS/LSIB_SIMPLE/2017');
+  
+  // print("worldCol:", worldCol.aggregate_array("wld_rgn").distinct())
+  
+  // Select countries in South America.
+  var SouthAmerica_raw = worldCol.filterMetadata('wld_rgn', 'equals', 'South America');
+  
+  // Merge all geometries in the feature collection into one.
+  var SouthAmerica_unioned = SouthAmerica_raw.union();
+  
+  // print("SouthAmerica_unioned:", SouthAmerica_unioned)
+
+  if (false) {
+    // Visualization.
+    Map.setOptions("hybrid");
+    
+    Map.centerObject(SouthAmerica_raw, 2);
+    
+    Map.addLayer(SouthAmerica_raw, 
+      {color: "ff0000", opacity: 1}, "SouthAmerica_raw", true);
+
+  } else if (true) {
+    // Export the result.
+    var fileName = "SouthAmerica_LSIB_SIMPLE";
+    
+    Export.table.toAsset({
+      collection: SouthAmerica_unioned, 
+      description: fileName, 
+      assetId: "users/ATE/South_America_ATE/Climate-Based_ATE/" +
+        fileName
+    });
+  }
+  
+} else if (true) {
+  
+  /* Generate and buffer the bounding box of the identified area. */
+  
+  // Load the identified study domain.
+  var studyDomain = ee.FeatureCollection("users/ATE/South_America_ATE/Climate-Based_ATE/" +
+    "SouthAmerica_LSIB_SIMPLE");
+  
+  // print("studyDomain:", studyDomain)
+
+  // Generate the bounding box of the study domain.
+  var BBox = ee.Feature(studyDomain.first()).bounds();
+  
+  // print("BBox:", BBox)
+  
+  // Buffer the bounding box and then generate the buffer's bounding box.
+  var buffered_BBox = BBox.buffer(1e4).bounds();
+  
+  print("buffered_BBox:", buffered_BBox)
+  
+  // Create a rectanglar AOI based on the buffered bounding box.
+  var saAOI = ee.Geometry.Rectangle({
+    coords: [[-109.61604935443158,-56.00583412286005],
+      [-28.68239728959196,13.47877305668919]],
+    geodesic: false
+  });
+  
+  if (true) {
+    // Vissualization.
+    Map.setOptions("hybrid");
+    
+    Map.centerObject(studyDomain, 2);
+    
+    Map.addLayer(buffered_BBox, {color: "FF0000"}, "buffered_BBox");
+    
+    Map.addLayer(BBox, {color: "0000FF"}, "BBox");
+    
+    Map.addLayer(studyDomain, {color: "FFFF00"}, "studyDomain", true);
+    
+    Map.addLayer(saAOI, {color: "00FF00"}, "saAOI");
+  }
+}
+
