@@ -1,0 +1,100 @@
+/**
+ * Introduction:
+ * 
+ * 1) Count the raw 30-m elevation pixels within each transect.
+ * 
+ * 2) For each transect, compute the ratio between the pixel numbers of 
+ *  the "study domain" elevation and the raw elevation.
+ * 
+ * 
+ * Update: 4/6/2022.
+ * 
+ * Runtime: <= 2m.
+ */
+
+
+/* Load module(s). */
+
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var NGA = require("users/ChenyangWei/Public:Modules/NDVI_Gradient_Analysis.js");
+var FC_AP = require("users/ChenyangWei/Public:Modules/FeatureCollection_Analysis&Processing");
+var IMG = require("users/ChenyangWei/Public:Modules/Image_Analysis&Processing");
+
+
+/* Data loading. */
+
+// Set the major working directory.
+var wd_Main = GATE.wd_Africa; 
+
+// Determine the common file path of the raw transects.
+var wd_RawTransects = wd_Main
+  + "NDVI_Gradient_Analysis/"
+  + NGA.transects_MovWinTempVars_FullName
+  + "/"
+  + NGA.transects_MovWinTempVars_ShortName
+  + "_S";
+
+// Determine the number of transect subsets.
+var subsetNum = 10; 
+
+// Whether to output the result(s).
+var output = true; // true OR false.
+
+
+// Set the area of interest.
+var AOI = GATE.AOI_Africa; 
+
+// Target projection.
+var targetPrj = IMG.WGS84_30m;
+
+// Load and reproject the raw ALOS elevation.
+var raw_ALOSelv = GATE.load_ALOSelevation(AOI, targetPrj);
+
+
+/* Perform the following operations for each subset of the annual Features. */
+
+for (var subsetID = 1; subsetID <= subsetNum; subsetID ++) {
+  
+  // Load each subset of the raw transects.
+  var raw_Transects = ee.FeatureCollection(wd_RawTransects
+    + subsetID);
+  
+  
+  /* For each transect, count the raw 30-m elevation pixels and 
+    compute the ratio between the pixel numbers of 
+    the "study domain" elevation and the raw elevation. */
+  
+  var transects_withPixelNumRatio = 
+    NGA.Compute_StudyDomainRawElv_PixelNumRatio_perTransect(
+      raw_Transects, raw_ALOSelv, targetPrj
+    );
+  
+  
+  if (output) {
+    // Export the final results.
+    
+    var wd_Output = wd_Main
+      + "NDVI_Gradient_Analysis/"
+      + NGA.transects_GapDetected_FullName
+        // "transects_GapDetected_NDVImedianFiltered_withMovWinTemporalVars"
+      + "/";
+    
+    var fileName = NGA.transects_GapDetected_ShortName
+      + "_S" + subsetID;
+    
+    Export.table.toAsset({
+      collection: transects_withPixelNumRatio, 
+      description: fileName, 
+      assetId: wd_Output
+        + fileName
+    });
+  }
+}
+
+
+if (!output) {
+  // Examine the last subset of data.
+  
+  FC_AP.Print_FtrColInfo("raw_Transects:", raw_Transects);
+}
+

@@ -1,0 +1,121 @@
+/**
+ * Introduction:
+ * 
+ * 1) Estimate the annual elevational gradients of NDVIs from 1985 to 2020
+ *  for each selected transect with length between 300m and 3km
+ *  and remove the generated annual Features
+ *  that have "NaN" elevational gradient.
+ * 
+ * 2) Calculate the annual spatial average NDVIs of each selected transect
+ *  from 1985 to 2020 and remove the generated annual Features
+ *  that have NULL average NDVI.
+ * 
+ * Update: 2/4/2022.
+ * 
+ * Runtime: 21m ~ 28m.
+ */
+
+
+/* Load module(s). */
+
+var IMG = require("users/ChenyangWei/Public:Modules/Image_Analysis&Processing");
+var NGA = require("users/ChenyangWei/Public:Modules/NDVI_Gradient_Analysis.js");
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var TNA = require("users/ChenyangWei/Public:Modules/Transect_NDVI_Analysis");
+var FC_AP = require("users/ChenyangWei/Public:Modules/FeatureCollection_Analysis&Processing");
+
+
+/* Data and function preparation. */
+
+// Target projection.
+var targetPrj = IMG.WGS84_30m;
+
+// Set the area of interest.
+var AOI = GATE.AOI_Africa; /**** 1) Need to update. ****/
+
+// Set the major working directory.
+var wd_Main = GATE.wd_Africa; /**** 2) Need to update. ****/
+
+// Load the selected transect centerlines.
+var selectedCLs = ee.FeatureCollection(wd_Main
+  + "Elevational_Transect_Generation/"
+  + TNA.selectedCLs_fileName);
+
+// Buffer each transect centerlines by 45 m.
+var allTransects = TNA.buffer_Centerlines_by45m(selectedCLs);
+
+// Load the new CATE.
+var newCATE = ee.Image(wd_Main
+  + "Climate-Based_ATE/" 
+  + GATE.newCATE_fileName);
+
+// Load the ALOS elevation (Version 3.2, released in January 2021)
+//  in the new CATE.
+var ALOSelv_newCATE = GATE.load_ALOSelevation(AOI, targetPrj)
+  .updateMask(newCATE);
+
+// Read the annual NDVIs in the new CATE as an Image.
+//  (Note: apply for all continents other than North America.)
+var rawAnnualNDVIs_newCATE = TNA.loadAnnualNDVIs_nonNorthAmerica(wd_Main)
+  .updateMask(newCATE);
+
+// Remove the annual NDVI of 1984.
+var annualNDVIs_newCATE = IMG.RemoveBands_fromImage(rawAnnualNDVIs_newCATE, 
+  ["smdNDVI_1984"]);
+
+// Combine the elevation dataset (1 band, non-repeated) and
+//  the annual-NDVI data (2 bands, repeated) as an ImageCollection.
+var Elv_AnnualNDVIs_newCATE = NGA.Combine_Elevation_AnnualNDVIs(
+  ALOSelv_newCATE, annualNDVIs_newCATE
+);
+
+// Name the centerline ID.
+var CLid = "CL_ID";
+
+// Generate a list of five filters
+//  for subsetting the centerline IDs.
+var CLid_FilterList = TNA.Create_CLid_FilterList(CLid);
+
+
+/* Operations by transect subset (1 ~ 5). */
+
+for (var subsetID = 1; subsetID <= 5; subsetID ++) {
+  
+  // Select the corresponding centerline ID filter.
+  var CLid_Filter = CLid_FilterList[subsetID - 1];
+  
+  // Extract the corresponding subset of transects.
+  var transectSubset = allTransects.filter(CLid_Filter);
+  
+  // Estimate the elevational gradient and spatial average of
+  //  the NDVIs of each year for each transect.
+  var Annual_ElvGrads_AvgNDVIs = 
+    NGA.Estimate_Annual_ElvGrads_AvgNDVIs_perTransect(
+      transectSubset, Elv_AnnualNDVIs_newCATE, targetPrj, CLid
+    );
+  
+  
+  if (false) { //// true OR false.
+    
+    FC_AP.Print_FtrColInfo("transectSubset:", transectSubset);
+  
+  } else { //// Export the result(s).
+    
+    var wd_Output = wd_Main
+      + "NDVI_Gradient_Analysis/"
+      + NGA.Annual_ElvGrads_AvgNDVIs_fullName // "transects_AnnualElvGradsAvgNDVIs"
+      + "/";
+    
+    var fileName = NGA.Annual_ElvGrads_AvgNDVIs_shortName
+      + "_S" + subsetID;
+    
+    Export.table.toAsset({
+      collection: Annual_ElvGrads_AvgNDVIs, 
+      description: fileName, 
+      assetId: wd_Output
+        + fileName
+    });
+    
+  }
+}
+

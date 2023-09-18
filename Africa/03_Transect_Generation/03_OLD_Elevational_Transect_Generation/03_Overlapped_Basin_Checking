@@ -1,0 +1,93 @@
+/**
+ * Introduction:
+ * 1) Check if there are any extracted HydroSHEDS basins ("hybas_12") of Africa
+ *  that are overlapped with the basins of Europe or Asia.
+ * 
+ * Update: 6/22/2021.
+ */
+
+
+/* Load the required dataset(s). */
+
+// Set the working directories.
+var wdAfrica = "users/Mountains/Africa_ATE/";
+var wdEuro = "users/ChenyangWei/Europe_ATE/";
+var wdAsia = "users/RealEarth/Asia_ATE/";
+
+// Load the extracted basins ("hybas_12") of Africa.
+var basins_Africa = ee.FeatureCollection(wdAfrica + "Transect_Generation/"
+  + "Hybas12Basins_LowerClosedForests_UpperNonForested_30mSegmentedNewCATE");
+
+print("basins_Africa:", 
+  basins_Africa.first(),
+  basins_Africa.size())
+
+// Load the extracted basins ("hybas_12") of Europe.
+var basins_Euro = ee.FeatureCollection(wdEuro + "Transect_Generation/"
+  + "NonOverlapped_Hybas12Basins_LowerClosedForests_UpperNonForested_30mSegmentedNewCATE");
+
+print("basins_Euro:", 
+  basins_Euro.size())
+
+// Load the extracted basins ("hybas_12") of Asia.
+var basins_Asia = ee.FeatureCollection(wdAsia + "Transect_Generation/"
+  + "Hybas12Basins_LowerClosedForests_UpperNonForested_30mSegmentedNewCATE");
+
+print("basins_Asia:", 
+  basins_Asia.size())
+
+
+/* Check if there are any extracted HydroSHEDS basins ("hybas_12") of Africa
+  that are overlapped with the basins of Europe or Asia. */
+
+// Create an equals filter based on the "HYBAS_ID" property.
+var HYBAS_ID_filter = ee.Filter.equals({
+  leftField: "HYBAS_ID",
+  rightField: "HYBAS_ID"
+});
+
+// Create an equals filter based on the "PFAF_ID" property.
+var PFAF_ID_filter = ee.Filter.equals({
+  leftField: "PFAF_ID",
+  rightField: "PFAF_ID"
+});
+
+// Combine the two filters.
+var combinedFilter = ee.Filter.and(HYBAS_ID_filter, PFAF_ID_filter);
+
+// Identify all African basins that are in the collection of European basins.
+var simpleJoin = ee.Join.simple();
+
+var Overlapped_Euro = simpleJoin.apply({
+  primary: basins_Africa, 
+  secondary: basins_Euro, 
+  condition: combinedFilter
+});
+
+print("Overlapped_Euro:", 
+  Overlapped_Euro.size())
+
+// Identify all African basins that are in the collection of Asian basins.
+var Overlapped_Asia = simpleJoin.apply({
+  primary: basins_Africa, 
+  secondary: basins_Asia, 
+  condition: combinedFilter
+});
+
+print("Overlapped_Asia:", 
+  Overlapped_Asia.size())
+
+
+if (true) {
+  // Visualization.
+  Map.setCenter(-5.5833, 35.9626, 8); 
+  Map.setOptions("hybrid");
+  
+  Map.addLayer(basins_Africa, {color: "00FF00"}, "basins_Africa", true, 1);
+  
+  Map.addLayer(basins_Euro, {color: "0000FF"}, "basins_Euro", true, 1);
+  
+  Map.addLayer(basins_Asia, {color: "FF0000"}, "basins_Asia", true, 1);
+
+}
+

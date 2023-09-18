@@ -1,0 +1,47 @@
+// Runtime: 5m.
+
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+
+var readBasins_NAm = function(basinGroupID) {
+  
+  var wd = GATE.wd_Africa
+    + "Testing/BasinAllTrends_NAm/";
+  
+  var fileName = "BasinAllTrends_BG_"
+    + basinGroupID;
+  
+  return ee.FeatureCollection(wd + fileName);
+};
+
+var basins_NAm = ee.FeatureCollection([
+  readBasins_NAm(1),
+  readBasins_NAm(2),
+  readBasins_NAm(3),
+  readBasins_NAm(4),
+  readBasins_NAm(5)
+]).flatten();
+
+var basins_SAm = ee.FeatureCollection(GATE.wd_Africa
+  + "Testing/BasinAllTrends_SAm");
+
+var basins_Global = basins_NAm.merge(basins_SAm);
+
+
+if (false) { //// true OR false.
+
+  print(basins_Global.first(), basins_Global.size());
+
+} else { //// Export the result.
+  
+  var wd_Output = GATE.wd_Africa
+    + "Testing/";
+  
+  var fileName = "BasinAllTrends_NSAm";
+  
+  Export.table.toAsset({
+    collection: basins_Global, 
+    description: fileName, 
+    assetId: wd_Output
+      + fileName
+  });
+}

@@ -1,0 +1,105 @@
+/**
+ * Introduction:
+ * 1) Select transect segments with at least 10 annual observations.
+ * 2) Calculate the annual spatial average NDVIs of each selected segment
+ *  from 1985 to 2020.
+ * 
+ * Update: 1/19/2022.
+ * 
+ * Runtime: 7m ~ 10m.
+ */
+
+
+/* Load module(s). */
+
+var IMG = require("users/ChenyangWei/Public:Modules/Image_Analysis&Processing");
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var TNA = require("users/ChenyangWei/Public:Modules/Transect_NDVI_Analysis");
+
+
+/* Data and function preparation. */
+
+// Target projection.
+var targetPrj = IMG.WGS84_30m;
+
+// Set the major working directory.
+var wd_Main = GATE.wd_Africa;
+
+// Load the lower and upper segments of transects
+//  with the trend of annual average NDVIs.
+var raw_LowerSegments = ee.FeatureCollection(wd_Main
+  + "Transect_NDVI_Analysis/"
+  + TNA.lowerSegmentsNDVItrends_fileName);
+
+var raw_UpperSegments = ee.FeatureCollection(wd_Main
+  + "Transect_NDVI_Analysis/"
+  + TNA.upperSegmentsNDVItrends_fileName);
+
+// Load the new CATE.
+var newCATE = ee.Image(wd_Main
+  + "Climate-Based_ATE/" 
+  + GATE.newCATE_fileName);
+
+// Read the annual NDVIs in the new CATE as an Image.
+//  (Note: apply for all continents other than North America.)
+var rawAnnualNDVIs_newCATE = TNA.loadAnnualNDVIs_nonNorthAmerica(wd_Main)
+  .updateMask(newCATE);
+
+// Remove the annual NDVI of 1984.
+var annualNDVIs_newCATE = IMG.RemoveBands_fromImage(rawAnnualNDVIs_newCATE, 
+  ["smdNDVI_1984"]);
+
+
+/* Select transect segments with at least 10 annual observations. */
+
+var selected_LowerSegments = TNA.Filter_SegmentYearNum(raw_LowerSegments,
+  "lower");
+
+var selected_UpperSegments = TNA.Filter_SegmentYearNum(raw_UpperSegments,
+  "upper");
+
+
+/* Calculate the annual spatial average NDVIs of each selected segment
+  from 1985 to 2020. */
+
+var lowerSegments_withAnnualAvgNDVIs = TNA.Compute_AnnualAvgNDVIs_perSegment_byBasin(
+  selected_LowerSegments, annualNDVIs_newCATE, targetPrj
+);
+
+var upperSegments_withAnnualAvgNDVIs = TNA.Compute_AnnualAvgNDVIs_perSegment_byBasin(
+  selected_UpperSegments, annualNDVIs_newCATE, targetPrj
+);
+
+
+if (false) { //// true OR false.
+
+  print("raw_UpperSegments:", 
+    raw_UpperSegments.first(),
+    raw_UpperSegments.size());
+
+  print("selected_UpperSegments:",
+    selected_UpperSegments.size());
+
+} else { //// Export the result(s).
+  
+  var fileName_Lower = TNA.lowerSegments_AnnualAvgNDVIs_fileName;
+  
+  Export.table.toAsset({
+    collection: lowerSegments_withAnnualAvgNDVIs, 
+    description: fileName_Lower, 
+    assetId: wd_Main
+      + "Transect_NDVI_Analysis/"
+      + fileName_Lower
+  });
+  
+  var fileName_Upper = TNA.upperSegments_AnnualAvgNDVIs_fileName;
+  
+  Export.table.toAsset({
+    collection: upperSegments_withAnnualAvgNDVIs, 
+    description: fileName_Upper, 
+    assetId: wd_Main
+      + "Transect_NDVI_Analysis/"
+      + fileName_Upper
+  });
+}
+

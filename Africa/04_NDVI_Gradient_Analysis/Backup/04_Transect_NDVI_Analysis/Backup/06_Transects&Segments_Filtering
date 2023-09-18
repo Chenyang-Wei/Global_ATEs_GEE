@@ -1,0 +1,64 @@
+/**
+ * Introduction:
+ * 1) Filter the transects with the information on the corresponding
+ *  lower and upper segments by the centerline length,
+ *  the numbers of observations, 
+ *  and the temporal NDVI standard deviations.
+ * 
+ * Update: 12/10/2021.
+ * 
+ * Total update number: 1.
+ * 
+ * Runtime: 1m.
+ */
+
+
+/* Load module(s). */
+
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var TNA = require("users/ChenyangWei/Public:Modules/Transect_NDVI_Analysis");
+
+
+/* Data and function preparation. */
+
+// Set the major working directory.
+var wd_Main = GATE.wd_Africa; /**** 1) Need to update. ****/
+
+// Load the transects with the information on the corresponding
+//  lower and upper segments.
+var rawTLUs = ee.FeatureCollection(wd_Main
+  + "Transect_NDVI_Analysis/"
+  + TNA.transects_LowerUpperSegments_fileName);
+
+
+/* Filter the TLUs. */
+
+// Select the TLUs meeting the following criteria:
+//  1) The centerline length is between 500m and 2km.
+//  2) All numbers of observations are at least 10.
+//  3) Both temporal NDVI standard deviations are NOT over 0.2.
+var selectedTLUs = TNA.select_TLUs(rawTLUs);
+
+
+if (false) { //// true OR false.
+
+  print("rawTLUs:", 
+    rawTLUs.size());
+
+  print("selectedTLUs:", 
+    selectedTLUs.first(),
+    selectedTLUs.size());
+
+} else { //// Export the result.
+  
+  var fileName = TNA.selectedTLUs_fileName;
+  
+  Export.table.toAsset({
+    collection: selectedTLUs, 
+    description: fileName, 
+    assetId: wd_Main
+      + "Transect_NDVI_Analysis/"
+      + fileName
+  });
+}
+

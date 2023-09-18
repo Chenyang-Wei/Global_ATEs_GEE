@@ -1,0 +1,73 @@
+/**
+ * Introduction:
+ * 1) Estimate the temporal trend of annual elevational NDVI gradients
+ *  of each transect.
+ * 
+ * Update: 11/4/2021.
+ * 
+ * Total update number: 1.
+ * 
+ * Runtime: 1m.
+ */
+
+
+/* Load module(s). */
+
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+
+
+/* Data and function preparation. */
+
+// Set the major working directory.
+var wd_Main = GATE.wd_Africa; /**** 1) Need to update. ****/
+
+// Load the locally steepest transect centerlines.
+var steepestCLs = ee.FeatureCollection(wd_Main
+  + "Elevational_Transect_Generation/"
+  + GATE.allSteepestCLs_fileName);
+
+// Load the the annual elevational NDVI gradients.
+var annualGradients = ee.FeatureCollection(wd_Main
+  + "Transect_NDVI_Analysis/"
+  + GATE.annualElvNDVIgradients_nonNaN_PropertiesSelected_fileName);
+
+
+/* Estimate the temporal trend of annual elevational NDVI gradients
+  of each transect. */
+
+// Buffer the transect centerlines by 45 m.
+var transects = GATE.bufferCLs_by45m(steepestCLs);
+
+// Gradient trend estimation.
+var gradientTrends = GATE.estimate_ElvNDVIgradientTrends_byTransect(
+  transects, annualGradients, "CL_ID"
+);
+
+
+if (false) { // true OR false.
+
+  print("transects:", 
+    transects.first(),
+    transects.size());
+
+  print("annualGradients:",
+    annualGradients.first(),
+    annualGradients.size());
+
+  print("gradientTrends:", 
+    gradientTrends.first(),
+    gradientTrends.size());
+
+} else {
+  //// Export the result.
+  var fileName = GATE.elvNDVIgradientTrends_fileName;
+  
+  Export.table.toAsset({
+    collection: gradientTrends, 
+    description: fileName, 
+    assetId: wd_Main
+      + "Transect_NDVI_Analysis/"
+      + fileName
+  });
+}
+

@@ -1,0 +1,100 @@
+/**
+ * Introduction: 
+ * 1) Aggregate the closed forest elevation within the buffered raw CATE from 500 m to 10 km. 
+ * 
+ * Update: 6/11/2021.
+ * 
+ * Runtime: 2m.
+ */
+
+
+/* Load the required dataset(s). */
+
+// Set the 10-km buffered bounding box of the study domain.
+var africaAOI = ee.Geometry.Rectangle({
+  coords: [[-25.492819736711297,-47.07238134131982],
+    [63.634730607383325,37.63280220193939]],
+  geodesic: false
+});
+
+// Set the working directory.
+var wdAfrica = "users/Mountains/Africa_ATE/";
+
+// Function to print the image information.
+function printImgInfo(name, image) {
+  print(name,
+    image.bandTypes(),
+    image.projection().crs(),
+    image.projection().nominalScale());
+}
+
+// Load the closed forest elevation within the buffered raw CATE at the 500-m level.
+var clsdFrstElv = ee.Image(wdAfrica + "Climate-Based_ATE/"
+  + "ClosedForestsALLyears_BufRawCATE_500mMeanElv");
+
+// printImgInfo("clsdFrstElv:", clsdFrstElv)
+
+// Get the original resolution.
+var oldScale = 500;
+
+
+/* Aggregate the closed forest elevation to the 10-km level. */
+
+// Determine the new resolution.
+var newScale = 1e4; // In meters.
+
+// Factor of the resolution scaling of each axis.
+var factor = Math.ceil(newScale / oldScale);
+
+// print("factor:", factor)
+
+// Generate a mean reducer.
+var meanRd = ee.Reducer.mean();
+
+// Elevation aggregation.
+var aggrElv = clsdFrstElv.reduceResolution({ 
+  reducer: meanRd,
+  maxPixels: factor * factor
+}).reproject({ 
+  crs: "EPSG:4326",
+  scale: newScale
+});
+
+// Set the mask of each valid pixel to 1.
+var nomaskElv = aggrElv.updateMask(aggrElv.gte(-1e18));
+
+// Set the dataset to the float type.
+var floatElv = nomaskElv.float();
+
+// printImgInfo("floatElv:", floatElv)
+
+
+if (false) {
+  // Visualization.
+  var elvPalette = ['006600', '002200', 'fff700', 'ab7634', 'c4d0ff', 'ffffff'];
+  var elvVis = {min: 2500, max: 4000, palette: elvPalette};
+  
+  Map.setOptions("hybrid");
+  Map.setCenter(37.31646, -3.11913, 10);
+  
+  Map.addLayer(floatElv, elvVis, "10km forest elevation", true);
+  Map.addLayer(clsdFrstElv, elvVis, "500m forest elevation", true);
+  
+  Map.addLayer(floatElv.mask(), {min: 0, max: 1}, "10km forest elevation (mask)", true);
+
+} else if (true) {
+  // Export the result.
+  var fileName = "ClosedForestsALLyears_BufRawCATE_" + newScale + "mMeanElv";
+  
+  Export.image.toAsset({
+    image: floatElv,
+    description: fileName, 
+    assetId: wdAfrica + "Climate-Based_ATE/"
+      + fileName, 
+    crs: "EPSG:4326",
+    scale: newScale,
+    region: africaAOI,
+    maxPixels: 1e13
+  }); 
+}
+

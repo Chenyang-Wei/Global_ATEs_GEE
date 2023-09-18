@@ -1,0 +1,425 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var Within = /* color: #ff0000 */ee.FeatureCollection([]),
+    Above = /* color: #0000ff */ee.FeatureCollection([]),
+    Below = /* color: #00ff00 */ee.FeatureCollection([]),
+    focus = /* color: #00ffff */ee.Geometry.MultiPoint();
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+
+/**
+ * Introduction:
+ * 
+ *  1) Mannually collect points of the three classes
+ *    in the climatic ATE (i.e., "new CATE").
+ * 
+ *  2) Extract a 30-m pixel at each sample point.
+ * 
+ *  3) Generate a 300-m buffer at each sample point.
+ * 
+ * Runtime: .
+ * 
+ * Update: 4/20/2023.
+*/
+
+
+/* Load module(s). */
+
+var IMG = require("users/ChenyangWei/Public:Modules/General/Image_Analysis&Processing.js");
+var ATEI_EA = require("users/ChenyangWei/Public:Modules/Treeline/ATEI_Estimation&Analysis.js");
+var GATE = require("users/ChenyangWei/Public:Modules/Treeline/Global_ATE.js");
+var TNA = require("users/ChenyangWei/Public:Modules/Treeline/Transect_NDVI_Analysis.js");
+var VIS = require("users/ChenyangWei/Public:Modules/General/Visualization.js");
+
+
+/* Object definition. */
+
+// Determine the continent ID (0 ~ 5).
+var contID = 2;
+
+// Determine the target projection.
+var targetPrj = IMG.WGS84_30m;
+
+// Create a list of the working directories.
+var WDs_List = ATEI_EA.WDs_AllContinents_List;
+
+// Define a list of the AOIs.
+var AOIs_List = ATEI_EA.AOIs_AllContinents_List;
+
+// Generate a median reducer.
+var medianReducer = ee.Reducer.median();
+
+// Load the ALOS elevation.
+var rawElv = ee.ImageCollection('JAXA/ALOS/AW3D30/V3_2').select('DSM')
+  .mosaic()
+  .reproject(targetPrj);
+
+// Define a circular kernel of 10 pixels.
+var Kn_10pxCir = ee.Kernel.circle({
+  radius: 10,
+  units: "pixels"
+}); 
+
+
+/* Function definition. */
+
+// Define a function to load and reproject the new CATE 
+//  of each continent.
+var Read_NewCATE = function(wd_Cont) {
+  var newCATE_Cont = ee.Image(wd_Cont
+    + "Climate-Based_ATE/" 
+    + GATE.newCATE_fileName)
+    .reproject(targetPrj);
+  
+  return newCATE_Cont;
+};
+
+// Define a function to calculate the temporal median NDVIs of 
+//  the new CATE in continents other than North America.
+var Calculate_MedianNDVI = function(wd_Cont, newCATE_Cont) {
+  var medianNDVI_Cont = TNA.loadAnnualNDVIs_nonNorthAmerica(wd_Cont)
+    .updateMask(newCATE_Cont)
+    .reduce(medianReducer)
+    .reproject(targetPrj)
+    .rename("medianNDVI");
+  
+  return medianNDVI_Cont;
+};
+
+// Define a function to load the 3-km smoothed
+//  non-forested NDVI of each continent.
+var Read_SmdNonfNDVI_3km = function(wd_Cont) {
+  var smdNonfNDVI_Cont = ee.Image(wd_Cont
+    + "ATEI_Estimation/NonForestedNDVI/" 
+    + "3kmSmoothed_NonForestedNDVI_NewCATE");
+  
+  return smdNonfNDVI_Cont;
+};
+
+// Define a function to load the 3-km smoothed
+//  open-forest NDVI of each continent.
+var Read_SmdOpenfNDVI_3km = function(wd_Cont) {
+  var smdOpenfNDVI_Cont = ee.Image(wd_Cont
+    + "ATEI_Estimation/OpenForestNDVI/" 
+    + "3kmSmoothed_OpenForestNDVI_NewCATE");
+  
+  return smdOpenfNDVI_Cont;
+};
+
+// Define a function to load the 3-km smoothed
+//  closed-forest NDVI of each continent.
+var Read_SmdClsdfNDVI_3km = function(wd_Cont) {
+  var smdClsdfNDVI_Cont = ee.Image(wd_Cont
+    + "ATEI_Estimation/ClosedForestNDVI/" 
+    + "3kmSmoothed_ClosedForestNDVI_NewCATE");
+  
+  return smdClsdfNDVI_Cont;
+};
+
+// Define a Gaussian function.
+var gauss_Fun = function(x_Img, b_Img, c_Img) {
+  
+  var base_Img = x_Img.subtract(b_Img).divide(c_Img);
+  
+  var gauss_Img = base_Img.pow(2).multiply(-1 / 2).exp()
+    // .rename("gauss_NDVI")
+    .reproject(targetPrj);
+  
+  return gauss_Img;
+};
+
+// Define a function to transform the gradient magnitude.
+var k_Value = 13131.49;
+var x_0 = 0.000649;
+
+var mag_Fun = function(mag_Value) {
+  
+  var power = mag_Value.subtract(x_0).multiply(-1 * k_Value);
+  
+  var comp_Mag = ee.Image(1).divide(power.exp().add(1))
+    // .rename("comp_Mag")
+    .reproject(targetPrj);
+  
+  return comp_Mag;
+};
+
+// Define a function to determine the gradient angle.
+var p_Value = 17.89181;
+
+var angle_Fun = function(angle_Value) {
+  
+  var cos_Value = angle_Value.cos();
+  
+  var base = ee.Image(1).subtract(cos_Value).divide(2);
+  
+  var comp_Angle = base.pow(p_Value)
+    // .rename("comp_Angle")
+    .reproject(targetPrj);
+  
+  return comp_Angle;
+};
+
+
+// Define a function to create a 300-m buffer 
+//  around each sample point.
+var Create_SampleBuffer = function(samplePt_Ftr) {
+  var keepProperties = ["Class", "Type"];
+  
+  var sampleBuffer_Ftr = samplePt_Ftr.buffer(300)
+    .copyProperties({
+      source: samplePt_Ftr, 
+      properties: keepProperties
+    });
+  
+  return sampleBuffer_Ftr;
+};
+
+
+/* Acquire the information of the continent. */
+
+// Determine the working directory of the continent.
+var contWD = WDs_List[contID];
+
+// Determine the AOI of the continent.
+var contAOI = AOIs_List[contID];
+
+
+/* Read the new CATE. */
+
+var newCATE = Read_NewCATE(contWD);
+
+
+/* Pre-process the elevation dataset. */
+
+// Calculate the focal "median" within the kernel
+//  (same as the NDVI smoothing metric).
+var medSmd_Elv = rawElv.reduceNeighborhood({
+  reducer: medianReducer,
+  kernel: Kn_10pxCir,
+  skipMasked: true
+  // Mask output pixels if 
+  //  the corresponding input pixels are masked.
+}).reproject(targetPrj);
+
+// Compute the elevation gradient.
+var medElv_Grad = medSmd_Elv.gradient()
+  .reproject(targetPrj);
+
+// Derive the direction of the elevation gradient.
+var medElv_Dir = medElv_Grad.select("y")
+  .atan2(medElv_Grad.select("x"))
+  .reproject(targetPrj)
+  .rename("medElv_Dir");
+
+
+
+/* Read the 3-km smoothed NDVIs worldwide. */
+
+var smdNonfNDVI_3km = Read_SmdNonfNDVI_3km(contWD);
+
+var smdOpenfNDVI_3km = Read_SmdOpenfNDVI_3km(contWD);
+
+var smdClsdfNDVI_3km = Read_SmdClsdfNDVI_3km(contWD);
+
+
+/* Determine the smaller NDVI difference at each pixel. */
+
+var Non_Open_Diff = smdNonfNDVI_3km
+  .subtract(smdOpenfNDVI_3km)
+  .abs();
+
+var Clsd_Open_Diff = smdClsdfNDVI_3km
+  .subtract(smdOpenfNDVI_3km)
+  .abs();
+
+var smaller_NDVIdiff = Clsd_Open_Diff.where(
+  Non_Open_Diff.lt(Clsd_Open_Diff), 
+  Non_Open_Diff);
+
+
+
+/* Calculate the temporal median NDVI of 
+  the closed forests during 2015-2019 . */
+
+if (contID === 0) {
+  // Calculate the temporal median NDVI in North America.
+  var medianNDVI = ee.Image(GATE.wd_NorthAmerica
+    + "ATEI_Estimation/"
+    + TNA.annualMaxNDVI_300mBufNewCATE_NorthAmerica_fileName)
+    .updateMask(newCATE)
+    .reduce(medianReducer)
+    .reproject(targetPrj)
+    .rename("medianNDVI");
+  
+} else if (contID === 5) {
+  // Calculate the temporal median NDVI in Asia 
+  //  (using a different working directory).
+  var medianNDVI = Calculate_MedianNDVI(
+    GATE.wd_Asia_2, newCATE);
+  
+} else {
+  // Calculate the temporal median NDVI in other continents.
+  var medianNDVI = Calculate_MedianNDVI(
+    contWD, newCATE);
+}
+
+// Compute the NDVI gradient.
+var NDVI_grad = medianNDVI.gradient()
+  .reproject(targetPrj);
+
+// Determine the direction of the NDVI gradient.
+var NDVI_dir = NDVI_grad.select("y")
+  .atan2(NDVI_grad.select("x"))
+  .reproject(targetPrj)
+  .rename("NDVI_dir");
+
+// Derive the magnitude of the NDVI gradient.
+var NDVI_mag = NDVI_grad.select("y")
+  .hypot(NDVI_grad.select("x"))
+  .reproject(targetPrj)
+  .rename("NDVI_mag");
+
+// Calculate the absolute angle between the NDVI and elevation gradients.
+var dir_Angle = NDVI_dir.subtract(medElv_Dir).abs();
+
+
+/* Test the "temporary" ATEI. */
+
+// "Gradient Magnitude" component.
+var comp_Mag = mag_Fun(NDVI_mag);
+
+// "Gradient Angle" component.
+var comp_Angle = angle_Fun(dir_Angle);
+
+// "Gaussian" component.
+var gauss_NDVI = gauss_Fun(
+  medianNDVI, 
+  smdOpenfNDVI_3km, 
+  smaller_NDVIdiff.divide(2));
+
+// Combine the components.
+var combined_Components = gauss_NDVI.multiply(comp_Mag)
+  .multiply(comp_Angle)
+  .rename("combined_Components")
+  .reproject(targetPrj);
+
+// Fit a logistic regression.
+var logit_Formula = "-0.34458 + " 
+  + "23.76459 * combined_Components";
+
+var logit = combined_Components.expression({
+  expression: logit_Formula,
+  map: {
+    combined_Components: combined_Components
+      .select("combined_Components")
+  }
+}); 
+
+var exp_Logit = logit.exp();
+
+var ATEI = exp_Logit.divide(exp_Logit.add(1))
+  .rename("ATEI");
+
+
+/* Generate a 300-m buffer at each sample point. */
+
+// Combine all types of sampled points.
+var samplePts = Above.merge(Within).merge(Below);
+
+// Generate a buffer zone around each sample point.
+var sampleBuffers = ee.FeatureCollection(
+  samplePts.map(Create_SampleBuffer));
+
+
+/* Convert sample points to 30-m pixels. */
+
+// Create an image for each type of 
+//  sample points.
+var abovePx = ee.Image(1).byte()
+  .clipToCollection(Above);
+
+var withinPx = ee.Image(2).byte()
+  .clipToCollection(Within);
+
+var belowPx = ee.Image(3).byte()
+  .clipToCollection(Below);
+
+// Combine the three types of sample pixels.
+var samplePixels = ee.ImageCollection.fromImages([
+  abovePx, withinPx, belowPx
+  ]).mosaic()
+  .reproject(targetPrj)
+  .rename("Type");
+
+// Create a background pixel for each sample point.
+var backgroundPixels = ee.Image(0).byte()
+  .clipToCollection(samplePts)
+  .reproject(targetPrj);
+
+// Create a 30-m random image as a reference.
+var randomImg_30m = ee.Image.random({
+  seed: 17, 
+  distribution: "uniform"
+}).updateMask(newCATE)
+  .reproject(targetPrj);
+
+// Create a 15-m random image as a reference.
+var randomImg_15m = ee.Image.random({
+  seed: 17, 
+  distribution: "uniform"
+}).updateMask(newCATE)
+  .reproject({
+  crs: "EPSG:4326",
+  scale: 15
+});
+
+
+if (false) {
+  
+  IMG.printImgInfo("samplePixels", samplePixels);
+  
+  print("samplePts", samplePts.first(), 
+    samplePts.size());
+  
+  print("sampleBuffers", sampleBuffers.first(), 
+    sampleBuffers.size());
+
+  // Visualize the datasets.
+  Map.setOptions("satellite");
+  
+  Map.centerObject(contAOI, 6);
+  // Map.centerObject(focus, 15);
+  
+  Map.addLayer(medianNDVI, VIS.NDVI_vis, 
+    "NDVI", false, 1);
+  
+  Map.addLayer(randomImg_30m.randomVisualizer(), 
+    {}, 
+    "30 m", false, 0.5);
+  
+  Map.addLayer(randomImg_15m.randomVisualizer(), 
+    {}, 
+    "15 m", false, 1);
+  
+  Map.addLayer(newCATE, {palette: "FFFFFF"}, 
+    "CATE", false, 0.5);
+  
+  Map.addLayer(ATEI.updateMask(ATEI.gt(0.5)), 
+    {palette: "FFFFFF"}, 
+    "ATEI > 0.5 (White)", false, 0.5);
+  
+  Map.addLayer(ATEI.updateMask(ATEI.gt(0.5)), 
+    {palette: "0000FF"}, 
+    "ATEI > 0.5 (Blue)", false, 0.5);
+  
+  Map.addLayer(sampleBuffers, {color: "FFFFFF"}, 
+    "Buffer", true, 0.5);
+  
+  // Map.addLayer(backgroundPixels, 
+  //   {palette: "FFFFFF"}, 
+  //   "Grey", false, 0.3);
+  
+  Map.addLayer(samplePixels, 
+    {min: 1, max: 3, palette: "0000FF, FF0000, 00FF00"}, 
+    "Sample", false, 0.3);
+  
+}
+

@@ -1,0 +1,291 @@
+/**
+ * Introduction:
+ * 1) Aggregate the temporal trends of the annual average NDVIs
+ *  of the qualified transects in each basin.
+ * 
+ * Update: 1/7/2022.
+ * 
+ * Runtime: 1m ~ 2m.
+ */
+
+
+/* Load module(s). */
+
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var TNA = require("users/ChenyangWei/Public:Modules/Transect_NDVI_Analysis");
+var FC_AP = require("users/ChenyangWei/Public:Modules/FeatureCollection_Analysis&Processing");
+
+
+/* Data and function preparation. */
+
+// Function to select segments meeting the following criteria:
+//  The number of observations is at least 10.
+var select_Segments = function(rawSegments, segmentType) {
+  
+  /**
+   * "FeatureCollection":
+   *  rawTransects.
+  */
+  
+  // Determine the names of the properties of interest.
+  var obs_Name = segmentType + "_YearNum";
+  
+  // Determine the filtering thresholds.
+  var obs_Thres = 10;
+  
+  // Define the Filters.
+  var obs_Filter = ee.Filter.gte(obs_Name, 
+    obs_Thres);
+  
+  // Filter the segments.
+  var filteredSegments = rawSegments.filter(obs_Filter);
+  
+  // Return a FeatureCollection.
+  return filteredSegments;
+};
+
+// Function to aggregate the estimated elevational-NDVI-gradient trends
+//  of the transects in each basin.
+var aggregateSegTrends_byBasin = 
+  function(segmentTrends, rawBasins, CLid_Name, segmentType) {
+    
+    /**
+     * "FeatureCollection":
+     *  transectGradTrends, rawBasins.
+     * 
+     * "String":
+     *  CLid_Name.
+    */
+    
+    // Determine the names of the properties of interest.
+    var HybasID_name = "Hybas_ID";
+    
+    var trend_Name = segmentType + "_Trend";
+    
+    var mean_Name = "mean";
+    
+    var SD_name = "stdDev";
+    
+    // Generate a combined reducer to calculate the statistics of the gradient trends.
+    var combinedReducer_forTrend = ee.Reducer.mean().combine({
+      reducer2: ee.Reducer.stdDev(), 
+      sharedInputs: true
+    });
+    
+    // Add a reducer to count the number of transects.
+    var finalCombinedReducer = combinedReducer_forTrend.combine({
+      reducer2: ee.Reducer.countDistinctNonNull(), 
+      sharedInputs: false
+    });
+  
+  
+    /* Aggregate the trends by basin. */
+    
+    // The grouped reduction:
+    //  1) The "groupField" argument is the index of the input in the selectors array
+    //    that contains the variables by which to group the output.
+    //    The first field is index 0.
+    //  2) The "groupName" argument specifies the name of the property
+    //    to store the value of the grouping variable.
+    var basinTrends_List = ee.List(segmentTrends.reduceColumns({
+      selectors: [trend_Name, CLid_Name, HybasID_name],
+      reducer: finalCombinedReducer.group({
+        groupField: 2,
+        groupName: HybasID_name,
+      })
+    }).get("groups"));
+    
+    // Convert the generated List to a FeatureCollection.
+    var basinTrends_FtrCol = ee.FeatureCollection(basinTrends_List.map(
+      function(listElement) {
+        var dictionary = ee.Dictionary(listElement);
+        
+        return ee.Feature(null).set(
+          HybasID_name, dictionary.get(HybasID_name),
+          segmentType + "_SegmentNum", dictionary.get("count"),
+          trend_Name + "_" + mean_Name, dictionary.get(mean_Name),
+          trend_Name + "_" + SD_name, dictionary.get(SD_name)
+        );
+      }));
+  
+    // Combine each aggregated-trend Feature with the corresponding basin geometry.
+    var basinTrends_withGeometries = FC_AP.combine_twoFtrCols_byCommonProperty(
+      rawBasins, basinTrends_FtrCol, HybasID_name
+    );
+  
+    // Return a FeatureCollection.
+    return basinTrends_withGeometries;
+  };
+
+
+// // Determine the universal file path of the basin group.
+// var wd_SelectedBasins = GATE.wd_Africa
+//   + "Testing/BasinGradTrends_NAm/"
+//   + TNA.basinGradientTrends_byBasinGroup_fileName;
+
+
+// /* Operations by basin group (1 ~ 5). */
+
+// for (var basinGroupID = 1; basinGroupID <= 5; basinGroupID ++) {
+  
+//   // Set the major working directory.
+//   var wd_Main = GATE.wd_NorthAmerica;
+
+//   // Determine the universal file path of
+//   //  the estimated NDVI elevational-gradient trends of transects.
+//   var segType = "lower";
+  
+//   var wd_SegmentTrends = wd_Main
+//       + "Transect_NDVI_Analysis/"
+//       + TNA.lowerSegmentsNDVItrends_fileName
+//       + "/"
+//       + TNA.lowerSegmentsNDVItrends_byBasinGroup_fileName;
+  
+//   // Load the estimated segment trends.
+//   var rawSegmentTrends = ee.FeatureCollection(wd_SegmentTrends
+//     + basinGroupID);
+
+//   // Load the selected basins of each group.
+//   var selectedBasins = ee.FeatureCollection(wd_SelectedBasins
+//     + basinGroupID);
+  
+  
+//   /* Aggregate the estimated segment trends. */
+  
+//   var selectedSegmentTrends = select_Segments(rawSegmentTrends, segType);
+  
+//   // Aggregate the segment trends by basin.
+//   var aggregatedSegmentTrends_Basins = aggregateSegTrends_byBasin(
+//     selectedSegmentTrends, selectedBasins, "CL_newID", segType
+//   );
+  
+  
+//   // Determine the universal file path of
+//   //  the estimated NDVI elevational-gradient trends of transects.
+//   var segType = "upper";
+  
+//   var wd_SegmentTrends = wd_Main
+//       + "Transect_NDVI_Analysis/"
+//       + TNA.upperSegmentsNDVItrends_fileName
+//       + "/"
+//       + TNA.upperSegmentsNDVItrends_byBasinGroup_fileName;
+  
+//   // Load the estimated segment trends.
+//   var rawSegmentTrends = ee.FeatureCollection(wd_SegmentTrends
+//     + basinGroupID);
+
+//   // Load the selected basins of each group.
+//   var selectedBasins = aggregatedSegmentTrends_Basins;
+  
+  
+//   /* Aggregate the estimated segment trends. */
+  
+//   var selectedSegmentTrends = select_Segments(rawSegmentTrends, segType);
+  
+//   // Aggregate the segment trends by basin.
+//   var aggregatedAllTrends_Basins = aggregateSegTrends_byBasin(
+//     selectedSegmentTrends, selectedBasins, "CL_newID", segType
+//   );
+  
+
+//   if (false) { //// true OR false.
+
+//     print("aggregatedAllTrends_Basins:", 
+//       aggregatedAllTrends_Basins.first(),
+//       aggregatedAllTrends_Basins.size());
+  
+//   } else { //// Export the result.
+    
+//     var wd_Output = GATE.wd_Africa
+//       + "Testing/BasinAllTrends_NAm/";
+    
+//     var fileName = "BasinAllTrends_BG_"
+//       + basinGroupID;
+    
+//     Export.table.toAsset({
+//       collection: aggregatedAllTrends_Basins, 
+//       description: fileName, 
+//       assetId: wd_Output
+//         + fileName
+//     });
+//   }
+// }
+
+
+// Set the major working directory.
+var wd_Main = GATE.wd_SouthAmerica;
+
+// Determine the universal file path of the basin group.
+var wd_SelectedBasins = GATE.wd_Africa
+  + "Testing/BasinGradTrends_SAm";
+
+// Determine the universal file path of
+//  the estimated NDVI elevational-gradient trends of transects.
+var segType = "lower";
+
+var wd_SegmentTrends = wd_Main
+    + "Transect_NDVI_Analysis/"
+    + TNA.lowerSegmentsNDVItrends_fileName;
+
+// Load the estimated segment trends.
+var rawSegmentTrends = ee.FeatureCollection(wd_SegmentTrends);
+
+// Load the selected basins of each group.
+var selectedBasins = ee.FeatureCollection(wd_SelectedBasins);
+
+
+/* Aggregate the estimated segment trends. */
+
+var selectedSegmentTrends = select_Segments(rawSegmentTrends, segType);
+
+// Aggregate the segment trends by basin.
+var aggregatedSegmentTrends_Basins = aggregateSegTrends_byBasin(
+  selectedSegmentTrends, selectedBasins, "CL_ID", segType
+);
+
+
+// Determine the universal file path of
+//  the estimated NDVI elevational-gradient trends of transects.
+var segType = "upper";
+
+var wd_SegmentTrends = wd_Main
+    + "Transect_NDVI_Analysis/"
+    + TNA.upperSegmentsNDVItrends_fileName;
+
+// Load the estimated segment trends.
+var rawSegmentTrends = ee.FeatureCollection(wd_SegmentTrends);
+
+// Load the selected basins of each group.
+var selectedBasins = aggregatedSegmentTrends_Basins;
+
+
+/* Aggregate the estimated segment trends. */
+
+var selectedSegmentTrends = select_Segments(rawSegmentTrends, segType);
+
+// Aggregate the segment trends by basin.
+var aggregatedAllTrends_Basins = aggregateSegTrends_byBasin(
+  selectedSegmentTrends, selectedBasins, "CL_ID", segType
+);
+
+
+if (false) { //// true OR false.
+
+  print("aggregatedAllTrends_Basins:", 
+    aggregatedAllTrends_Basins.first(),
+    aggregatedAllTrends_Basins.size());
+
+} else { //// Export the result.
+  
+  var wd_Output = GATE.wd_Africa
+    + "Testing/";
+  
+  var fileName = "BasinAllTrends_SAm";
+  
+  Export.table.toAsset({
+    collection: aggregatedAllTrends_Basins, 
+    description: fileName, 
+    assetId: wd_Output
+      + fileName
+  });
+}

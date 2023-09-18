@@ -1,0 +1,235 @@
+/**
+ * Introduction:
+ *  (Note: The following operations are performed
+ *    for each basin group.)
+ * 
+ * 1) Aggregate the estimated elevational-NDVI-gradient trends
+ *  of the qualified transects in each basin.
+ * 
+ * Update: 1/7/2022.
+ * 
+ * Runtime: 2m.
+ */
+
+
+/* Load module(s). */
+
+var GATE = require("users/ChenyangWei/Public:Modules/Global_ATE");
+var TNA = require("users/ChenyangWei/Public:Modules/Transect_NDVI_Analysis");
+var FC_AP = require("users/ChenyangWei/Public:Modules/FeatureCollection_Analysis&Processing");
+
+
+/* Data and function preparation. */
+
+// Function to select transects meeting the following criteria:
+//  The number of NDVI elevational-gradient observations is at least 10.
+var select_GradTrends = function(rawTransects) {
+  
+  /**
+   * "FeatureCollection":
+   *  rawTransects.
+  */
+  
+  // Determine the names of the properties of interest.
+  var obs_Name = "gradYearNum";
+  
+  // Determine the filtering thresholds.
+  var obs_Thres = 10;
+  
+  // Define the Filters.
+  var obs_Filter = ee.Filter.gte(obs_Name, 
+    obs_Thres);
+  
+  // Filter the transects.
+  var filteredTransects = rawTransects.filter(obs_Filter);
+  
+  // Return a "FeatureCollection."
+  return filteredTransects;
+};
+
+// Function to aggregate the estimated elevational-NDVI-gradient trends
+//  of the transects in each basin.
+var aggregateGradTrends_byBasin = 
+  function(transectGradTrends, rawBasins, CLid_Name) {
+    
+    /**
+     * "FeatureCollection":
+     *  transectGradTrends, rawBasins.
+     * 
+     * "String":
+     *  CLid_Name.
+    */
+    
+    // Determine the names of the properties of interest.
+    var HybasID_name = "Hybas_ID";
+    
+    var HybasID_rawName = "HYBAS_ID";
+    
+    var trend_Name = "gradTrend";
+    
+    var mean_Name = "mean";
+    
+    var SD_name = "stdDev";
+    
+    // Generate a combined reducer to calculate the statistics of the gradient trends.
+    var combinedReducer_forTrend = ee.Reducer.mean().combine({
+      reducer2: ee.Reducer.stdDev(), 
+      sharedInputs: true
+    });
+    
+    // Add a reducer to count the number of transects.
+    var finalCombinedReducer = combinedReducer_forTrend.combine({
+      reducer2: ee.Reducer.countDistinctNonNull(), 
+      sharedInputs: false
+    });
+  
+  
+    /* Aggregate the NDVI elevational-gradient trends by basin. */
+    
+    // The grouped reduction:
+    //  1) The "groupField" argument is the index of the input in the selectors array
+    //    that contains the variables by which to group the output.
+    //    The first field is index 0.
+    //  2) The "groupName" argument specifies the name of the property
+    //    to store the value of the grouping variable.
+    var basinGradTrends_List = ee.List(transectGradTrends.reduceColumns({
+      selectors: [trend_Name, CLid_Name, HybasID_name],
+      reducer: finalCombinedReducer.group({
+        groupField: 2,
+        groupName: HybasID_name,
+      })
+    }).get("groups"));
+    
+    // Convert the generated List to a FeatureCollection.
+    var basinGradTrends_FtrCol = ee.FeatureCollection(basinGradTrends_List.map(
+      function(listElement) {
+        var dictionary = ee.Dictionary(listElement);
+        
+        return ee.Feature(null).set(
+          HybasID_name, dictionary.get(HybasID_name),
+          "Transect_Number", dictionary.get("count"),
+          trend_Name + "_" + mean_Name, dictionary.get(mean_Name),
+          trend_Name + "_" + SD_name, dictionary.get(SD_name)
+        );
+      }));
+  
+    // Combine each aggregated-trend Feature with the corresponding basin geometry.
+    var basinGradTrends_withGeometries = FC_AP.combine_twoFtrCols_primaryGeometriesANDsecondaryProperties(
+      rawBasins, basinGradTrends_FtrCol, HybasID_rawName, HybasID_name
+    );
+  
+    // Return a "FeatureCollection."
+    return basinGradTrends_withGeometries;
+  };
+
+
+// // Set the major working directory.
+// var wd_Main = GATE.wd_NorthAmerica;
+
+// // Determine the universal file path of
+// //  the estimated NDVI elevational-gradient trends of transects.
+// var wd_GradTrends = wd_Main
+//   + "Transect_NDVI_Analysis/"
+//   + TNA.elvNDVIgradientTrends_fileName
+//   + "/"
+//   + TNA.gradientTrends_byBasinGroup_fileName;
+
+// // Determine the universal file path of the basin group.
+// var wd_SelectedBasins = wd_Main
+//   + "Elevational_Transect_Generation/"
+//   + "Selected_Basin_Groups/"
+//   + GATE.groupedBasins_fileName;
+
+
+// /* Operations by basin group (1 ~ 5). */
+
+// for (var basinGroupID = 1; basinGroupID <= 5; basinGroupID ++) {
+  
+//   // Load the estimated NDVI elevational-gradient trends of transects.
+//   var rawGradTrends_Transects = ee.FeatureCollection(wd_GradTrends
+//     + basinGroupID);
+
+//   // Load the selected basins of each group.
+//   var selectedBasins = ee.FeatureCollection(wd_SelectedBasins
+//     + basinGroupID);
+  
+  
+//   /* Aggregate the estimated elevational-NDVI-gradient trends. */
+  
+//   var selectedGradTrends_Transects = select_GradTrends(rawGradTrends_Transects);
+  
+//   // Aggregate the gradient trends of the selected transects by basin.
+//   var aggregatedGradTrends_Basins = aggregateGradTrends_byBasin(
+//     selectedGradTrends_Transects, selectedBasins, "CL_newID"
+//   );
+  
+
+//   if (false) { //// true OR false.
+
+//     print("aggregatedGradTrends_Basins:", 
+//       aggregatedGradTrends_Basins.first(),
+//       aggregatedGradTrends_Basins.size());
+  
+//   } else { //// Export the result.
+    
+//     var wd_Output = GATE.wd_Africa
+//       + "Testing/BasinGradTrends_NAm/";
+    
+//     var fileName = TNA.basinGradientTrends_byBasinGroup_fileName
+//       + basinGroupID;
+    
+//     Export.table.toAsset({
+//       collection: aggregatedGradTrends_Basins, 
+//       description: fileName, 
+//       assetId: wd_Output
+//         + fileName
+//     });
+//   }
+// }
+
+
+// Set the major working directory.
+var wd_Main = GATE.wd_SouthAmerica;
+
+// Load the estimated NDVI elevational-gradient trends of transects.
+var rawGradTrends_Transects = ee.FeatureCollection(wd_Main
+  + "Transect_NDVI_Analysis/"
+  + TNA.elvNDVIgradientTrends_fileName);
+
+// Load the selected basins.
+var selectedBasins = ee.FeatureCollection(wd_Main
+  + "Elevational_Transect_Generation/"
+  + GATE.selectedBasins_fileName);
+
+
+/* Aggregate the estimated elevational-NDVI-gradient trends. */
+
+var selectedGradTrends_Transects = select_GradTrends(rawGradTrends_Transects);
+
+// Aggregate the gradient trends of the selected transects by basin.
+var aggregatedGradTrends_Basins = aggregateGradTrends_byBasin(
+  selectedGradTrends_Transects, selectedBasins, "CL_ID"
+);
+
+
+if (false) { //// true OR false.
+
+  print("aggregatedGradTrends_Basins:", 
+    aggregatedGradTrends_Basins.first(),
+    aggregatedGradTrends_Basins.size());
+
+} else { //// Export the result.
+  
+  var wd_Output = GATE.wd_Africa
+    + "Testing/";
+  
+  var fileName = "BasinGradTrends_SAm";
+  
+  Export.table.toAsset({
+    collection: aggregatedGradTrends_Basins, 
+    description: fileName, 
+    assetId: wd_Output
+      + fileName
+  });
+}
+

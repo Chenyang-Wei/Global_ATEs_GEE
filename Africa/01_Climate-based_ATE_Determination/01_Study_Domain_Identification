@@ -1,0 +1,130 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var withTreeline = 
+    /* color: #ffff00 */
+    /* shown: false */
+    ee.Geometry.Polygon(
+        [[[57.92253068842988, -48.17819375812973],
+          [66.36003068842989, -31.892974289118364],
+          [69.52409318842989, -17.40990462069732],
+          [65.12956193842989, -2.390509321198626],
+          [59.15299943842988, 14.161582308367072],
+          [49.13346818842988, 24.59056062386285],
+          [33.66471818842988, 38.73992286994107],
+          [12.922530688429882, 43.3758862231602],
+          [-4.005317441886875, 40.55722415764492],
+          [-14.640083066886875, 38.110363634814725],
+          [-24.835395566886874, 33.11179630823089],
+          [-31.839162656590627, 21.578246750920314],
+          [-27.620412656590627, 7.234395382405412],
+          [-18.848200561258658, -12.18348574997835],
+          [-16.035700561258658, -20.111866237282985],
+          [-17.266169311258658, -36.43384338378018],
+          [-11.113825561258656, -45.3387396596991],
+          [9.690597047748373, -50.17243587887704],
+          [23.665206422748373, -50.787642529749746],
+          [36.05778454774837, -50.05971897586806],
+          [46.16520642274837, -49.43502622266251]]]);
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+/**
+ * Introduction: 
+ * 1) Identify the area of Africa.
+ * 2) Generate and buffer the bounding box of the identified area.
+ * 
+ * Update: 6/10/2021.
+ * 
+ * Runtime: 3m.
+*/
+
+
+if (false) {
+  /* Identify the area of Africa. */
+  
+  // Import country features.
+  var worldCol = ee.FeatureCollection('USDOS/LSIB_SIMPLE/2017');
+  
+  // print("worldCol:", worldCol.aggregate_array("wld_rgn").distinct())
+  
+  // Select countries in Africa, Indian Ocean, and S Atlantic.
+  var Africa = worldCol.filterMetadata('wld_rgn', 'equals', 'Africa');
+  var Indian_Ocean = worldCol.filterMetadata('wld_rgn', 'equals', 'Indian Ocean');
+  var S_Atlantic = worldCol.filterMetadata('wld_rgn', 'equals', 'S Atlantic');
+  
+  // Merge all geometries in the feature collection into one.
+  var Africa_merged = Africa.merge(Indian_Ocean)
+    .merge(S_Atlantic);
+  
+  // Merge all geometries in the collection into one.
+  var Africa_unioned = ee.Feature(Africa_merged.union().first());
+  
+  // Remove islands with no obvious treeline.
+  var Africa_withTL = Africa_unioned.intersection(withTreeline); 
+  
+  // Convert the result to a FeatureCollection.
+  var Africa_FC = ee.FeatureCollection(Africa_withTL);
+  
+  // print("Africa_FC:", Africa_FC)
+
+  if (false) {
+    // Visualization.
+    Map.setOptions("hybrid");
+    
+    Map.centerObject(Africa_merged, 2);
+    
+    Map.addLayer(Africa_FC, 
+      {color: "ff0000", opacity: 1}, "Africa_FC", true);
+
+  } else if (true) {
+    // Export the result.
+    var fileName = "Africa_LSIB_SIMPLE";
+    
+    Export.table.toAsset({
+      collection: Africa_FC, 
+      description: fileName, 
+      assetId: "users/Mountains/Africa_ATE/Climate-Based_ATE/" +
+        fileName
+    });
+  }
+  
+} else if (true) {
+  
+  /* Generate and buffer the bounding box of the identified area. */
+  
+  // Load the identified study domain.
+  var studyDomain = ee.FeatureCollection("users/Mountains/Africa_ATE/Climate-Based_ATE/" +
+    "Africa_LSIB_SIMPLE");
+  
+  // print("studyDomain:", studyDomain)
+
+  // Generate the bounding box of the study domain.
+  var BBox = ee.Feature(studyDomain.first()).bounds();
+  
+  // print("BBox:", BBox)
+  
+  // Buffer the bounding box and then generate the buffer's bounding box.
+  var buffered_BBox = BBox.buffer(1e4).bounds();
+  
+  print("buffered_BBox:", buffered_BBox)
+  
+  // Create a rectanglar AOI based on the buffered bounding box.
+  var africaAOI = ee.Geometry.Rectangle({
+    coords: [[-25.492819736711297,-47.07238134131982],
+      [63.634730607383325,37.63280220193939]],
+    geodesic: false
+  });
+  
+  if (true) {
+    // Vissualization.
+    Map.setOptions("hybrid");
+    
+    Map.centerObject(studyDomain, 2);
+    
+    Map.addLayer(buffered_BBox, {color: "FF0000"}, "buffered_BBox");
+    
+    Map.addLayer(BBox, {color: "0000FF"}, "BBox");
+    
+    Map.addLayer(studyDomain, {color: "FFFF00"}, "studyDomain", true);
+    
+    Map.addLayer(africaAOI, {color: "00FF00"}, "africaAOI");
+  }
+}
+
