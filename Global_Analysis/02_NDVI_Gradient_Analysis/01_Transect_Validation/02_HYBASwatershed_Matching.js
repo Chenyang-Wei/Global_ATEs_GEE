@@ -61,18 +61,18 @@ var NDVI_Diff_withGeom = Merge_Watersheds(
   "HYBAS_ID", "HYBAS_ID");
 
 
-var output = true; // true OR false.
+var output = false; // true OR false.
 
 if (!output) {
   
   // Check the results.
   FC_AP.Print_FtrColInfo(
     "CanopyHt_Diff_withGeom:", 
-    CanopyHt_Diff_withGeom);
+    CanopyHt_Diff_withGeom); // 66749.
 
   FC_AP.Print_FtrColInfo(
     "NDVI_Diff_withGeom:", 
-    NDVI_Diff_withGeom);
+    NDVI_Diff_withGeom); // 66758.
 
 } else {
   
