@@ -2,14 +2,14 @@
 
 ## Project Description
 
-This project aims to investigate Alpine Treeline Ecotones (ATEs) worldwide with Google Earth Engine.
+Leveraging the cloud computing platform Google Earth Engine, this project aims to investigate the dynamics of Alpine Treeline Ecotones (ATEs) worldwide.
 
 
 ## Built With
 
-- Google Earth Engine
+- [Google Earth Engine](https://earthengine.google.com/)
 
 
 ## Author
 
-**Chenyang Wei**
+**Chenyang Wei** - [@Chenyang_Wei](https://twitter.com/Chenyang_Wei)
