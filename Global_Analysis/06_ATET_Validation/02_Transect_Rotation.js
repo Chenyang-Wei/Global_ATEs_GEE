@@ -1,15 +1,12 @@
 /**
  * Introduction:
  * 
- *  1) Rotate the sampled transects (-90 ~ 90).
+ *  1) Rotate the sampled transects by an angle 
+ *    between -90 and 90 degrees.
  * 
- *  2) Segment the rotated transects.
+ * Updated: 9/25/2023.
  * 
- *  3) Operation #3.
- * 
- * Updated: 9/22/2023.
- * 
- * Runtime: N/A.
+ * Runtime: .
 */
 
 
@@ -21,46 +18,34 @@ var GATE = require(
 
 /* Object definition. */
 
+// Determine a List of rotation angles 
+//  (counterclockwise).
+var theta_List = ee.List.sequence({
+  start: -90, 
+  end: 90, 
+  step: 30
+});
+
+// Remove the zero degree (no rotation).
+theta_List = theta_List.remove(0);
+
 
 /* Function definition. */
-
-// /**
-// * Rotate a point Feature around an origin Feature
-// *  by a certain angle.
-// * 
-// * @param {Number} Angle_Num - Rotation angle.
-// * @param {Number} Point_X_Num - The X-coordinate of the point Feature.
-// * @param {Number} Point_Y_Num - The Y-coordinate of the point Feature.
-// * @param {Number} Origin_X_Num - The X-coordinate of the origin Feature.
-// * @param {Number} Origin_Y_Num - The Y-coordinate of the origin Feature.
-// * 
-// * @return {return type} - description
-// */
-// var Rotate_PointFtr = 
-//   function(Angle_Num, 
-//     Point_X_Num, Point_Y_Num, 
-//     Origin_X_Num, Origin_Y_Num) {
-//       // // Determine the point coordinates relative to
-//       // //  the origin.
-//       // var X_Coord = ee.Number(Point_X_Num).subtract(Origin_X_Num);
-//       // var Y_Coord = ee.Number(Point_Y_Num).subtract(Origin_Y_Num);
-      
-//       return ee.Feature(ee.Geometry.Point({
-//         coords: [Point_X_Num, Point_Y_Num]
-//       }));
-//   };
 
 // Function for rotating the longitude of a point.
 var Rotate_Lon = 
   function(rawLon_Num, rawLat_Num, 
     sin_Num, cos_Num) {
       
+      // x_1 * cos(theta).
       var lon_Cos_Num = ee.Number(rawLon_Num)
         .multiply(cos_Num);
       
+      // y_1 * sin(theta).
       var lat_Sin_Num = ee.Number(rawLat_Num)
         .multiply(sin_Num);
       
+      // x_2 = x_1 * cos(theta) - y_1 * sin(theta).
       var newLon_Num = lon_Cos_Num.subtract(lat_Sin_Num);
       
       return newLon_Num;
@@ -71,12 +56,15 @@ var Rotate_Lat =
   function(rawLon_Num, rawLat_Num, 
     sin_Num, cos_Num) {
       
+      // x_1 * sin(theta).
       var lon_Sin_Num = ee.Number(rawLon_Num)
         .multiply(sin_Num);
       
+      // y_1 * cos(theta).
       var lat_Cos_Num = ee.Number(rawLat_Num)
         .multiply(cos_Num);
       
+      // y_2 = x_1 * sin(theta) + y_1 * cos(theta).
       var newLat_Num = lon_Sin_Num.add(lat_Cos_Num);
       
       return newLat_Num;
@@ -96,64 +84,119 @@ var sampled_Transects_FC = ee.FeatureCollection(
 
 /* 1) Rotate the sampled transects. */
 
-// Determine the rotation angle.
-var theta = -90;
+// Perform the rotation operations for each angle.
+var rotatedTransects_AllAngles_List = theta_List.map(
+    function Rotate_Transects_ByAngle(theta_Num) {
+      
+      // Convert theta to radians.
+      var theta_Radians = ee.Number(theta_Num)
+        .divide(180).multiply(Math.PI);
+      
+      // Compute the sin and cos of theta.
+      var sin_Theta = theta_Radians.sin();
+      var cos_Theta = theta_Radians.cos();
+      
+      // Rotate each transect.
+      var rotatedTransects_EachAngle_FC = 
+        sampled_Transects_FC.map(
+          function Rotate_EachTransect(rawTransect_Ftr) {
+            
+            // Extract the coordinates of the lower endpoint.
+            var LEnd_Lon = rawTransect_Ftr.get("LEnd_Lon");
+            var LEnd_Lat = rawTransect_Ftr.get("LEnd_Lat");
+            
+            // Extract the coordinates of the upper endpoint.
+            var UEnd_Lon = rawTransect_Ftr.get("UEnd_Lon");
+            var UEnd_Lat = rawTransect_Ftr.get("UEnd_Lat");
+            
+            // Extract the coordinates of the geometric centroid.
+            var Ctr_Lon = rawTransect_Ftr.get("Ctr_Lon");
+            var Ctr_Lat = rawTransect_Ftr.get("Ctr_Lat");
+            
+            // Compute the relative coordinates of the lower endpoint.
+            var LEnd_Rel_Lon = ee.Number(LEnd_Lon).subtract(Ctr_Lon);
+            var LEnd_Rel_Lat = ee.Number(LEnd_Lat).subtract(Ctr_Lat);
+            
+            // Compute the relative coordinates of the upper endpoint.
+            var UEnd_Rel_Lon = ee.Number(UEnd_Lon).subtract(Ctr_Lon);
+            var UEnd_Rel_Lat = ee.Number(UEnd_Lat).subtract(Ctr_Lat);
+            
+            // Rotate the lower endpoint.
+            var newLEnd_Rel_Lon = Rotate_Lon(
+              LEnd_Rel_Lon, LEnd_Rel_Lat, 
+              sin_Theta, cos_Theta);
+            
+            var newLEnd_Rel_Lat = Rotate_Lat(
+              LEnd_Rel_Lon, LEnd_Rel_Lat, 
+              sin_Theta, cos_Theta);
+            
+            // Rotate the upper endpoint.
+            var newUEnd_Rel_Lon = Rotate_Lon(
+              UEnd_Rel_Lon, UEnd_Rel_Lat, 
+              sin_Theta, cos_Theta);
+            
+            var newUEnd_Rel_Lat = Rotate_Lat(
+              UEnd_Rel_Lon, UEnd_Rel_Lat, 
+              sin_Theta, cos_Theta);
+            
+            // Compute the absolute coordinates of 
+            //  the rotated lower endpoint.
+            var newLEnd_Lon = ee.Number(newLEnd_Rel_Lon).add(Ctr_Lon);
+            var newLEnd_Lat = ee.Number(newLEnd_Rel_Lat).add(Ctr_Lat);
+            
+            // Compute the absolute coordinates of 
+            //  the rotated upper endpoint.
+            var newUEnd_Lon = ee.Number(newUEnd_Rel_Lon).add(Ctr_Lon);
+            var newUEnd_Lat = ee.Number(newUEnd_Rel_Lat).add(Ctr_Lat);
+            
+            // Construct a LineString between 
+            //  the two rotated endpoints.
+            var newCenterline_Geom = ee.Geometry.LineString({
+              coords: [[newLEnd_Lon, newLEnd_Lat], 
+                [newUEnd_Lon, newUEnd_Lat]]
+            });
+            
+            // Get the length of the rotated LineString.
+            var rotatedCL_Length = newCenterline_Geom.length();
+            
+            // Calculate the segment length.
+            var segment_Length = ee.Number(rotatedCL_Length)
+              .divide(2)
+              .subtract(45); // Buffer size.
+            
+            // Create a centerline Feature with properties.
+            var newCenterline_Ftr = ee.Feature(newCenterline_Geom)
+              .copyProperties({
+                source: rawTransect_Ftr, 
+                properties: ["ET_ID"]
+              }).set({
+                theta: theta_Num,
+                rotatedCL_Length: rotatedCL_Length,
+                segment_Length: segment_Length,
+                endPt1_Lon: newLEnd_Lon,
+                endPt1_Lat: newLEnd_Lat,
+                endPt2_Lon: newUEnd_Lon,
+                endPt2_Lat: newUEnd_Lat
+              });
+              
+            return newCenterline_Ftr;
+        });
+        
+      return rotatedTransects_EachAngle_FC;
+    }
+  );
 
-// Convert theta to radians.
-var theta_Radians = ee.Number(theta)
-  .divide(180).multiply(Math.PI);
-
-// Compute the sin and cos of theta.
-var sin_Theta = theta_Radians.sin();
-var cos_Theta = theta_Radians.cos();
-
-print(sin_Theta, cos_Theta);
-
-var rotated_Transects_FC = 
-  sampled_Transects_FC.map(function(rawTransect_Ftr) {
-    // Extract the coordinates of the lower and upper endpoints.
-    var LEnd_Lon = rawTransect_Ftr.get("LEnd_Lon");
-    var LEnd_Lat = rawTransect_Ftr.get("LEnd_Lat");
-    var UEnd_Lon = rawTransect_Ftr.get("UEnd_Lon");
-    var UEnd_Lat = rawTransect_Ftr.get("UEnd_Lat");
-    
-    // Extract the coordinates of the geometric centroid.
-    var Ctr_Lon = rawTransect_Ftr.get("Ctr_Lon");
-    var Ctr_Lat = rawTransect_Ftr.get("Ctr_Lat");
-    
-    // Compute the relative coordinates of the lower endpoint.
-    var LEnd_Rel_Lon = ee.Number(LEnd_Lon).subtract(Ctr_Lon);
-    var LEnd_Rel_Lat = ee.Number(LEnd_Lat).subtract(Ctr_Lat);
-    
-    // Compute the relative coordinates of the upper endpoint.
-    var UEnd_Rel_Lon = ee.Number(UEnd_Lon).subtract(Ctr_Lon);
-    var UEnd_Rel_Lat = ee.Number(UEnd_Lat).subtract(Ctr_Lat);
-    
-    // Rotate the lower endpoint.
-    var newLEnd_Rel_Lon = Rotate_Lon(
-      LEnd_Rel_Lon, LEnd_Rel_Lat, 
-      sin_Theta, cos_Theta);
-    
-    var newLEnd_Rel_Lat = Rotate_Lat(
-      LEnd_Rel_Lon, LEnd_Rel_Lat, 
-      sin_Theta, cos_Theta);
-    
-    return ee.Feature(ee.Geometry.Point({
-        coords: [Ctr_Lon, Ctr_Lat]
-      })).set({sth: newLEnd_Rel_Lat});
-  });
-
-/* 2) Operation #2. */
+// Convert the List to a FeatureCollection.
+var rotatedTransects_AllAngles_FC = 
+  ee.FeatureCollection(rotatedTransects_AllAngles_List)
+    .flatten();
 
 
-/* 3) Operation #3. */
+/* Check/output the result(s). */
 
-
-var output = false;
+var output = true;
 
 if (!output) {
-  
-  /* Check the result(s). */
   
   // Check the sampled transects.
   print("sampled_Transects_FC:", 
@@ -162,8 +205,8 @@ if (!output) {
   
   // Check the rotated transects.
   print("rotated_Transects_FC:", 
-    rotated_Transects_FC.first(),
-    rotated_Transects_FC.size()); // 66776.
+    rotatedTransects_AllAngles_FC.first(),
+    rotatedTransects_AllAngles_FC.size()); // 400656.
   
   // Visualization.
   Map.setOptions("Satellite");
@@ -174,14 +217,23 @@ if (!output) {
     "sampled_Transects_FC"
   );
   
-  Map.addLayer(rotated_Transects_FC,
-    {color: "00FFFF"},
-    "rotated_Transects_FC"
-  );
+  // Map.addLayer(rotatedTransects_AllAngles_FC,
+  //   {color: "00FFFF"},
+  //   "rotatedTransects_AllAngles_FC"
+  // );
   
 } else {
   
-  /* Output the result(s).*/
+  // Output to Asset.
+  var fileName = "rotatedCLs_SixAngles";
   
+  Export.table.toAsset({
+    collection: rotatedTransects_AllAngles_FC, 
+    description: fileName, 
+    assetId: GATE.wd_Global 
+      + "Elevational_Transects/"
+      + "Validation/"
+      + fileName
+  });
 }
 
