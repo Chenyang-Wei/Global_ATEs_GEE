@@ -1,11 +1,14 @@
 /**
  * Introduction:
  * 
- *  1) Compute the average ALOS elevation of each segment.
+ *  1) Remove segments with NULL elevation.
  * 
- * Updated: 9/27/2023.
+ *  2) Compute the average vegetation canopy height 
+ *    of each segment.
  * 
- * Runtime: N/A.
+ * Updated: 9/28/2023.
+ * 
+ * Runtime: .
 */
 
 
@@ -24,33 +27,38 @@ var IMG = require(
 var IDname_Str = "ET_ID";
 
 // Target projection.
-var targetPrj = IMG.WGS84_30m;
+var targetPrj = IMG.WGS84_10m;
 
 // Unweighted average Reducer.
 var meanReducer = ee.Reducer.mean()
   .unweighted()
-  .setOutputs(["avg_Elv"]);
+  .setOutputs(["avg_VCH"]);
 
 
 /* Dataset loading. */
 
-// Load the raw transect segments.
+// Load the rotated segments with the average elevation.
 var rawSegments_FC = ee.FeatureCollection(
   GATE.wd_Global 
     + "Elevational_Transects/"
     + "Validation/"
-    + "segmented_RotatedATETs"
+    + "rotatedSegments_AvgElv"
 );
 
-// Load the ALOS elevation worldwide.
-var ALOSelevation = ee.ImageCollection(
-  'JAXA/ALOS/AW3D30/V3_2')
-  .select('DSM')
-  .mosaic()
-  .reproject(targetPrj);
-  
+// Load the 10-m global canopy height dataset of 2020.
+var canopy_height = 
+  ee.Image('users/nlang/ETH_GlobalCanopyHeight_2020_10m_v1')
+    .reproject(targetPrj);
 
-/* 1) Compute the average elevation of each segment. */
+
+/* 1) Remove segments with NULL elevation. */
+
+rawSegments_FC = rawSegments_FC.filter(
+  ee.Filter.notNull(["avg_Elv"])
+);
+
+
+/* 2) Compute the average canopy height of each segment. */
 
 // Create a non-duplicate list of the transect ID.
 var IDs_List = rawSegments_FC
@@ -69,9 +77,9 @@ var newSegments_List =
     var rawSegments_perTransect_FC = rawSegments_FC
       .filter(ID_Filter);
     
-    // Average the elevation of each segment.
+    // Average the canopy height of each segment.
     var newSegments_perTransect_FC = 
-      ALOSelevation.reduceRegions({
+      canopy_height.reduceRegions({
         collection: rawSegments_perTransect_FC, 
         reducer: meanReducer,
         scale: targetPrj.scale, 
@@ -96,10 +104,10 @@ if (!output) {
   // Check the raw segments.
   print("rawSegments_FC:", 
     rawSegments_FC.first(),
-    rawSegments_FC.size()); // 801312 (400656 * 2).
+    rawSegments_FC.size()); // 801312.
   
   IMG.printImgInfo(
-    "ALOSelevation:", ALOSelevation);
+    "canopy_height:", canopy_height);
   
   print("IDs_List:", IDs_List.size()); // 66776.
   
@@ -112,10 +120,10 @@ if (!output) {
   Map.setOptions("Satellite");
   Map.setCenter(-123.35464, 47.81906, 14);
   
-  Map.addLayer(ALOSelevation, 
-    {min: 1200, max: 2200, 
-    palette: "00FF00, FFFFFF, 0000FF"}, 
-    "ALOSelevation");
+  Map.addLayer(canopy_height, 
+    {min: 0, max: 50, 
+    palette: "FFFFFF, FFFF00, 00FF00"}, 
+    "canopy_height");
   
   Map.addLayer(rawSegments_FC,
     {color: "FF0000"},
@@ -125,7 +133,7 @@ if (!output) {
 } else {
   
   // Output to Asset.
-  var fileName = "rotatedSegments_AvgElv";
+  var fileName = "rotatedSegments_AvgElv_VCH";
   
   Export.table.toAsset({
     collection: newSegments_FC, 
