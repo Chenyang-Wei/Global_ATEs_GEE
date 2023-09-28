@@ -38,7 +38,8 @@ var CLs_withHybasIDs = ee.FeatureCollection(wd_Main
 
 
 /* Identify the locally steepest centerlines based on
-  the individual Polygons of the unioned mid-segment buffers of each basin. */
+  the individual Polygons of the unioned mid-segment buffers 
+  of each basin. */
 
 var allSteepestCLs = GATE.identifySteepestCLs_byBasin_otherContinents(
   unionedBuffers_IndivPlgs, midQuarters_withHybasIDs, CLs_withHybasIDs

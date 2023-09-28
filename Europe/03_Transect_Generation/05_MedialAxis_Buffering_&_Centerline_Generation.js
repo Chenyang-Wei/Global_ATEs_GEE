@@ -114,7 +114,8 @@ var CF_nonF_elvCoords_Img = CF_elvCoords_Img
 var combinedElvReducer = GATE.generateCombinedReducer(CF_elvCoords_Img, nonF_elvCoords_Img);
 
 // Transect centerline construction.
-var transectCLs = GATE.constructTransectCLs_byBasin(selectedBasins, medialAxis_PxCtds, 
+var transectCLs = GATE.constructTransectCLs_byBasin(
+  selectedBasins, medialAxis_PxCtds, 
   CF_nonF_elvCoords_Img, combinedElvReducer, targetPrj);
 
 
