@@ -3,7 +3,7 @@
  * 
  *  1) Join each pair of the rotated segments with NDVI.
  * 
- * Updated: 10/6/2023.
+ * Updated: 10/9/2023.
  * 
  * Runtime: .
 */
@@ -46,15 +46,6 @@ var combined_Filter = ee.Filter.and(
 
 
 /* Dataset loading. */
-
-// Load the rotated transect centerlines.
-var rotatedCLs_FC = ee.FeatureCollection(
-  GATE.wd_Global 
-    + "Elevational_Transects/"
-    + "Validation/"
-    + "Rotation/"
-    + "rotatedCLs_SixAngles"
-);
 
 // Load the rotated segments with the average NDVI.
 var rotatedSegments_FC = ee.FeatureCollection(
@@ -108,17 +99,8 @@ var joinedSegments_FC = FC_AP.Join_2FC_byFilter(
   segments_Group2_FC, 
   combined_Filter);
 
-// Combine the segment properties with
-//  the rotated centerlines.
-rotatedCLs_FC = rotatedCLs_FC.select(properties_List);
-
-var rotatedCLs_SegmentInfo_FC = FC_AP.Join_2FC_byFilter(
-  rotatedCLs_FC, 
-  joinedSegments_FC, 
-  combined_Filter);
-
-// Remove centerlines with NULL properties.
-rotatedCLs_SegmentInfo_FC = rotatedCLs_SegmentInfo_FC
+// Remove the joined segments with NULL properties.
+joinedSegments_FC = joinedSegments_FC
   .filter(ee.Filter.notNull([
     "Elv_1", "Elv_2", 
     propertyName_Str + "_1",
@@ -133,9 +115,6 @@ var output = true; // true OR false.
 if (!output) {
   
   // Check the dataset(s).
-  FC_AP.Print_FCinfo("rotatedCLs_FC:",
-    rotatedCLs_FC); // 400656.
-  
   FC_AP.Print_FCinfo("rotatedSegments_FC:",
     rotatedSegments_FC); // 801312.
   
@@ -156,10 +135,6 @@ if (!output) {
     {color: "FFFF00"},
     "rotatedSegments_FC");
   
-  Map.addLayer(rotatedCLs_FC,
-    {color: "0000FF"},
-    "rotatedCLs_FC");
-  
   Map.addLayer(segments_Group1_FC,
     {color: "FF0000"},
     "segments_Group1_FC");
@@ -171,11 +146,11 @@ if (!output) {
 } else {
   
   // Output to Asset.
-  var fileName = "rotatedCLs_Segment" 
+  var fileName = "joinedSegments_" 
     + propertyName_Str;
   
   Export.table.toAsset({
-    collection: rotatedCLs_SegmentInfo_FC, 
+    collection: joinedSegments_FC, 
     description: fileName, 
     assetId: GATE.wd_Global 
       + "Elevational_Transects/"
