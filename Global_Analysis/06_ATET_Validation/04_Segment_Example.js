@@ -8,7 +8,7 @@ var poi = /* color: #d63000 */ee.Geometry.Point([-123.35468261673893, 47.8190055
  * 
  * Updated: 10/31/2023.
  * 
- * Runtime: .
+ * Runtime: < 1m.
 */
 
 

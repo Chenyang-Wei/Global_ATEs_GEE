@@ -26,7 +26,8 @@ var VIS = require("users/ChenyangWei/Public:Modules/General/Visualization.js");
 /* Object definition. */
 
 // Determine the continent ID (0 ~ 5).
-var contID = 3;
+var contID = 0;
+// var contID = 4;
 
 // Determine the target projection.
 var targetPrj = IMG.WGS84_30m;
@@ -97,6 +98,16 @@ var Read_SmallerNDVIdiff = function(wd_Cont) {
   return smallerNDVIdiff_Cont;
 };
 
+// Define a function to load the annual ATEIs in 
+//  the new CATE of each continent.
+var Read_AnnualATEIs = function(wd_Cont) {
+  var annualATEIs_Cont = ee.Image(wd_Cont
+    + "ATEI_Estimation/" 
+    + "annualATEIs_1985to2020_NewCATE");
+  
+  return annualATEIs_Cont;
+};
+
 
 /* Acquire the information of each continent. */
 
@@ -128,6 +139,34 @@ if (contID === 0) {
   // Load the annual NDVIs in other continents.
   annualNDVIs = Read_AnnualNDVIs_BufferedCATE(
     contWD);
+}
+
+
+/* Load the annual ATEIs during 1985-2020
+  in the new CATE by continent. */
+
+var annualATEIs_Raw;
+
+if (contID === 5) {
+  
+  /* Asia. */
+  
+  // Load the annual ATEIs.
+  annualATEIs_Raw = Read_AnnualATEIs(GATE.wd_Asia_2);
+
+} else if (contID === 4) {
+  
+  /* Europe. */
+  
+  // Load the annual ATEIs.
+  annualATEIs_Raw = Read_AnnualATEIs(GATE.wd_Europe_2);
+
+} else {
+  
+  /* Other continents. */
+  
+  // Load the annual ATEIs.
+  annualATEIs_Raw = Read_AnnualATEIs(contWD);
 }
 
 
@@ -242,7 +281,7 @@ var annual_ATEI = exp_Logit.divide(exp_Logit.add(1))
 
 Map.setOptions("Satellite");
 // Map.centerObject(contAOI, 8);
-Map.setCenter(169.42512, -44.05243, 14);
+// Map.setCenter(169.42512, -44.05243, 14);
 
 
 // Mask the annual ATEIs with an optimal threshold.
@@ -250,43 +289,76 @@ var ATEI_thres = 0.5460715;
 
 var ATEImask = annual_ATEI.gt(ATEI_thres);
 
-Map.addLayer(annual_ATEI,
-  // {min: 0, max: 1, palette: "0000ff, ffffff, ff0000"},
+// Map.addLayer(annual_ATEI,
+//   // {min: 0, max: 1, palette: "0000ff, ffffff, ff0000"},
+//   {min: 0, max: 1, palette: "ffffff, ff0000"},
+//   "ATEI_2020",
+//   true, 1
+// );
+
+// Map.addLayer(annual_ATEI,
+//   // {min: 0, max: 1, palette: "0000ff, ffffff, ff0000"},
+//   {min: 0, max: 1, palette: "ffffff, ff0000"},
+//   "ATEI_2020",
+//   true, 1
+// );
+
+// Map.addLayer(ATEImask.selfMask(), 
+//   {palette: "228B22"}, 
+//   "ATEImask_2020", 
+//   true, 1);
+
+var year1 = 1993;
+
+Map.addLayer(annualATEIs_Raw.select("ATEI_" + year1),
   {min: 0, max: 1, palette: "ffffff, ff0000"},
-  "ATEI_2020",
+  "ATEI_" + year1,
   true, 1
 );
 
-Map.addLayer(ATEImask.selfMask(), 
-  {palette: "228B22"}, 
-  "ATEImask_2020", 
-  true, 1);
-
-Map.addLayer(annual_NDVI, VIS.NDVI_vis, 
-  "smdNDVI_2020", 
+Map.addLayer(annualNDVIs.select("smdNDVI_" + year1), 
+  VIS.NDVI_vis, 
+  "smdNDVI_" + year1, 
   true);
 
-Map.addLayer(mag_Comp.gt(0.05).selfMask(),
-  {palette: "ff0000"},
-  "mag_Comp",
-  true, 0.5
-);
+var year2 = 2020;
 
-Map.addLayer(normal_Mag.gt(0.1).selfMask(),
-  {palette: "0000ff"},
-  "normal_Mag",
-  true, 0.5
-);
-
-Map.addLayer(ATETs,
-  {color: "ffffff"},
-  "ATETs",
+Map.addLayer(annualATEIs_Raw.select("ATEI_" + year2),
+  {min: 0, max: 1, palette: "ffffff, ff0000"},
+  "ATEI_" + year2,
   true, 1
 );
 
-Map.addLayer(annual_ATEI.updateMask(ATEImask),
-  {min: 0, max: 1, palette: "ffffff, ff0000"},
-  "ATEI_2020",
-  true, 0.5
-);
+Map.addLayer(annualNDVIs.select("smdNDVI_" + year2), 
+  VIS.NDVI_vis, 
+  "smdNDVI_" + year2, 
+  true);
+
+// Map.addLayer(annual_NDVI, VIS.NDVI_vis, 
+//   "smdNDVI_2020", 
+//   true);
+
+// Map.addLayer(mag_Comp.gt(0.05).selfMask(),
+//   {palette: "ff0000"},
+//   "mag_Comp",
+//   true, 0.5
+// );
+
+// Map.addLayer(normal_Mag.gt(0.1).selfMask(),
+//   {palette: "0000ff"},
+//   "normal_Mag",
+//   true, 0.5
+// );
+
+// Map.addLayer(ATETs,
+//   {color: "ffffff"},
+//   "ATETs",
+//   true, 1
+// );
+
+// Map.addLayer(annual_ATEI.updateMask(ATEImask),
+//   {min: 0, max: 1, palette: "ffffff, ff0000"},
+//   "ATEI_2020",
+//   true, 0.5
+// );
 
